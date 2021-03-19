@@ -9,6 +9,10 @@
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1
 
+ish_Version="0.1"
+
+DEBUG=${DEBUG:-1}
+
 ish_ColorRed='\033[0;31m'
 ish_ColorBlue='\033[0;34m'
 ish_ColorNC='\033[0m'
@@ -17,55 +21,56 @@ ish_ColorSay="${ish_ColorBlue}"
 ish_ColorWarn="${ish_ColorBlue}"
 ish_ColorFail="${ish_ColorRed}"
 
-ish_DieOnFail=${ish_DieOnFail:-1}
+#------------------------------------------------------------------------------
+### POSIX compliant functions
+#
+# The following functions are always exposed when sourcing the library and
+# should be POSIX compliant (e.g., work with sh or dash).
+#
 
-# POSIX compliant stuff
-
+#### `say(...)`
+#
+# Prints the given args to stderr, but only if DEBUG=1.
+#
 debug() {
     [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-    if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_VERSION:-}" ]; then
-        # shellcheck disable=SC2039
-        echo -e "[DD] ${ish_ColorDebug}$1${ish_ColorNC}" >&2
-        return 0
-    fi
-    # echo >&2 "[DD] $1"
     printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$@" "${ish_ColorNC}"
-    # printf >&2 "\b"
     return 0
 }
 
+#### say(...)
+#
+# Prints the given args to stderr.
+#
 say() {
-    # if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_VERSION:-}" ]; then
-    #     # shellcheck disable=SC2039
-    #     echo -e >&2 "[--] ${ish_ColorSay}$1${ish_ColorNC}"
-    #     return 0
-    # fi
     printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$@" "${ish_ColorNC}"
-    # echo "[--] $1"
     return 0
 }
 
+#### warn(...)
+#
+# Prints the given args to stderr.
+#
 warn() {
-    if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_VERSION:-}" ]; then
-        # shellcheck disable=SC2039
-        echo -e "[WW] ${ish_ColorWarn}$1${ish_ColorNC}" >&2
-        return 0
-    fi
-    echo "[WW] $1"
+    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$@" "${ish_ColorNC}"
     return 0
 }
 
+#### fail(..)
+#
+# Prints an error message and then exists with return value 1.
+#
 fail() {
-    if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_VERSION:-}" ]; then
-        # shellcheck disable=SC2039
-        echo -e "[!!] ${ish_ColorFail}${1}${ish_ColorNC}" >&2
-    else
-        echo >&2 "[!!] $1"
-    fi
-    [ -n "${ish_DieOnFail}" ] && ([ -n "${2}" ] && exit "${2}") || exit 1
-    return 1
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$@" "${ish_ColorNC}"
+    exit 1
 }
 
+#### downloadFile($url, $dst)
+#
+# Attempts to download file at $url to $dst, creating the containing directory
+# if needed. Will first try curl, then wget, and finally fail if neither is
+# awailable.
+#
 downloadFile() {
     [ -z "$1" ] && warn "downloadFile: bad 1st arg" && return 1
     [ -z "$2" ] && warn "downloadFile: bad 2nd arg" && return 1
@@ -83,13 +88,81 @@ downloadFile() {
     return 0
 }
 
+#### hasCommand $cmd
+#
+# Checks if a comman exists, either as an executable in the path, or as a shell
+# function. Returns 0 if found, 1 otherwise. No output.
+#
 hasCommand() {
     [ -z "$1" ] && warn "hasCommand: bad 1st arg" && return 1
     if command -v "$1" >/dev/null 2>&1; then return 0; fi
     return 1
 }
 
-# Non POSIX-compliant stuff
+#### ishlibVersion
+#
+# Print out the version of ishlib loaded
+#
+ishlibVersion() {
+    say "Using ishlib ${ish_Version} (sh-only)"
+}
+
+#------------------------------------------------------------------------------
+# Check if we're sourced and print docs if not
+
+# Try to detect if we're being run directly
+__sourced=0
+if [ -n "$ZSH_EVAL_CONTEXT" ]; then
+    case $ZSH_EVAL_CONTEXT in *:file) __sourced=1 ;; esac
+elif [ -n "$BASH_VERSION" ]; then
+    (return 0 2>/dev/null) && __sourced=1
+else
+    # This is real ugly, but kinda works :/
+    __sourced=1
+    [ "$0" = "ishlib.sh" ] && __sourced=0
+    [ "$0" = "./ishlib.sh" ] && __sourced=0
+fi
+
+# Print usage if this is called directly, then exit
+if [ "$__sourced" = "0" ]; then
+    __PRINT=0
+    while read -r line; do
+        case $line in
+        \#\#\#EOF4SH*)
+            __PRINT=0
+            ;;
+        \#\#*)
+            echo "$line" | cut -c 2-
+            __PRINT=1
+            ;;
+        \#*)
+            [ ${__PRINT} = 1 ] && echo "$line" | cut -c 3-
+            ;;
+        *)
+            __PRINT=0
+            ;;
+        esac
+    done <"$0"
+    exit
+fi
+unset __sourced
+
+#------------------------------------------------------------------------------
+# End here unless we're on Bash or Zsh
+if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_VERSION:-}" ]; then
+    debug "ishlib: loading bash/zsh extensions"
+else
+    debug "ishlib: load done, skipped bash/zsh extensions"
+    return 0
+fi
+
+###EOF4SH
+
+#------------------------------------------------------------------------------
+### Bash/Zsh functions
+#
+# The following functions will be defined only when running bash or zsh.
+#
 
 strindex() {
     x="${1%%$2*}"
@@ -132,4 +205,9 @@ dumpVariables() {
     done
 }
 
-debug "ishlib loaded"
+unset -f ishlibVersion
+ishlibVersion() {
+    say "Using ishlib ${ish_Version} (with bash/zsh)"
+}
+
+debug "ishlib: load done"
