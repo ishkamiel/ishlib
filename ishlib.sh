@@ -112,9 +112,9 @@ ishlibVersion() {
 
 # Try to detect if we're being run directly
 __sourced=0
-if [ -n "$ZSH_EVAL_CONTEXT" ]; then
+if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
     case $ZSH_EVAL_CONTEXT in *:file) __sourced=1 ;; esac
-elif [ -n "$BASH_VERSION" ]; then
+elif [ -n "${BASH_VERSION:-}" ]; then
     (return 0 2>/dev/null) && __sourced=1
 else
     # This is real ugly, but kinda works :/
@@ -149,7 +149,7 @@ unset __sourced
 
 #------------------------------------------------------------------------------
 # End here unless we're on Bash or Zsh
-if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_VERSION:-}" ]; then
+if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
     debug "ishlib: loading bash/zsh extensions"
 else
     debug "ishlib: load done, skipped bash/zsh extensions"
