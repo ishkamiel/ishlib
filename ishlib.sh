@@ -496,7 +496,7 @@ Distributed under terms of the MIT license.
 DOCSTRING
 
 #------------------------------------------------------------------------------
-# Endo of the bash/zsh extension, finish and enter main if appropriate
+# End of the bash/zsh extension, finish and enter main if appropriate
 
 debug "ishlib: load done (bash/zsh extensions)"
 
