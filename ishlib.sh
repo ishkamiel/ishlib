@@ -4,14 +4,11 @@
 # Copyright (C) 2021 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-
-# Include guard...
+#
 [ -n "${ish_SOURCED:-}" ] && return 0
-ish_SOURCED=1
+ish_SOURCED=1 # source guard
 
-ish_Version="0.1"
-
-DEBUG=${DEBUG:-1}
+DEBUG=${DEBUG:-0}
 
 ish_ColorRed='\033[0;31m'
 ish_ColorBlue='\033[0;34m'
@@ -22,55 +19,196 @@ ish_ColorWarn="${ish_ColorBlue}"
 ish_ColorFail="${ish_ColorRed}"
 
 #------------------------------------------------------------------------------
-### POSIX compliant functions
-#
-# The following functions are always exposed when sourcing the library and
-# should be POSIX compliant (e.g., work with sh or dash).
-#
+ish_Version="0.1"
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+ishlib 0.1
+==========
 
-#### `say(...)`
-#
-# Prints the given args to stderr, but only if DEBUG=1.
-#
+The following functions are always exposed when sourcing the library and
+should be POSIX compliant (e.g., work with sh or dash).
+
+POSIX compliant functions
+=========================
+
+DOCSTRING
+
+#------------------------------------------------------------------------------
+ishlib_main() {
+    [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"
+    ishlib_printDoc "$fn"
+    exit 0
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+ishlib_printDoc
+---------------
+
+Prints out documentation (i.e., the anonymous DOCSTRINGs).
+
+Arguments:
+  -
+Returns:
+  0
+
+DOCSTRING
+ishlib_printDoc() {
+    _old_IFS="$IFS"
+    IFS=''
+    _ishlib_print=0
+    _ishlib_newline=1
+    _ishlib_indent=''
+    while read -r line; do
+        if [ "$line" = ': <<'\''DOCSTRING'\''' ]; then
+            [ ${_ishlib_newline} = 0 ] && echo && _ishlib_newline=1
+            _ishlib_print=1
+            _ishlib_indent=''
+        elif [ "$line" = 'DOCSTRING' ]; then
+            _ishlib_print=0
+            _ishlib_indent=''
+        else
+            if [ ${_ishlib_print} != 0 ]; then
+                case $line in
+                ----*)
+                    _ishlib_print=2
+                    ;;
+                ====*)
+                    _ishlib_print=1
+                    ;;
+                Globals:)
+                    _ishlib_indent='  '
+                    _ishlib_print=3
+                    ;;
+                Arguments:)
+                    _ishlib_indent='  '
+                    _ishlib_print=3
+                    ;;
+                Returns:)
+                    _ishlib_indent='  '
+                    _ishlib_print=3
+                    ;;
+                esac
+
+                [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
+                printf '%s%s\n' "$_ishlib_indent" "$line"
+
+                case $_ishlib_print in
+                2) _ishlib_indent='  '   ;;
+                3) _ishlib_indent='    ' ;;
+                *) _ishlib_indent=''     ;;
+                esac
+            fi
+        fi
+    done <"$1"
+    IFS="${_old_IFS}"
+    unset _old_IFSs
+    unset _ishblib_print
+    unset _ishblib_newline
+    unset _ishblib_indent
+    return 0
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+say ...
+-------
+
+Prints the given args to stderr, but only if DEBUG=1.
+
+Globals:
+  ish_ColorDebug - printed before arguments (e.g., to set color)
+  ish_ColorNC - printed after arguments (e.g., to reset color)
+Arguments:
+  ... - all arguments are printed
+Returns:
+  0 - always
+DOCSTRING
 debug() {
     [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
     printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$@" "${ish_ColorNC}"
     return 0
 }
 
-#### say(...)
-#
-# Prints the given args to stderr.
-#
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+say ...
+-------
+
+Prints the given args to stderr.
+
+Globals:
+  ish_ColorSay - printed before arguments (e.g., to set color)
+  ish_ColorNC - printed after arguments (e.g., to reset color)
+Arguments:
+  ... - all arguments are printed
+Returns:
+  0 - always
+DOCSTRING
 say() {
     printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$@" "${ish_ColorNC}"
     return 0
 }
 
-#### warn(...)
-#
-# Prints the given args to stderr.
-#
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+warn ...
+--------
+
+Prints the given args to stderr.
+
+Globals:
+  ish_ColorWarn - printed before arguments (e.g., to set color)
+  ish_ColorNC - printed after arguments (e.g., to reset color)
+Arguments:
+  ... - all arguments are printed
+Returns:
+  0 - always
+DOCSTRING
 warn() {
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$@" "${ish_ColorNC}"
     return 0
 }
 
-#### fail(..)
-#
-# Prints an error message and then exists with return value 1.
-#
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+warn ...
+--------
+
+Prints the given args to stderr and then exits with the value 1.
+
+Globals:
+  ish_ColorFail - printed before arguments (e.g., to set color)
+  ish_ColorNC - printed after arguments (e.g., to reset color)
+Arguments:
+  ... - all arguments are printed
+Returns:
+  never returns
+
+DOCSTRING
 fail() {
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$@" "${ish_ColorNC}"
     exit 1
 }
 
-#### downloadFile($url, $dst)
-#
-# Attempts to download file at $url to $dst, creating the containing directory
-# if needed. Will first try curl, then wget, and finally fail if neither is
-# awailable.
-#
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+downloadFile $url $dst
+----------------------
+
+Attempts to download file at $url to $dst, creating the containing directory
+if needed. Will first try curl, then wget, and finally fail if neither is
+awailable.
+
+Arguments:
+  url - the URL to download
+  dsg - the filename to store the download at
+Returns: 
+  0 - on success
+  1 - when download failed
+  2 - when neither curl nor wget was found
+
+DOCSTRING
 downloadFile() {
     [ -z "$1" ] && warn "downloadFile: bad 1st arg" && return 1
     [ -z "$2" ] && warn "downloadFile: bad 2nd arg" && return 1
@@ -83,92 +221,105 @@ downloadFile() {
     elif command -v wget >/dev/null 2>&1; then
         wget -nv -O "$2" "$1"
     else
-        warn "downloadFile: Cannot find curl or wget!" && return 1
+        warn "downloadFile: Cannot find curl or wget!" && return 2
     fi
     return 0
 }
 
-#### hasCommand $cmd
-#
-# Checks if a comman exists, either as an executable in the path, or as a shell
-# function. Returns 0 if found, 1 otherwise. No output.
-#
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+hasCommand cmd
+--------------
+
+Checks if a comman exists, either as an executable in the path, or as a shell
+function. Returns 0 if found, 1 otherwise. No output.
+
+Arguments:
+  cmd - name of binary or function to check for
+Returns:
+  0 - if command was found
+  1 - if command not found
+  2 - if argument was missing
+DOCSTRING
 hasCommand() {
-    [ -z "$1" ] && warn "hasCommand: bad 1st arg" && return 1
+    [ -z "$1" ] && warn "hasCommand: bad 1st arg" && return 2
     if command -v "$1" >/dev/null 2>&1; then return 0; fi
     return 1
 }
 
-#### ishlibVersion
-#
-# Print out the version of ishlib loaded
-#
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+ishlibVersion
+-------------
+
+Print out the version of ishlib loaded. Is redefined for bash/zsh.
+
+Arguments:
+  -
+Returns:
+  0
+
+DOCSTRING
 ishlibVersion() {
     say "Using ishlib ${ish_Version} (sh-only)"
+    return 0
 }
 
-#------------------------------------------------------------------------------
-# Check if we're sourced and print docs if not
-
-# Try to detect if we're being run directly
-__sourced=0
-if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
-    case $ZSH_EVAL_CONTEXT in *:file) __sourced=1 ;; esac
-elif [ -n "${BASH_VERSION:-}" ]; then
-    (return 0 2>/dev/null) && __sourced=1
-else
-    # This is real ugly, but kinda works :/
-    __sourced=1
-    [ "$0" = "ishlib.sh" ] && __sourced=0
-    [ "$0" = "./ishlib.sh" ] && __sourced=0
-fi
-
-# Print usage if this is called directly, then exit
-if [ "$__sourced" = "0" ]; then
-    __PRINT=0
-    while read -r line; do
-        case $line in
-        \#\#\#EOF4SH*)
-            __PRINT=0
-            ;;
-        \#\#*)
-            echo "$line" | cut -c 2-
-            __PRINT=1
-            ;;
-        \#*)
-            [ ${__PRINT} = 1 ] && echo "$line" | cut -c 3-
-            ;;
-        *)
-            __PRINT=0
-            ;;
-        esac
-    done <"$0"
-    exit
-fi
-unset __sourced
 
 #------------------------------------------------------------------------------
 # End here unless we're on Bash or Zsh
-if [ -n "${BASH_VERSION:-}" ] || [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
-    debug "ishlib: loading bash/zsh extensions"
-else
-    debug "ishlib: load done, skipped bash/zsh extensions"
+if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
+
+    debug "ishlib: load done (sh-only)"
+
+    # Call ishlib_main if called stand-alone
+    [ "$0" = "ishlib.sh" ] && ishlib_main "$@"
+    case "$0" in */ishlib.sh) ishlib_main "$@" ;; esac
+
+    # Stop processing rest of file
     return 0
 fi
-
+# The following token is used to generate a POSIX-only file for testing
 ###EOF4SH
 
 #------------------------------------------------------------------------------
-### Bash/Zsh functions
-#
-# The following functions will be defined only when running bash or zsh.
-#
+: <<'DOCSTRING'
+Bash/Zsh functions
+==================
 
+DOCSTRING
+
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+strindex str search
+-------------------
+
+DOCSTRING
 strindex() {
     x="${1%%$2*}"
     [[ "$x" = "$1" ]] && echo -1 || echo "${#x}"
 }
 
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+findOrInstall var [installer]
+-----------------------------
+
+Tries to find and set path for command defined by the variable named var,
+i.e., ${!var}. Will also update the var variable with a full path if
+applicable.
+
+Arguments:
+  var - name of variable holding command
+  installer - optional installer function
+Side effects:
+  ${!var} - is updated with found or installed path to cmd
+Returns:
+  0 - if cmd found or installed
+  1 - if cmd not found, nor successfully installed
+
+DOCSTRING
 findOrInstall() {
     [[ -v "$1" ]] || fail "Unbound variable: $1"
     local var="$1"
@@ -176,7 +327,7 @@ findOrInstall() {
     local val="${!var}"
 
     if hasCommand "$val"; then
-        debug "Trying to set which"
+        debug "Found $val, setting path"
         printf -v "${var}" "%s" "$(which "$val")"
         return 0
     elif [[ -n $func ]]; then
@@ -190,6 +341,21 @@ findOrInstall() {
     return 1
 }
 
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+dumpVariable var
+----------------
+
+Will print, as debug output, the value and name of the variable named by var.
+Has no effect when debug output is disabled.
+
+Globals:
+Arguments:
+  var - name of variable to dump
+Returns:
+  0 - always
+
+DOCSTRING
 dumpVariable() {
     if [[ -v "$1" ]]; then
         debug "$1=${!1}"
@@ -198,16 +364,102 @@ dumpVariable() {
     fi
 }
 
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+dumpVariable vars
+-----------------
+
+Will call dumpVariable for each member of vars.
+
+Globals:
+Arguments:
+  vars - names of variable to dump
+Returns:
+  0 - always
+
+DOCSTRING
 dumpVariables() {
     local vars=("$@")
     for var in "${vars[@]}"; do
         dumpVariable "${var}"
     done
+    return 0
 }
 
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+copy_function src dst
+----------------------
+
+Copies the src function to a new function named dst.
+
+Source: https://stackoverflow.com/a/18839557
+
+Argsuments:
+  src - the name to rename from
+  dst - the name to rename to
+Returns:
+  0 - on success
+  1 - on failure
+
+DOCSTRING
+copy_function() {
+    test -n "$(declare -f "$1")" || return 1
+    eval "${_/$1/$2}" || return 1
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+rename_function src dst
+-----------------------
+
+Renames the src function to dst.
+
+Source: https://stackoverflow.com/a/18839557
+
+Argsuments:
+  src - the name to rename from
+  dst - the name to rename to
+Returns:
+  0 - on success
+  1 - on failure
+
+DOCSTRING
+rename_function() {
+    copy_function "$@" || return 1
+    unset -f "$1"
+    return 0
+}
+
+#------------------------------------------------------------------------------
+# non-POSIX version, see doc for POSIX version above
 unset -f ishlibVersion
 ishlibVersion() {
     say "Using ishlib ${ish_Version} (with bash/zsh)"
 }
 
-debug "ishlib: load done"
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+Author and license
+==================
+
+Author: Hans Liljestrand <hans@liljestrand.dev>
+Copyright (C) 2021 Hans Liljestrand <hans@liljestrand.dev>
+
+Distributed under terms of the MIT license.
+
+DOCSTRING
+
+#------------------------------------------------------------------------------
+# Endo of the bash/zsh extension, finish and enter main if appropriate
+
+debug "ishlib: load done (bash/zsh extensions)"
+
+if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
+    _ishlib_sourced=0
+    case $ZSH_EVAL_CONTEXT in *:file) _ishlib_sourced=1 ;; esac
+    [ "$_ishlib_sourced" = 0 ] && ishlib_main "$@"
+    unset _ishlib_sourced
+elif [ -n "${BASH_VERSION:-}" ]; then
+    (return 0 2>/dev/null) || ishlib_main "$@"
+fi
