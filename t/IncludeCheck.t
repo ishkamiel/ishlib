@@ -3,14 +3,12 @@ package Includecheck;
 use warnings;
 use strict;
 
-our $VERSION = 0.0;
-
-use Carp;
 use Cwd;
 use File::Temp qw/tempfile :seekable/;
-use File::Find;
 use File::Spec;
-use Test::More tests => 12;
+use Test::More tests => 24;
+
+my @shells = qw|sh bash zsh|;
 
 my $ishlib = File::Spec->catfile(getcwd(), 'ishlib.sh');
 
@@ -27,7 +25,6 @@ EOF
 
     my $output = qx|$shell $fn / 2>&1|;
     ok($? == 0, "$shell-source_test_silent-runs");
-    # $output =~ s/\s*$//g;
     ok($output eq "", "$shell-source_test_silent");
     return;
 }
@@ -54,19 +51,27 @@ EOF
 sub direct_run {
     my $shell = shift;
 
-    my $output = qx|$shell $ishlib|;
+    my $output = qx|$shell $ishlib / 2>&1|;
     ok($? == 0, "$shell-direct_run-runs | head");
-    ok($output =~ m/^ishlib/, "$shell-direct_run");
+    ok($output =~ m/^\[WW\]/, "$shell-direct_run");
     return;
 }
 
-# direct_run("zsh");
+sub direct_run_help {
+    my $shell = shift;
 
-for my $shell (qw|sh bash zsh|) {
+    my $output = qx|$shell $ishlib -h / 2>&1|;
+    ok($? == 0, "$shell-direct_run_help-runs | head");
+    ok($output =~ m/^ishlib/, "$shell-direct_run_help");
+    return;
+}
+
+for my $shell (@shells) {
     my ($fh, $fn, $output);
     source_test_silent($shell);
     source_test_with_debug($shell);
     direct_run($shell);
+    direct_run_help($shell);
 }
 
 1;

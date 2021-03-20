@@ -36,7 +36,23 @@ DOCSTRING
 #------------------------------------------------------------------------------
 ishlib_main() {
     [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"
-    ishlib_printDoc "$fn"
+
+    while [ $# -gt 0 ]; do
+        arg="$1"
+
+        case ${arg} in
+        -h | --help)
+            ishlib_printDoc "$fn"
+            exit 0
+            ;;
+        *)
+            warn "Unknown option: $1"
+            shift
+            ;;
+        esac
+    done
+    warn "ishlib run directly wihout parameters!"
+    say "To print docs:       ./ishlib.sh -h"
     exit 0
 }
 
@@ -69,34 +85,28 @@ ishlib_printDoc() {
             _ishlib_indent=''
         else
             if [ ${_ishlib_print} != 0 ]; then
-                case $line in
-                ----*)
+                if has_prefix "$line" "----"; then
                     _ishlib_print=2
-                    ;;
-                ====*)
+                elif has_prefix "$line" "===="; then
                     _ishlib_print=1
-                    ;;
-                Globals:)
+                elif has_prefix "$line" "Globals:"; then
                     _ishlib_indent='  '
                     _ishlib_print=3
-                    ;;
-                Arguments:)
+                elif has_prefix "$line" "Arguments:"; then
                     _ishlib_indent='  '
                     _ishlib_print=3
-                    ;;
-                Returns:)
+                elif has_prefix "$line" "Returns:"; then
                     _ishlib_indent='  '
                     _ishlib_print=3
-                    ;;
-                esac
+                fi
 
                 [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
                 printf '%s%s\n' "$_ishlib_indent" "$line"
 
                 case $_ishlib_print in
-                2) _ishlib_indent='  '   ;;
+                2) _ishlib_indent='  ' ;;
                 3) _ishlib_indent='    ' ;;
-                *) _ishlib_indent=''     ;;
+                *) _ishlib_indent='' ;;
                 esac
             fi
         fi
@@ -128,6 +138,25 @@ debug() {
     [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
     printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$@" "${ish_ColorNC}"
     return 0
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+has_prefix str prefx
+
+Source: 
+
+Arguments:
+  str - string to look into
+  prefix - the prefix to check for
+Returns:
+  0 - if prefix is found
+  1 - if prefix isn't found
+
+DOCSTRING
+has_prefix() {
+    case "$1" in "$2"*) return 0 ;; esac
+    return 1
 }
 
 #------------------------------------------------------------------------------
@@ -265,7 +294,6 @@ ishlibVersion() {
     return 0
 }
 
-
 #------------------------------------------------------------------------------
 # End here unless we're on Bash or Zsh
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
@@ -288,7 +316,6 @@ Bash/Zsh functions
 ==================
 
 DOCSTRING
-
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'

@@ -3,11 +3,8 @@ package SyntaxCheck;
 use warnings;
 use strict;
 
-our $VERSION = 0.1;
-
 use Carp;
 use File::Temp qw/tempfile :seekable/;
-use File::Find;
 use Test::More tests => 5;
 
 my @files_to_check = ( 'ishlib.sh' );
