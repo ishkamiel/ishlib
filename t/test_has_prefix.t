@@ -45,8 +45,6 @@ my @testCases = (
     [ "==a=================\n", "======", 1 , "test04"],
 );
 
-# simple($shell, "1234", "12", 0, "test00");
-
 for my $t (@testCases) {
     for my $shell (@shells) {
         simple($shell, $t->[0], $t->[1], $t->[2], $t->[3]);

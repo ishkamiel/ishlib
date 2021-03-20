@@ -84,8 +84,6 @@ my @testCases = (
     [ "0123456789\n123456789\nstuff========\n", "stuff", 0 , 21, "test04"],
 );
 
-# simple($shell, "1234", "12", 0, "test00");
-
 for my $t (@testCases) {
     for my $shell (@shells) {
         simple($shell, $t->[0], $t->[1], $t->[2], $t->[3], $t->[4]);
