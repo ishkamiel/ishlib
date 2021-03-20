@@ -319,8 +319,8 @@ DOCSTRING
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-strstr haystack needle pos_var
-------------------------------
+strstr haystack needle [pos_var]
+--------------------------------
 
 Finds needle in given haystack, if pos_var is given, then also stores the
 position of the found variable into ${!pos_var}.
@@ -348,7 +348,7 @@ strstr() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-findOrInstall var [installer]
+find_or_install var [installer [installer args]]
 -----------------------------
 
 Tries to find and set path for command defined by the variable named var,
@@ -358,30 +358,32 @@ applicable.
 Arguments:
   var - name of variable holding command
   installer - optional installer function
+  install_path - where the installer will install the binary
 Side effects:
-  var - the variable named var is updated with found or installed cmd
+  ${!var} - the variable named by var is set to the found or installed cmd
 Returns:
   0 - if cmd found or installed
   1 - if cmd not found, nor successfully installed
 
 DOCSTRING
-findOrInstall() {
+find_or_install() {
     [[ -v "$1" ]] || fail "Unbound variable: $1"
     local var="$1"
-    local func="${2:-}"
+    shift
+    local func="$1"
+    shift
     local val="${!var}"
 
     if hasCommand "$val"; then
-        debug "Found $val, setting path"
+        debug "ishlib::find_or_install: found $val, setting path"
         printf -v "${var}" "%s" "$(which "$val")"
         return 0
     elif [[ -n $func ]]; then
-        val=$("$func" || return 1)
-        # shellcheck disable=2181
-        if [[ $? -eq 0 ]]; then
-            printf -v "${var}" "%s" "$("$func")"
+        debug "ishlib::find_or_install: running: $func $var" "$@"
+        if $func "$var" "$@"; then
             return 0
         fi
+        debug "ishlib::find_or_install: provided installer failed"
     fi
     return 1
 }
