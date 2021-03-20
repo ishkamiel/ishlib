@@ -1,4 +1,4 @@
-package SyntaxBash;
+package SyntaxCheck;
 
 use warnings;
 use strict;
@@ -8,7 +8,7 @@ our $VERSION = 0.1;
 use Carp;
 use File::Temp qw/tempfile :seekable/;
 use File::Find;
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 my @files_to_check = ( 'ishlib.sh' );
 
@@ -48,11 +48,13 @@ for my $fn (@files_to_check) {
     close $fh_in;
 
     # Run basic syntax checks
-    ok(syntax_check($fn, 'bash') == 0, 'bash syntax check');
-    ok(syntax_check($tmp, 'sh') == 0, 'sh syntax check');
+    ok(syntax_check($fn, 'bash') == 0, 'syntax check bash');
+    ok(syntax_check($fn, 'zsh') == 0, 'syntax check zsh');
+    ok(syntax_check($tmp, 'sh') == 0, 'syntax check sh');
 
     # Run strict shellcheck
     ok(shellcheck($fn, 'bash') == 0, 'shellcheck bash');
+    # ok(shellcheck($fn, 'zsh') == 0, 'shellcheck zsh');
     ok(shellcheck($tmp, 'sh') == 0, 'shellcheck sh');
 
     unlink $tmp
