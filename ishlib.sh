@@ -281,7 +281,7 @@ hasCommand() {
 ishlibVersion
 -------------
 
-Print out the version of ishlib loaded. Is redefined for bash/zsh.
+Print out the version of ishlib loaded. Is redefined for bash.
 
 Arguments:
   -
@@ -295,7 +295,7 @@ ishlibVersion() {
 }
 
 #------------------------------------------------------------------------------
-# End here unless we're on Bash or Zsh
+# End here unless we're on bash 
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
 
     debug "ishlib: load done (sh-only)"
@@ -312,7 +312,7 @@ fi
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-Bash/Zsh functions
+Bash-only functions
 ==================
 
 DOCSTRING
@@ -482,7 +482,7 @@ rename_function() {
 # non-POSIX version, see doc for POSIX version above
 unset -f ishlibVersion
 ishlibVersion() {
-    say "Using ishlib ${ish_Version} (with bash/zsh)"
+    say "Using ishlib ${ish_Version} (with bash extensions)"
 }
 
 #------------------------------------------------------------------------------
@@ -498,9 +498,9 @@ Distributed under terms of the MIT license.
 DOCSTRING
 
 #------------------------------------------------------------------------------
-# End of the bash/zsh extension, finish and enter main if appropriate
+# End of the bash extension, finish and enter main if appropriate
 
-debug "ishlib: load done (bash/zsh extensions)"
+debug "ishlib: load done (bash extensions)"
 
 if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
     _ishlib_sourced=0
