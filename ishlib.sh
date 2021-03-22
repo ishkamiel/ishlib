@@ -269,8 +269,8 @@ download_file() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-hasCommand cmd
---------------
+has_command cmd
+---------------
 
 Checks if a comman exists, either as an executable in the path, or as a shell
 function. Returns 0 if found, 1 otherwise. No output.
@@ -282,8 +282,8 @@ Returns:
   1 - if command not found
   2 - if argument was missing
 DOCSTRING
-hasCommand() {
-    [ -z "$1" ] && warn "hasCommand: bad 1st arg" && return 2
+has_command() {
+    [ -z "$1" ] && warn "has_command: bad 1st arg" && return 2
     if command -v "$1" >/dev/null 2>&1; then return 0; fi
     return 1
 }
@@ -387,7 +387,7 @@ find_or_install() {
     local val="${!var}"
     shift 2
 
-    if hasCommand "$val"; then
+    if has_command "$val"; then
         debug "find_or_install: found $val, setting path"
         printf -v "${var}" "%s" "$(which "$val")"
         return 0
@@ -465,7 +465,7 @@ git_clone_or_update() {
   local dir="$2"
   local bin_git=${bin_git:-git}
 
-  hasCommand "git" || (warn "cannot find $bin_git" && return 1)
+  has_command "git" || (warn "cannot find $bin_git" && return 1)
 
   if [[ ! -e "${dir}/.git" ]]; then
 		mkdir -p "${dir}" || (warn "failed to enter $dir" && return 1)
