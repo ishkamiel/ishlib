@@ -11,13 +11,30 @@ ish_SOURCED=1 # source guard
 DEBUG=${DEBUG:-0}
 DRY_RUN=${DRY_RUN:-0}
 
-ish_ColorRed='\033[0;31m'
-ish_ColorBlue='\033[0;34m'
+export ish_ColorNC='\e[0m'
+export ish_ColorBlack='\e[0;30m'
+export ish_ColorGray='\e[1;30m'
+export ish_ColorRed='\e[0;31m'
+export ish_ColorLightRed='\e[1;31m'
+export ish_ColorGreen='\e[0;32m'
+export ish_ColorLightGreen='\e[1;32m'
+export ish_ColorBrown='\e[0;33m'
+export ish_ColorYellow='\e[1;33m'
+export ish_ColorBlue='\e[0;34m'
+export ish_ColorLightBlue='\e[1;34m'
+export ish_ColorPurple='\e[0;35m'
+export ish_ColorLightPurple='\e[1;35m'
+export ish_ColorCyan='\e[0;36m'
+export ish_ColorLightCyan='\e[1;36m'
+export ish_ColorLightGray='\e[0;37m'
+export ish_ColorWhite='\e[1;37m'
+
 ish_ColorNC='\033[0m'
 ish_ColorDebug="${ish_ColorNC}"
 ish_ColorSay="${ish_ColorBlue}"
-ish_ColorWarn="${ish_ColorBlue}"
+ish_ColorWarn="${ish_ColorPurple}"
 ish_ColorFail="${ish_ColorRed}"
+ish_ColorDryRun="${ish_ColorBrown}"
 
 #------------------------------------------------------------------------------
 ish_Version="0.1"
@@ -137,7 +154,7 @@ Returns:
 DOCSTRING
 debug() {
     [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-    printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "'$*'" "${ish_ColorNC}"
+    printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
     return 0
 }
 
@@ -157,7 +174,7 @@ Returns:
   0 - always
 DOCSTRING
 say() {
-    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "'$*'" "${ish_ColorNC}"
+    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
     return 0
 }
 
@@ -177,13 +194,13 @@ Returns:
   0 - always
 DOCSTRING
 warn() {
-    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "'$*'" "${ish_ColorNC}"
+    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
     return 0
 }
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-warn ...
+fail ...
 --------
 
 Prints the given args to stderr and then exits with the value 1.
@@ -198,8 +215,28 @@ Returns:
 
 DOCSTRING
 fail() {
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "'$*'" "${ish_ColorNC}"
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
     exit 1
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+dry_run ...
+--------
+
+Prints the given args to stderr and then exits with the value 1.
+
+Globals:
+  ish_ColorDryRun - printed before arguments (e.g., to set color)
+  ish_ColorNC - printed after arguments (e.g., to reset color)
+Arguments:
+  ... - all arguments are printed
+Returns:
+  never returns
+
+DOCSTRING
+dry_run() {
+    printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
 }
 
 #------------------------------------------------------------------------------
@@ -249,7 +286,7 @@ download_file() {
 
     if command -v curl >/dev/null 2>&1; then
       if [ "${DRY_RUN:-0}" = 1 ]; then
-        say "dry_run:" do_o --progress-bar -fLo "$2" --create-dirs "$1"
+        dry_run --progress-bar -fLo "$2" --create-dirs "$1"
         return 0
       else
         curl --progress-bar -fLo "$2" --create-dirs "$1"
@@ -257,7 +294,7 @@ download_file() {
       fi
     elif command -v wget >/dev/null 2>&1; then
       if [ "${DRY_RUN:-0}" = 1 ]; then
-        say "dry_run:" wget -nv -O "$2" "$1"
+        dry_run wget -nv -O "$2" "$1"
         return 0
       else
         wget -nv -O "$2" "$1"
@@ -328,6 +365,32 @@ Bash-only functions
 ==================
 
 DOCSTRING
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+array_from_ssv var str
+----------------------
+
+Read space-separated values into an array variable.
+
+Arguments:
+  var - the name of an array varialbe to populate
+  str - the string to split
+Returns:
+  0 - on success
+  1 - on failure
+
+DOCSTRING
+array_from_ssv() {
+  # Create a local reference
+  declare -n _ish_tmp="${1}"
+  # Then allows us to populate local variables...
+  for e in ${*:2}; do
+    debug "Adding $e"
+    _ish_tmp+=("$e")
+  done
+  return 0
+}
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
@@ -439,7 +502,7 @@ do_or_dry() {
   local args=("$@")
 
   if [[ "${DRY_RUN:-}" = 1 ]]; then
-    say "dry_run: $cmd" "${args[@]}"
+    dry_run "$cmd" "${args[@]}"
     return 0
   else
     $cmd "${args[@]}"
@@ -463,21 +526,23 @@ DOCSTRING
 git_clone_or_update() {
   local url="$1"
   local dir="$2"
+  [[ -n ${3:-} ]] && (warn "ishlib: unknown 3d argument given, args were $*" && return 1)
+
   local bin_git=${bin_git:-git}
 
-  has_command "git" || (warn "cannot find $bin_git" && return 1)
+  has_command "git" || (warn "ishlib: cannot find $bin_git" && return 1)
 
   if [[ ! -e "${dir}/.git" ]]; then
-		mkdir -p "${dir}" || (warn "failed to enter $dir" && return 1)
-		say "Cloning ${url} to ${dir}"
+		do_or_dry mkdir -p "${dir}" || (warn "ishlib: failed to enter $dir" && return 1)
+		say "ishlib: cloning ${url} to ${dir}"
 		do_or_dry git clone "${url}" "${dir}"
     return $?
 	else
-		pushd "${dir}" || (warn "Failed pusd ${dir}" || return 1)
-		say "Updating ${CAMKES_DOCKER_DIR}"
-		git pull
+		pushd "${dir}" || (warn "Failed pusd ${dir}" && return 1)
+		say "ishlib: updating ${dir}"
+		do_or_dry git pull
     local r=$?
-    popd || (warn "failed to popd" || return 1)
+    popd || (warn "failed to popd" && return 1)
     return $r
   fi
 }
@@ -531,7 +596,7 @@ rename_function() {
 # non-POSIX version, see doc for POSIX version above
 unset -f ishlibVersion
 ishlibVersion() {
-    say "Using ishlib ${ish_Version} (with bash extensions)"
+    say "ishlib: using ishlib ${ish_Version} (with bash extensions)"
 }
 
 #------------------------------------------------------------------------------
