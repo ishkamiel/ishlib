@@ -136,7 +136,7 @@ Returns:
 DOCSTRING
 debug() {
     [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-    printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$@" "${ish_ColorNC}"
+    printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "'$*'" "${ish_ColorNC}"
     return 0
 }
 
@@ -175,7 +175,7 @@ Returns:
   0 - always
 DOCSTRING
 say() {
-    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$@" "${ish_ColorNC}"
+    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "'$*'" "${ish_ColorNC}"
     return 0
 }
 
@@ -195,7 +195,7 @@ Returns:
   0 - always
 DOCSTRING
 warn() {
-    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$@" "${ish_ColorNC}"
+    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "'$*'" "${ish_ColorNC}"
     return 0
 }
 
@@ -216,7 +216,7 @@ Returns:
 
 DOCSTRING
 fail() {
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$@" "${ish_ColorNC}"
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "'$*'" "${ish_ColorNC}"
     exit 1
 }
 
