@@ -429,8 +429,10 @@ do_or_dry() {
 
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     say "dry_run: $cmd" "${args[@]}"
+    return 0
   else
     $cmd "${args[@]}"
+    return $?
   fi
 }
 
