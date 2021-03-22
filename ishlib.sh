@@ -143,25 +143,6 @@ debug() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-has_prefix str prefx
-
-Source: 
-
-Arguments:
-  str - string to look into
-  prefix - the prefix to check for
-Returns:
-  0 - if prefix is found
-  1 - if prefix isn't found
-
-DOCSTRING
-has_prefix() {
-    case "$1" in "$2"*) return 0 ;; esac
-    return 1
-}
-
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
 say ...
 -------
 
@@ -219,6 +200,25 @@ DOCSTRING
 fail() {
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "'$*'" "${ish_ColorNC}"
     exit 1
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+has_prefix str prefx
+
+Source: 
+
+Arguments:
+  str - string to look into
+  prefix - the prefix to check for
+Returns:
+  0 - if prefix is found
+  1 - if prefix isn't found
+
+DOCSTRING
+has_prefix() {
+    case "$1" in "$2"*) return 0 ;; esac
+    return 1
 }
 
 #------------------------------------------------------------------------------
