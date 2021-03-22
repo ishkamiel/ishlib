@@ -391,47 +391,30 @@ find_or_install() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-dumpVariable var
-----------------
-
-Will print, as debug output, the value and name of the variable named by var.
-Has no effect when debug output is disabled.
-
-Globals:
-Arguments:
-  var - name of variable to dump
-Returns:
-  0 - always
-
-DOCSTRING
-dumpVariable() {
-    if [[ -v "$1" ]]; then
-        debug "$1=${!1}"
-    else
-        debug "$1 is undefined"
-    fi
-}
-
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-dumpVariable vars
+dump var1 [var2 var3 ...]
 -----------------
 
 Will call dumpVariable for each member of vars.
 
 Globals:
 Arguments:
-  vars - names of variable to dump
+  varN - name of a variable to dump
 Returns:
-  0 - always
-
+  0 - if all varN were bound
+  n - number of unbound varN encountered
 DOCSTRING
-dumpVariables() {
+dump() {
     local vars=("$@")
+    local unbound=0
     for var in "${vars[@]}"; do
-        dumpVariable "${var}"
+      if [[ -v "$var" ]]; then
+        debug "$var=${!var}"
+      else
+        debug "$var is unbound"
+        unbound=$((unbound + 1))
+      fi
     done
-    return 0
+    return $unbound
 }
 
 #------------------------------------------------------------------------------
