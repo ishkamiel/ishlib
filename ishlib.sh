@@ -376,15 +376,15 @@ find_or_install() {
     shift 2
 
     if hasCommand "$val"; then
-        debug "ishlib::find_or_install: found $val, setting path"
+        debug "find_or_install: found $val, setting path"
         printf -v "${var}" "%s" "$(which "$val")"
         return 0
     elif [[ -n $func ]]; then
-        debug "ishlib::find_or_install: running: $func $var" "$@"
+        debug "find_or_install: running $func $var" "$@"
         if $func "$var" "$@"; then
             return 0
         fi
-        debug "ishlib::find_or_install: provided installer failed"
+        debug "find_or_install: provided installer failed"
     fi
     return 1
 }
