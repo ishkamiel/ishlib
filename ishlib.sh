@@ -367,12 +367,13 @@ Returns:
 
 DOCSTRING
 find_or_install() {
-    [[ -v "$1" ]] || fail "Unbound variable: $1"
+    [[ -n "$1" ]] || fail "find_or_install: missing 1st argument"
+    [[ -v "$1" ]] || fail "find_or_install: Unbound variable: '$1'"
+    [[ -n "${!1}" ]] || fail "find_or_install: Empty variable: $1"
     local var="$1"
-    shift
-    local func="$1"
-    shift
+    local func="${2:-}"
     local val="${!var}"
+    shift 2
 
     if hasCommand "$val"; then
         debug "ishlib::find_or_install: found $val, setting path"
