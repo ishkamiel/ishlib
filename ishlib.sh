@@ -9,6 +9,7 @@
 ish_SOURCED=1 # source guard
 
 DEBUG=${DEBUG:-0}
+DRY_RUN=${DRY_RUN:-0}
 
 ish_ColorRed='\033[0;31m'
 ish_ColorBlue='\033[0;34m'
@@ -415,6 +416,22 @@ dump() {
       fi
     done
     return $unbound
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+do_or_dry cmd ...
+DOCSTRING
+do_or_dry() {
+  local cmd=$1
+  shift
+  local args=("$@")
+
+  if [[ "${DRY_RUN:-}" = 1 ]]; then
+    say "dry_run: $cmd" "${args[@]}"
+  else
+    $cmd "${args[@]}"
+  fi
 }
 
 #------------------------------------------------------------------------------
