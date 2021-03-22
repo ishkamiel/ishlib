@@ -438,6 +438,41 @@ do_or_dry() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
+git_clone_or_update url dir
+
+Arguments:
+  url - the git repository remote
+  dir - the local directory for the repository
+Globals:
+  bin_git - if specified, will use the given command in place of git
+Returns:
+  0 - on success
+  x - on failure, either 1 or return value of git
+DOCSTRING
+git_clone_or_update() {
+  local url="$1"
+  local dir="$2"
+  local bin_git=${bin_git:-git}
+
+  hasCommand "git" || (warn "cannot find $bin_git" && return 1)
+
+  if [[ ! -e "${dir}/.git" ]]; then
+		mkdir -p "${dir}" || (warn "failed to enter $dir" && return 1)
+		say "Cloning ${url} to ${dir}"
+		do_or_dry git clone "${url}" "${dir}"
+    return $?
+	else
+		pushd "${dir}" || (warn "Failed pusd ${dir}" || return 1)
+		say "Updating ${CAMKES_DOCKER_DIR}"
+		git pull
+    local r=$?
+    popd || (warn "failed to popd" || return 1)
+    return $r
+  fi
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
 copy_function src dst
 ----------------------
 
