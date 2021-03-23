@@ -526,23 +526,54 @@ DOCSTRING
 git_clone_or_update() {
   local url="$1"
   local dir="$2"
-  [[ -n ${3:-} ]] && (warn "ishlib: unknown 3d argument given, args were $*" && return 1)
+  local branch=""
+  shift 2
+
+  local bad_args=0
+	local positional=()
+	while [[ $# -gt 0 ]]; do
+		arg="$1"
+
+		case ${arg} in
+		-b|--branch)
+      branch="$2"
+			shift 2
+			;;
+		*)
+			warn "ishlib:git_clone_or_update: unknown argument $1"
+			bad_args=$((bad_args + 1))
+			shift
+			;;
+		esac
+	done
+	set -- "${positional[@]}" # restore positional parameters
+  [[ $bad_args -eq 0 ]] || return 1
 
   local bin_git=${bin_git:-git}
 
-  has_command "git" || (warn "ishlib: cannot find $bin_git" && return 1)
+  has_command "${bin_git}" || (warn "ishlib:git_clone_or_update: cannot find ${bin_git}" && return 1)
 
   if [[ ! -e "${dir}/.git" ]]; then
+    local git_args=( "clone" )
+    [[ -n "$branch" ]] && git_args+=( "-b" "$branch" )
+    git_args+=( "$url" "$dir" )
+
 		do_or_dry mkdir -p "${dir}" || (warn "ishlib: failed to enter $dir" && return 1)
-		say "ishlib: cloning ${url} to ${dir}"
-		do_or_dry git clone "${url}" "${dir}"
+		debug "ishlib:git_clone_or_update: cloning ${url} to ${dir}"
+		do_or_dry "$bin_git" "${git_args[@]}"
     return $?
 	else
-		pushd "${dir}" || (warn "Failed pusd ${dir}" && return 1)
-		say "ishlib: updating ${dir}"
-		do_or_dry git pull
+		do_or_dry pushd "${dir}" || (warn "Failed pusd ${dir}" && return 1)
+
+    if [[ -n "$branch" ]]; then
+      do_or_dry "$bin_git" checkout "$branch"
+    fi
+
+		debug "ishlib:git_clone_or_update: updating ${dir}"
+		do_or_dry "$bin_git" pull
     local r=$?
-    popd || (warn "failed to popd" && return 1)
+
+    do_or_dry popd || (warn "failed to popd" && return 1)
     return $r
   fi
 }
