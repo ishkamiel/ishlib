@@ -53,25 +53,25 @@ DOCSTRING
 
 #------------------------------------------------------------------------------
 ishlib_main() {
-    [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"
+  [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"
 
-    while [ $# -gt 0 ]; do
-        arg="$1"
+  while [ $# -gt 0 ]; do
+    arg="$1"
 
-        case ${arg} in
-        -h | --help)
-            ishlib_printDoc "$fn"
-            exit 0
-            ;;
-        *)
-            warn "Unknown option: $1"
-            shift
-            ;;
-        esac
-    done
-    warn "ishlib run directly wihout parameters!"
-    say "To print docs:       ./ishlib.sh -h"
-    exit 0
+    case ${arg} in
+    -h | --help)
+      ishlib_printDoc "$fn"
+      exit 0
+      ;;
+    *)
+      warn "Unknown option: $1"
+      shift
+      ;;
+    esac
+  done
+  warn "ishlib run directly wihout parameters!"
+  say "To print docs:       ./ishlib.sh -h"
+  exit 0
 }
 
 #------------------------------------------------------------------------------
@@ -88,53 +88,53 @@ Returns:
 
 DOCSTRING
 ishlib_printDoc() {
-    _old_IFS="$IFS"
-    IFS=''
-    _ishlib_print=0
-    _ishlib_newline=1
-    _ishlib_indent=''
-    while read -r line; do
-        if [ "$line" = ': <<'\''DOCSTRING'\''' ]; then
-            [ ${_ishlib_newline} = 0 ] && echo && _ishlib_newline=1
-            _ishlib_print=1
-            _ishlib_indent=''
-        elif [ "$line" = 'DOCSTRING' ]; then
-            _ishlib_print=0
-            _ishlib_indent=''
-        else
-            if [ ${_ishlib_print} != 0 ]; then
-                if has_prefix "$line" "----"; then
-                    _ishlib_print=2
-                elif has_prefix "$line" "===="; then
-                    _ishlib_print=1
-                elif has_prefix "$line" "Globals:"; then
-                    _ishlib_indent='  '
-                    _ishlib_print=3
-                elif has_prefix "$line" "Arguments:"; then
-                    _ishlib_indent='  '
-                    _ishlib_print=3
-                elif has_prefix "$line" "Returns:"; then
-                    _ishlib_indent='  '
-                    _ishlib_print=3
-                fi
-
-                [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
-                printf '%s%s\n' "$_ishlib_indent" "$line"
-
-                case $_ishlib_print in
-                2) _ishlib_indent='  ' ;;
-                3) _ishlib_indent='    ' ;;
-                *) _ishlib_indent='' ;;
-                esac
-            fi
+  _old_IFS="$IFS"
+  IFS=''
+  _ishlib_print=0
+  _ishlib_newline=1
+  _ishlib_indent=''
+  while read -r line; do
+    if [ "$line" = ': <<'\''DOCSTRING'\''' ]; then
+      [ ${_ishlib_newline} = 0 ] && echo && _ishlib_newline=1
+      _ishlib_print=1
+      _ishlib_indent=''
+    elif [ "$line" = 'DOCSTRING' ]; then
+      _ishlib_print=0
+      _ishlib_indent=''
+    else
+      if [ ${_ishlib_print} != 0 ]; then
+        if has_prefix "$line" "----"; then
+          _ishlib_print=2
+        elif has_prefix "$line" "===="; then
+          _ishlib_print=1
+        elif has_prefix "$line" "Globals:"; then
+          _ishlib_indent='  '
+          _ishlib_print=3
+        elif has_prefix "$line" "Arguments:"; then
+          _ishlib_indent='  '
+          _ishlib_print=3
+        elif has_prefix "$line" "Returns:"; then
+          _ishlib_indent='  '
+          _ishlib_print=3
         fi
-    done <"$1"
-    IFS="${_old_IFS}"
-    unset _old_IFSs
-    unset _ishblib_print
-    unset _ishblib_newline
-    unset _ishblib_indent
-    return 0
+
+        [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
+        printf '%s%s\n' "$_ishlib_indent" "$line"
+
+        case $_ishlib_print in
+        2) _ishlib_indent='  ' ;;
+        3) _ishlib_indent='    ' ;;
+        *) _ishlib_indent='' ;;
+        esac
+      fi
+    fi
+  done <"$1"
+  IFS="${_old_IFS}"
+  unset _old_IFSs
+  unset _ishblib_print
+  unset _ishblib_newline
+  unset _ishblib_indent
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -153,9 +153,9 @@ Returns:
   0 - always
 DOCSTRING
 debug() {
-    [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-    printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
-    return 0
+  [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
+  printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -174,8 +174,8 @@ Returns:
   0 - always
 DOCSTRING
 say() {
-    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
-    return 0
+  printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -194,8 +194,8 @@ Returns:
   0 - always
 DOCSTRING
 warn() {
-    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
-    return 0
+  printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -215,8 +215,8 @@ Returns:
 
 DOCSTRING
 fail() {
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
-    exit 1
+  printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  exit 1
 }
 
 #------------------------------------------------------------------------------
@@ -236,7 +236,7 @@ Returns:
 
 DOCSTRING
 dry_run() {
-    printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
+  printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
 }
 
 #------------------------------------------------------------------------------
@@ -254,8 +254,8 @@ Returns:
 
 DOCSTRING
 has_prefix() {
-    case "$1" in "$2"*) return 0 ;; esac
-    return 1
+  case "$1" in "$2"*) return 0 ;; esac
+  return 1
 }
 
 #------------------------------------------------------------------------------
@@ -278,30 +278,30 @@ Returns:
 
 DOCSTRING
 download_file() {
-    [ -z "$1" ] && warn "downloadFile: bad 1st arg" && return 1
-    [ -z "$2" ] && warn "downloadFile: bad 2nd arg" && return 1
+  [ -z "$1" ] && warn "downloadFile: bad 1st arg" && return 1
+  [ -z "$2" ] && warn "downloadFile: bad 2nd arg" && return 1
 
-    say "downloading ${1} to ${2}"
-    mkdir -p "$(dirname "$2")"
+  say "downloading ${1} to ${2}"
+  mkdir -p "$(dirname "$2")"
 
-    if command -v curl >/dev/null 2>&1; then
-      if [ "${DRY_RUN:-0}" = 1 ]; then
-        dry_run --progress-bar -fLo "$2" --create-dirs "$1"
-        return 0
-      else
-        curl --progress-bar -fLo "$2" --create-dirs "$1"
-        return $?
-      fi
-    elif command -v wget >/dev/null 2>&1; then
-      if [ "${DRY_RUN:-0}" = 1 ]; then
-        dry_run wget -nv -O "$2" "$1"
-        return 0
-      else
-        wget -nv -O "$2" "$1"
-        return $?
-      fi
+  if command -v curl >/dev/null 2>&1; then
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      dry_run --progress-bar -fLo "$2" --create-dirs "$1"
+      return 0
+    else
+      curl --progress-bar -fLo "$2" --create-dirs "$1"
+      return $?
     fi
-    warn "downloadFile: Cannot find curl or wget!" && return 2
+  elif command -v wget >/dev/null 2>&1; then
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      dry_run wget -nv -O "$2" "$1"
+      return 0
+    else
+      wget -nv -O "$2" "$1"
+      return $?
+    fi
+  fi
+  warn "downloadFile: Cannot find curl or wget!" && return 2
 }
 
 #------------------------------------------------------------------------------
@@ -320,9 +320,9 @@ Returns:
   2 - if argument was missing
 DOCSTRING
 has_command() {
-    [ -z "$1" ] && warn "has_command: bad 1st arg" && return 2
-    if command -v "$1" >/dev/null 2>&1; then return 0; fi
-    return 1
+  [ -z "$1" ] && warn "has_command: bad 1st arg" && return 2
+  if command -v "$1" >/dev/null 2>&1; then return 0; fi
+  return 1
 }
 
 #------------------------------------------------------------------------------
@@ -339,22 +339,22 @@ Returns:
 
 DOCSTRING
 ishlibVersion() {
-    say "Using ishlib ${ish_Version} (sh-only)"
-    return 0
+  say "Using ishlib ${ish_Version} (sh-only)"
+  return 0
 }
 
 #------------------------------------------------------------------------------
-# End here unless we're on bash 
+# End here unless we're on bash
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
 
-    debug "ishlib: load done (sh-only)"
+  debug "ishlib: load done (sh-only)"
 
-    # Call ishlib_main if called stand-alone
-    [ "$0" = "ishlib.sh" ] && ishlib_main "$@"
-    case "$0" in */ishlib.sh) ishlib_main "$@" ;; esac
+  # Call ishlib_main if called stand-alone
+  [ "$0" = "ishlib.sh" ] && ishlib_main "$@"
+  case "$0" in */ishlib.sh) ishlib_main "$@" ;; esac
 
-    # Stop processing rest of file
-    return 0
+  # Stop processing rest of file
+  return 0
 fi
 # The following token is used to generate a POSIX-only file for testing
 ###EOF4SH
@@ -386,7 +386,6 @@ array_from_ssv() {
   declare -n _ish_tmp="${1}"
   # Then allows us to populate local variables...
   for e in ${*:2}; do
-    debug "Adding $e"
     _ish_tmp+=("$e")
   done
   return 0
@@ -412,13 +411,13 @@ Returns:
 
 DOCSTRING
 strstr() {
-    x="${1%%$2*}"
-    if [[ "$x" = "$1" ]]; then
-        [[ -v "$3" ]] && printf -v "$3" "%s" "-1"
-        return 1
-    fi
-    [[ -v "$3" ]] && printf -v "$3" "%s" "${#x}"
-    return 0
+  x="${1%%$2*}"
+  if [[ "$x" = "$1" ]]; then
+    [[ -v "$3" ]] && printf -v "$3" "%s" "-1"
+    return 1
+  fi
+  [[ -v "$3" ]] && printf -v "$3" "%s" "${#x}"
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -442,26 +441,26 @@ Returns:
 
 DOCSTRING
 find_or_install() {
-    [[ -n "$1" ]] || fail "find_or_install: missing 1st argument"
-    [[ -v "$1" ]] || fail "find_or_install: Unbound variable: '$1'"
-    [[ -n "${!1}" ]] || fail "find_or_install: Empty variable: $1"
-    local var="$1"
-    local func="${2:-}"
-    local val="${!var}"
-    shift 2
+  [[ -n "$1" ]] || fail "find_or_install: missing 1st argument"
+  [[ -v "$1" ]] || fail "find_or_install: Unbound variable: '$1'"
+  [[ -n "${!1}" ]] || fail "find_or_install: Empty variable: $1"
+  local var="$1"
+  local func="${2:-}"
+  local val="${!var}"
+  shift 2
 
-    if has_command "$val"; then
-        debug "find_or_install: found $val, setting path"
-        printf -v "${var}" "%s" "$(which "$val")"
-        return 0
-    elif [[ -n $func ]]; then
-        debug "find_or_install: running $func $var" "$@"
-        if $func "$var" "$@"; then
-            return 0
-        fi
-        debug "find_or_install: provided installer failed"
+  if has_command "$val"; then
+    debug "find_or_install: found $val, setting path"
+    printf -v "${var}" "%s" "$(which "$val")"
+    return 0
+  elif [[ -n $func ]]; then
+    debug "find_or_install: running $func $var" "$@"
+    if $func "$var" "$@"; then
+      return 0
     fi
-    return 1
+    debug "find_or_install: provided installer failed"
+  fi
+  return 1
 }
 
 #------------------------------------------------------------------------------
@@ -479,17 +478,17 @@ Returns:
   n - number of unbound varN encountered
 DOCSTRING
 dump() {
-    local vars=("$@")
-    local unbound=0
-    for var in "${vars[@]}"; do
-      if [[ -v "$var" ]]; then
-        debug "$var=${!var}"
-      else
-        debug "$var is unbound"
-        unbound=$((unbound + 1))
-      fi
-    done
-    return $unbound
+  local vars=("$@")
+  local unbound=0
+  for var in "${vars[@]}"; do
+    if [[ -v "$var" ]]; then
+      debug "$var=${!var}"
+    else
+      debug "$var is unbound"
+      unbound=$((unbound + 1))
+    fi
+  done
+  return $unbound
 }
 
 #------------------------------------------------------------------------------
@@ -505,9 +504,19 @@ do_or_dry() {
     dry_run "$cmd" "${args[@]}"
     return 0
   else
+    debug "running: $cmd" "${args[@]}"
     $cmd "${args[@]}"
     return $?
   fi
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+do_or_dry cmd ...
+DOCSTRING
+is_dry() {
+  [[ "${DRY_RUN:-}" = 1 ]] && return 0
+  return 1
 }
 
 #------------------------------------------------------------------------------
@@ -524,58 +533,66 @@ Returns:
   x - on failure, either 1 or return value of git
 DOCSTRING
 git_clone_or_update() {
+  local t="ishlib:git_clone_or_update:"
   local url="$1"
   local dir="$2"
   local branch=""
+  local update_submodules=0
   shift 2
 
   local bad_args=0
-	local positional=()
-	while [[ $# -gt 0 ]]; do
-		arg="$1"
+  local positional=()
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
 
-		case ${arg} in
-		-b|--branch)
+    case ${arg} in
+    -b | --branch)
       branch="$2"
-			shift 2
-			;;
-		*)
-			warn "ishlib:git_clone_or_update: unknown argument $1"
-			bad_args=$((bad_args + 1))
-			shift
-			;;
-		esac
-	done
-	set -- "${positional[@]}" # restore positional parameters
+      shift 2
+      ;;
+    --update-submodules)
+      update_submodules=1
+      ;;
+    *)
+      warn "$t unknown argument $1"
+      bad_args=$((bad_args + 1))
+      shift
+      ;;
+    esac
+  done
+  set -- "${positional[@]}" # restore positional parameters
   [[ $bad_args -eq 0 ]] || return 1
 
   local bin_git=${bin_git:-git}
 
-  has_command "${bin_git}" || (warn "ishlib:git_clone_or_update: cannot find ${bin_git}" && return 1)
+  has_command "${bin_git}" || (warn "$t cannot find ${bin_git}" && return 1)
 
   if [[ ! -e "${dir}/.git" ]]; then
-    local git_args=( "clone" )
-    [[ -n "$branch" ]] && git_args+=( "-b" "$branch" )
-    git_args+=( "$url" "$dir" )
+    local git_args=()
+    [[ -n "$branch" ]] && git_args+=("-b" "$branch")
+    git_args+=("$url" "$dir")
 
-		do_or_dry mkdir -p "${dir}" || (warn "ishlib: failed to enter $dir" && return 1)
-		debug "ishlib:git_clone_or_update: cloning ${url} to ${dir}"
-		do_or_dry "$bin_git" "${git_args[@]}"
-    return $?
-	else
-		do_or_dry pushd "${dir}" || (warn "Failed pusd ${dir}" && return 1)
+    debug "$t cloning ${url} to ${dir}"
+    do_or_dry mkdir -p "${dir}" || (warn "$t failed to enter $dir" && return 1)
+    do_or_dry "$bin_git" clone "${git_args[@]}" || (warn "$t git clone failed" && return 1)
+
+    if [[ "${update_submodules}" = "1" ]]; then
+      debug "$t initializing submodules"
+      do_or_dry "$bin_git" submodule update --init --recursive || (warn "$t submodule update failed" && return 1)
+    fi
+  else
+    debug "$t updating ${dir}"
+
+    do_or_dry pushd "${dir}" || (warn "$t failed to pusd ${dir}" && return 1)
 
     if [[ -n "$branch" ]]; then
-      do_or_dry "$bin_git" checkout "$branch"
+      do_or_dry "$bin_git" checkout "$branch" || (warn "$t checkout $branch failed" && return 1)
     fi
 
-		debug "ishlib:git_clone_or_update: updating ${dir}"
-		do_or_dry "$bin_git" pull
-    local r=$?
-
-    do_or_dry popd || (warn "failed to popd" && return 1)
-    return $r
+    do_or_dry "$bin_git" pull || (warn "ishlib:git_clone_or_update" && return 1)
+    do_or_dry popd || (warn "$t filed to popd" && return 1)
   fi
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -596,8 +613,8 @@ Returns:
 
 DOCSTRING
 copy_function() {
-    test -n "$(declare -f "$1")" || return 1
-    eval "${_/$1/$2}" || return 1
+  test -n "$(declare -f "$1")" || return 1
+  eval "${_/$1/$2}" || return 1
 }
 
 #------------------------------------------------------------------------------
@@ -618,16 +635,16 @@ Returns:
 
 DOCSTRING
 rename_function() {
-    copy_function "$@" || return 1
-    unset -f "$1"
-    return 0
+  copy_function "$@" || return 1
+  unset -f "$1"
+  return 0
 }
 
 #------------------------------------------------------------------------------
 # non-POSIX version, see doc for POSIX version above
 unset -f ishlibVersion
 ishlibVersion() {
-    say "ishlib: using ishlib ${ish_Version} (with bash extensions)"
+  say "ishlib: using ishlib ${ish_Version} (with bash extensions)"
 }
 
 #------------------------------------------------------------------------------
@@ -648,10 +665,10 @@ DOCSTRING
 debug "ishlib: load done (bash extensions)"
 
 if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
-    _ishlib_sourced=0
-    case $ZSH_EVAL_CONTEXT in *:file) _ishlib_sourced=1 ;; esac
-    [ "$_ishlib_sourced" = 0 ] && ishlib_main "$@"
-    unset _ishlib_sourced
+  _ishlib_sourced=0
+  case $ZSH_EVAL_CONTEXT in *:file) _ishlib_sourced=1 ;; esac
+  [ "$_ishlib_sourced" = 0 ] && ishlib_main "$@"
+  unset _ishlib_sourced
 elif [ -n "${BASH_VERSION:-}" ]; then
-    (return 0 2>/dev/null) || ishlib_main "$@"
+  (return 0 2>/dev/null) || ishlib_main "$@"
 fi
