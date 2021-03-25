@@ -591,7 +591,9 @@ git_clone_or_update() {
 
     if [[ "${update_submodules}" = "1" ]]; then
       debug "$t initializing submodules"
+      do_or_dry pushd "${dir}" || (warn "$t failed to pusd ${dir}" && return 1)
       do_or_dry "$bin_git" submodule update --init --recursive || (warn "$t submodule update failed" && return 1)
+      do_or_dry popd || (warn "$t filed to popd" && return 1)
     fi
   else
     debug "$t updating ${dir}"
