@@ -60,7 +60,7 @@ ishlib_main() {
 
     case ${arg} in
     -h | --help)
-      ishlib_printDoc "$fn"
+      print_DOCSTRINGs "$fn"
       exit 0
       ;;
     *)
@@ -76,8 +76,8 @@ ishlib_main() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-ishlib_printDoc
----------------
+print_DOCSTRINGs
+----------------
 
 Prints out documentation (i.e., the anonymous DOCSTRINGs).
 
@@ -87,7 +87,7 @@ Returns:
   0
 
 DOCSTRING
-ishlib_printDoc() {
+print_DOCSTRINGs() {
   _old_IFS="$IFS"
   IFS=''
   _ishlib_print=0
