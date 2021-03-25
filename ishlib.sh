@@ -523,6 +523,30 @@ do_or_dry() {
 }
 
 #------------------------------------------------------------------------------
+: <<'DOCSTRINg'
+do_or_dry_bg pid cmd ...
+DOCSTRINg
+do_or_dry_bg() {
+    declare -n _ish_tmp_pid=$1
+    local cmd=$2
+    shift 2
+    local args=("$@")
+
+    debug "ishlib:do_or_dry_bg: working directory is $(if is_dry; then echo "\$(pwd)"; else pwd; fi)"
+    if [[ "${dry_run:-}" = 1 ]]; then
+        dry_run "$cmd" "${args[@]}" "\&"
+        _ish_tmp_pid=""
+        return 0
+    else
+        debug "ishlib_do_or_dry: running: $cmd" "${args[@]}" " & in $(pwd)"
+        $cmd "${args[@]}" &
+        _ish_tmp_pid=$!
+        debug "ishlib:do_or_dry_bg started $_ish_tmp_pid!"
+        return 0
+    fi
+}
+
+#------------------------------------------------------------------------------
 : <<'DOCSTRING'
 do_or_dry cmd ...
 DOCSTRING
