@@ -441,24 +441,36 @@ Returns:
 
 DOCSTRING
 find_or_install() {
-  [[ -n "$1" ]] || fail "find_or_install: missing 1st argument"
-  [[ -v "$1" ]] || fail "find_or_install: Unbound variable: '$1'"
-  [[ -n "${!1}" ]] || fail "find_or_install: Empty variable: $1"
+  [[ -n "$1" ]] || fail "ishlib:find_or_install: missing 1st argument"
+  [[ -v "$1" ]] || fail "ishlib:find_or_install: Unbound variable: '$1'"
+  [[ -n "${!1}" ]] || fail "ishlib:find_or_install: Empty variable: $1"
   local var="$1"
   local func="${2:-}"
   local val="${!var}"
+  local name="${val}"
   shift 2
 
   if has_command "$val"; then
-    debug "find_or_install: found $val, setting path"
-    printf -v "${var}" "%s" "$(which "$val")"
+    local new_val
+    new_val="$(which "$val")"
+    if [[ "$val" = "$new_val" ]]; then
+      debug "ishlib:find_or_install: found $val"
+    else
+      debug "ishlib:find_or_install: found $val, setting to ${new_val}"
+      printf -v "${var}" "%s" "$(which "$val")"
+    fi
     return 0
   elif [[ -n $func ]]; then
-    debug "find_or_install: running $func $var" "$@"
+    debug "ishlib:find_or_install: running $func $var" "$@"
     if $func "$var" "$@"; then
+      if ! has_command "${!var}"; then
+        warn "ishlib:find_or_install: custom installer for $name reported success, but $var is set to ${!var}, which is not a valid command"
+        if is_dry; then return 0; fi
+        return 1
+      fi
       return 0
     fi
-    debug "find_or_install: provided installer failed"
+    debug "ishlib:find_or_install: provided installer failed"
   fi
   return 1
 }

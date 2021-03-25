@@ -10,6 +10,7 @@ use Test::More tests => 10;
 
 my $ishlib = File::Spec->catfile(getcwd(), 'ishlib.sh');
 my @shells = qw|bash|;
+my $dummy_bin = '/bin/ls';
 
 sub simple {
     my ($shell, $bin, $e_ret, $tn) = @_;
@@ -59,7 +60,7 @@ set -e
 BIN_OK="$bad_name"
 BIN_FAIL="$bad_name"
 install_ok() {
-    printf -v "\${1}" "%s" "found_it"
+    printf -v "\${1}" "%s" "/bin/ls"
     return 0
 }
 install_fail() {
@@ -73,7 +74,7 @@ echo -n \${BIN_FAIL}
 EOF
     close $fh;
 
-    my $e = "0-found_it-1-$bad_name";
+    my $e = "0-$dummy_bin-1-$bad_name";
 
     my $output = qx|$shell $fn / 2>&1|;
 
@@ -99,7 +100,7 @@ set -e
 BIN="$bad_name"
 installer() {
     if [ \$3 == "ok" ]; then
-        printf -v "\${1}" "%s" "found_it"
+        printf -v "\${1}" "%s" "$dummy_bin"
         return 0
     fi
     return 1
@@ -111,7 +112,7 @@ EOF
 
     my $num = 0;
     for my $t (
-        [ "asdfasdfa", "ok", "0-found_it" ],
+        [ "asdfasdfa", "ok", "0-$dummy_bin" ],
         [ "asdfasdfa", "asdfsdaf", "1-$bad_name" ],
     ) {
         my ($arg1, $arg2, $e) = @$t;
