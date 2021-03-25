@@ -564,6 +564,7 @@ git_clone_or_update() {
       ;;
     --update-submodules)
       update_submodules=1
+      shift
       ;;
     *)
       warn "$t unknown argument $1"
