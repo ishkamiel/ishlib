@@ -512,11 +512,12 @@ do_or_dry() {
   shift
   local args=("$@")
 
+  debug "ishlib:do_or_dry: working directory is $(if is_dry; then echo "\$(pwd)"; else pwd; fi)"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     dry_run "$cmd" "${args[@]}"
     return 0
   else
-    debug "running: $cmd" "${args[@]}"
+    debug "ishlib_do_or_dry: running $cmd" "${args[@]}"
     $cmd "${args[@]}"
     return $?
   fi
