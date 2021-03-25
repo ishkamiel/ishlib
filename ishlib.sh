@@ -286,7 +286,7 @@ download_file() {
 
   if command -v curl >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      dry_run --progress-bar -fLo "$2" --create-dirs "$1"
+      dry_run curl --progress-bar -fLo "$2" --create-dirs "$1"
       return 0
     else
       curl --progress-bar -fLo "$2" --create-dirs "$1"
