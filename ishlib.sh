@@ -539,7 +539,7 @@ do_or_dry_bg() {
         _ish_tmp_pid=""
         return 0
     else
-        debug "ishlib_do_or_dry: running: $cmd" "${args[@]}" " & in $(pwd)"
+        debug "ishlib_do_or_dry: running: $cmd" "${args[@]}" "\&"
         $cmd "${args[@]}" &
         _ish_tmp_pid=$!
         debug "ishlib:do_or_dry_bg started $_ish_tmp_pid!"
