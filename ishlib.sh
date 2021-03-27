@@ -8,8 +8,8 @@
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1 # source guard
 
-: <<'DOCSTRING'
-# ishlib 2021-03-27.1320.88aee6b
+: <<'################################################################DOCSTRING'
+# ishlib 2021-03-27.1720.da9a5f4
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -27,11 +27,9 @@ acknowledgement that is missing.
 - Documentation for `dry_run` is wrong.
 
 ## Documentation
-DOCSTRING
 
-: <<'DOCSTRING'
 ### POSIX-compliant functions
-DOCSTRING
+################################################################DOCSTRING
 
 DEBUG=${DEBUG:-0}
 DRY_RUN=${DRY_RUN:-0}
@@ -39,7 +37,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2021-03-27.1426.31679ea"
+export ish_VERSION_NUMBER="2021-03-27.1720.da9a5f4"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -74,37 +72,40 @@ ish_ColorFail="${TERM_COLOR_RED}"
 ish_ColorDryRun="${TERM_COLOR_BROWN}"
 
 # shellcheck disable=SC2034
+ish_DOCSTRING='################################################################DOCSTRING'
+
+# shellcheck disable=SC2034
 ish_DebugTag="ishlib:"
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-ishlib_version
---------------
+: <<'################################################################DOCSTRING'
 
-Print out the version of ishlib loaded. Is redefined for bash.
+`ishlib_version`
 
-Arguments:
-  -
-Returns:
-  0
+Print out the version of ishlib loaded.
 
-DOCSTRING
+################################################################DOCSTRING
 ishlib_version() {
   say "${ish_VERSION_NAME} ${ish_VERSION_NUMBER} (${ish_VERSION_VARIANT})"
   return 0
 }
 
-#------------------------------------------------------------------------------
 ishlib_main() {
   [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"
+
+  _target=
+  _help_format=--text-only
 
   while [ $# -gt 0 ]; do
     arg="$1"
 
     case ${arg} in
     -h | --help)
-      print_DOCSTRINGs "$fn"
-      exit 0
+      _target="help"
+      shift
+      ;;
+    --markdown)
+      _help_format=--markdown
+      shift
       ;;
     -d)
       export DEBUG=1
@@ -117,13 +118,18 @@ ishlib_main() {
       ;;
     esac
   done
+
+  if [ "${_target}" = help ]; then
+      print_docstrings "$fn" ${_help_format} --tag "${ish_DOCSTRING}"
+      exit 0
+  fi
+
   warn "ishlib run directly wihout parameters!"
   say "To print docs:       ./ishlib.sh -h"
   exit 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
+: <<'################################################################DOCSTRING'
 `print_docstrings file [options]`
 
 Prints out specific docstrings found in the given file. Default is to just
@@ -133,107 +139,168 @@ specific and largely undocumented conventions followed in ishlib.sh, and will
 likely misbehave in other contexts.
 
 Arguments:
-  file - the file to read for here-documents
-Options:
-  --markdown - Attempt to produce markdown
-  --text-only - Attempt to remove markdown notations
-  --tag TAG - use the given TAG for docstrings (default is DOCSTIRNG)
-  --no-newlines - prevent insertion of newlines
+--markdown - Attempt to produce markdown
+file - the file to read for here-documents
+--text-only - Attempt to remove markdown notations
+--tag TAG - use the given TAG for docstrings (default is DOCSTIRNG)
+--no-newlines - prevent insertion of newlines
 Returns:
   0
 
-DOCSTRING
+################################################################DOCSTRING
 print_docstrings() {
-  fail "work in progress, not implemented"
-  _t="{ish_DebugTag}print_docstring:";
+  _t="${ish_DebugTag}print_docstring:"
 
-  _ishlib_filename=''
-  _ishlib_do_newlines=1
-  _ishlib_tag='DOCSTRING'
+  _filename=''
+  _do_newlines=1
+  _tag='DOCSTRING'
+  _format=
 
   while [ $# -gt 0 ]; do
     case "$1" in
     --markdown)
-      warn "Not ipmlemented"
+      _format="markdown"
       shift
       ;;
     --text-only)
-      warn "Not implemented"
+      _format="text"
       shift
       ;;
     --tag)
-      _ishlib_tag="$2"
+      _tag="$2"
       shift 2
       ;;
     --no-newlines)
-      _ishlib_do_newlines=0
+      _do_newlines=0
       shift
       ;;
     *)
-      if [ -n "${_ishlib_filename}" ]; then
-        warn "${_t} multiple filenames given: ${_ishlib_filename} and ${1}"
+      if [ -n "${_filename}" ]; then
+        warn "${_t} multiple filenames given: ${_filename} and ${1}"
         return 1
       fi
-      _ishlib_filename="$1"
-      shift;
+      _filename="$1"
+      shift
       ;;
     esac
   done
 
-  ishlib_debug "${_t} reading ${_ishlib_filename}"
+  ishlib_debug "${_t} reading ${_filename}"
+  ishlib_debug "${_t} printing here-documents tagged with '${_tag}'"
 
   _old_IFS="$IFS"
   IFS=''
-  _ishlib_print=0
-  _ishlib_newline=1
-  _ishlib_indent=''
+  _print=0
+  _newline=1
+  _prev=nothing
 
   while read -r line; do
-    if [ "$line" = ": <<'\''${_ishlib_tag}'\''" ]; then
-      [ "${_ishlib_do_newlines}" = 1 ] && [ ${_ishlib_newline} = 0 ] && echo && _ishlib_newline=1
-      _ishlib_print=1
-      _ishlib_indent=''
-    elif [ "$line" = "$_ishlib_tag" ]; then
-      _ishlib_print=0
-      _ishlib_indent=''
-    else
-      if [ ${_ishlib_print} != 0 ]; then
-        if has_prefix "$line" "----"; then
-          _ishlib_print=2
-        elif has_prefix "$line" "===="; then
-          _ishlib_print=1
-        elif has_prefix "$line" "Globals:"; then
-          _ishlib_indent='  '
-          _ishlib_print=3
-        elif has_prefix "$line" "Arguments:"; then
-          _ishlib_indent='  '
-          _ishlib_print=3
-        elif has_prefix "$line" "Returns:"; then
-          _ishlib_indent='  '
-          _ishlib_print=3
-        fi
-
-        [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
-        printf '%s%s\n' "$_ishlib_indent" "$line"
-
-        case $_ishlib_print in
-        2) _ishlib_indent='  ' ;;
-        3) _ishlib_indent='    ' ;;
-        *) _ishlib_indent='' ;;
-        esac
+    if [ "$line" = ": <<'${_tag}'" ]; then
+      ishlib_debug "${_t} found matching start of here-document"
+      [ "${_do_newlines}" = 1 ] && [ ${_newline} = 0 ] && echo && _newline=1
+      _print=paragraph
+    elif [ "$line" = "$_tag" ]; then
+      _print=0
+    elif [ ${_print} != 0 ]; then
+      _prev=$_print
+      # First see if we need to update what we're printing
+      if has_prefix "$line" "# "; then
+        _print="h1"
+        [ "${_format}" = 'text' ] && substr --var line "${line}" 3
+      elif has_prefix "$line" "## "; then
+        _print="h2"
+        [ "${_format}" = 'text' ] && substr --var line "${line}" 4
+      elif has_prefix "$line" "### "; then
+        _print="h3"
+        [ "${_format}" = 'text' ] && substr --var line "${line}" 5
+      elif has_prefix "$line" "#### "; then
+        _print="h4"
+        [ "${_format}" = 'text' ] && substr --var line "${line}" 6
+      elif has_prefix "$line" '`'; then
+        # FIXME: This will match too much!
+        _print="funcheader"
+      elif has_prefix "$line" "Globals:"; then
+        _print="listheader"
+      elif has_prefix "$line" "Arguments:"; then
+        _print="listheader"
+      elif has_prefix "$line" "Returns:"; then
+        _print="listheader"
+      elif [ "$line" = '' ]; then
+        _print="newline"
       fi
+
+      # Markdown specific formatting
+      if [ $_format = "markdown" ]; then
+        # End listitems
+        if [ $_prev = "listitem" ] && [ $_print != "listitem" ]; then
+          # _newline=1
+          # printf "\n"
+          printf "%s\n\n" '```'
+        fi
+      fi
+
+      # Then do the printing
+      case $_print in
+      newline)
+        # Skip consqutive newlines, unless this behavior is disables
+        if [ ${_do_newlines} = 0 ] || [ ${_newline} = 0 ]; then
+          printf "\n"
+        fi
+        ;;
+      listitem)
+        # Indent listitems
+        [ "${_format}" = 'text' ] && printf '    %s\n' "$line"
+        # [ "${_format}" = 'markdown' ] && printf '%s %s\n' '-' "$line"
+        [ "${_format}" = 'markdown' ] && printf '    %s  \n' "$line"
+        ;;
+      listheader)
+        [ "${_format}" = 'text' ] && printf '%s\n' "$line"
+        [ "${_format}" = 'markdown' ] && printf '##### %s\n' "$line"
+        ;;
+      funcheader)
+        [ "${_format}" = 'text' ] && printf '%s\n' "$line"
+        [ "${_format}" = 'markdown' ] && printf '#### %s\n' "$line"
+        ;;
+      *)
+        # Otherwise just print as is
+        printf '%s\n' "$line"
+        ;;
+      esac
+
+      _newline=0 # Set this to 0 here, but set back to 1 later
+
+      case $_print in
+      listheader)
+        _print=listitem # listitems after a listheader
+        # Need to add a new line for markdown before the items
+        [ "${_format}" = 'markdown' ] && printf "\n%s\n" '```'
+        ;;
+      listitem)
+        # Assume listitems continue
+        ;;
+      newline)
+        _print=paragraph # Assume pragraph after newline
+        _newline=1       # Make sure we remember we had a newline
+        ;;
+      *)
+        _print=paragraph # By default, assume paragrpah is next
+        ;;
+      esac
     fi
-  done <"${_ishlib_filename}"
+  done <"${_filename}"
   # Restore IFS
   IFS="${_old_IFS}"
   # Unset our "local" variables
+  unset _t
   unset _old_IFSs
-  unset _ishblib_print
-  unset _ishblib_newline
-  unset _ishblib_indent
-  unset _ishlib_filename
-  unset _ishlib_do_newlines
-  unset _ishlib_tag
+  unset _print
+  unset _newline
+  unset _filename
+  unset _do_newlines
+  unset _tag
+  unset _format
+  unset _prev
+  ishlib_debug "${_t} done"
   return 0
 }
 
@@ -507,6 +574,105 @@ has_command() {
   return 1
 }
 
+: <<'################################################################DOCSTRING'
+`substr string start [end] [--var result_var]`
+################################################################DOCSTRING
+substr() {
+  _t="${ish_DebugTag}substr:"
+  _ishlib_str=
+  _ishlib_start=
+  _ishlib_end=
+  _ishlib_var=
+  _ishlib_res=0
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --var)
+      _ishlib_var="$2"
+      shift 2
+      ;;
+    *)
+      if [ "${_ishlib_res}" -eq 0 ]; then
+        _ishlib_res=1
+        _ishlib_str="$1"
+      elif [ "${_ishlib_res}" -eq 1 ]; then
+        _ishlib_res=2
+        _ishlib_start="$1"
+      elif [ "${_ishlib_res}" -eq 2 ]; then
+        _ishlib_res=3
+        _ishlib_end="$1"
+      else
+        warn "${_t} too many arguments!"
+        return 1
+      fi
+      shift 1
+      ;;
+    esac
+  done
+
+  if [ "${_ishlib_res}" -lt 2 ]; then
+    warn "${_t} too few arguments ${_ishlib_res}!"
+    return 1
+  fi
+
+  if [ -n "${_ishlib_var+x}" ] && [ -z "${_ishlib_var+x}" ]; then
+    warn "${_t} ${_ishlib_var} is not a bound variable"
+    return 1
+  fi
+
+  _ishlib_res="$(echo "${_ishlib_str}" | cut -c"${_ishlib_start}-${_ishlib_end:-}")"
+
+  if [ -n "${_ishlib_var+x}" ]; then
+    eval "${_ishlib_var}=\"${_ishlib_res}\""
+  else
+    printf "%s" "${_ishlib_res}"
+  fi
+
+  unset _ishlib_str
+  unset _ishlib_start
+  unset _ishlib_end
+  unset _ishlib_var
+  unset _ishlib_res
+  return 0
+}
+
+: <<'################################################################DOCSTRING'
+`strlen string [--var result_var]`
+################################################################DOCSTRING
+strlen() {
+  warn "Just use \${\#var}"
+  _ishlib_str=
+  _ishlib_var=
+  _ishlib_res=
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --var)
+      _ishlib_var="$2"
+      shift 2
+      ;;
+    *)
+      [ -z "${_ishlib_str}" ] || (warn "bad arguments to strlen" && return 1)
+      _ishlib_str="$1"
+      sfhit
+      ;;
+    esac
+  done
+
+  _ishlib_res="$#variable"
+
+  if [ -n "${_ishlib_var}" ]; then
+    eval "${_ishlib_var}=\"${_ishlib_res}\""
+  else
+    printf "%s" "${_ishlib_res}"
+  fi
+
+  unset _ishlib_str
+  unset _ishlib_var
+  unset _ishlib_res
+  return 0
+}
+
 # End here unless we're on bash, and enter main if directly run
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
   debug "ishlib: load done (sh-only)"
@@ -568,7 +734,7 @@ Returns:
 
 DOCSTRING
 strstr() {
-  x="${1%%$2*}"
+  local x="${1%%$2*}"
   if [[ "$x" = "$1" ]]; then
     [[ -n "${3+x}" ]] && printf -v "$3" "%s" "-1"
     return 1

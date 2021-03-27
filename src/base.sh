@@ -8,13 +8,11 @@
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1 # source guard
 
-: <<'DOCSTRING'
+: <<'################################################################DOCSTRING'
 __ISHLIB_README__
-DOCSTRING
 
-: <<'DOCSTRING'
 ### POSIX-compliant functions
-DOCSTRING
+################################################################DOCSTRING
 
 . common.sh
 . main.sh
@@ -23,6 +21,7 @@ DOCSTRING
 . has_prefix.sh
 . download_file.sh
 . has_command.sh
+. substr.sh
 
 # End here unless we're on bash, and enter main if directly run
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then

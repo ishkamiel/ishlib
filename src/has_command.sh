@@ -8,7 +8,7 @@
 [ -n "${ish_SOURCED_has_command_sh:-}" ] && return 0
 ish_SOURCED_has_command_sh=1 # source guard
 # shellcheck source=common.sh
-./common.sh
+. common.sh
 ###############################################################################
 
 #------------------------------------------------------------------------------

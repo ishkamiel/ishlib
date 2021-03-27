@@ -7,7 +7,7 @@
 #
 [ -n "${ish_SOURCED_strstr_bash:-}" ] && return 0
 ish_SOURCED_strstr_bash=1 # source guard
-./common.sh
+. common.sh
 ###############################################################################
 
 #------------------------------------------------------------------------------
@@ -30,7 +30,7 @@ Returns:
 
 DOCSTRING
 strstr() {
-  x="${1%%$2*}"
+  local x="${1%%$2*}"
   if [[ "$x" = "$1" ]]; then
     [[ -n "${3+x}" ]] && printf -v "$3" "%s" "-1"
     return 1

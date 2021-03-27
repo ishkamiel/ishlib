@@ -11,6 +11,7 @@ my $ishlib_name    = "ishlib";
 my $ishlib_version = '';
 
 my $base_fn   = 'src/base.sh';
+my $readme_fn = 'src/readme_src.md';
 
 my $header_end =
 '###############################################################################';
@@ -40,7 +41,7 @@ sub set_version {
 
 sub source_readme {
     my ( $out_fh, $fn_base ) = @_;
-    my $fn = 'README.md';
+    my $fn = $readme_fn;
 
     print "Inserting $fn\n";
 
@@ -132,14 +133,7 @@ sub reset_readme {
 
 set_version();
 
-print "Updating README.md version";
-
-
-print "Resetting README.md\n";
-reset_readme("README.md");
 print "Generating ishlib.sh\n";
 build_ishlib('ishlib.sh');
-print "Generating README.md with ishlib.sh\n";
-qx|./ishlib.sh -h > README.md|;
 
 1;

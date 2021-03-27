@@ -50,21 +50,18 @@ ish_ColorFail="${TERM_COLOR_RED}"
 ish_ColorDryRun="${TERM_COLOR_BROWN}"
 
 # shellcheck disable=SC2034
+ish_DOCSTRING='################################################################DOCSTRING'
+
+# shellcheck disable=SC2034
 ish_DebugTag="ishlib:"
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-ishlib_version
---------------
+: <<'################################################################DOCSTRING'
 
-Print out the version of ishlib loaded. Is redefined for bash.
+`ishlib_version`
 
-Arguments:
-  -
-Returns:
-  0
+Print out the version of ishlib loaded.
 
-DOCSTRING
+################################################################DOCSTRING
 ishlib_version() {
   say "${ish_VERSION_NAME} ${ish_VERSION_NUMBER} (${ish_VERSION_VARIANT})"
   return 0

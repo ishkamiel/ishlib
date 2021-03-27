@@ -44,7 +44,7 @@ sub source_test_with_debug {
 sub direct_run {
     my $shell = shift;
 
-    my $output = qx|$shell $ishlib / 2>&1|;
+    my $output = qx|$shell $ishlib 2>&1|;
     ok($? == 0, "$shell-direct_run-runs | head");
     ok($output =~ m/^\[WW\]/, "$shell-direct_run");
     return;
@@ -53,7 +53,7 @@ sub direct_run {
 sub direct_run_help {
     my $shell = shift;
 
-    my $output = qx|$shell $ishlib -h / 2>&1|;
+    my $output = qx|$shell $ishlib -h 2>&1|;
     ok($? == 0, "$shell-direct_run_help-runs | head");
     ok($output =~ m/^.*ishlib/, "$shell-direct_run_help");
     return;
