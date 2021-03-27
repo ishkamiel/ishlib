@@ -33,6 +33,25 @@ debug() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
+`ishlib_debug ...`
+
+Passes args to debug, but only if ISHLIB_DEBUG is set to 1.
+
+Globals:
+  ISHLIB_DEBUG - does nothing unless this is 1
+Arguments:
+  ... - all arguments are printed
+Returns:
+  0 - always
+DOCSTRING
+ishlib_debug() {
+  [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
+  debug "$@"
+  return 0
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
 say ...
 -------
 

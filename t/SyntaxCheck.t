@@ -38,7 +38,7 @@ for my $fn (@files_to_check) {
 
     while (my $line = <$fh_in>)  {   
         print $fh_out $line;
-        $line =~ m/^###EOF4SH$/ and last;
+        $line =~ m/^###EOF4SH.*$/ and last;
     }
 
     close $fh_out;

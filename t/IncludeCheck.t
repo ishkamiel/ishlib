@@ -31,18 +31,11 @@ EOF
 
 sub source_test_with_debug {
     my $shell = shift;
+    my $fn = File::Spec->catfile(getcwd(), 't', "IncludeCheck.source_test_with_debug.$shell");
 
-    my ($fh, $fn) = tempfile();
-    print $fh <<EOF;
-#! /usr/bin/env $shell
+    -e $fn or die "Missing test file: $fn";
 
-DEBUG=1
-
-. $ishlib
-EOF
-    close $fh;
-
-    my $output = qx|$shell $fn / 2>&1|;
+    my $output = qx|$shell $fn $ishlib / 2>&1|;
     ok($? == 0, "$shell-source_test_with_debug-runs");
     ok($output =~ m/^[^\w]*[DD]/, "$shell-source_test_with_debug");
     return;
@@ -62,7 +55,7 @@ sub direct_run_help {
 
     my $output = qx|$shell $ishlib -h / 2>&1|;
     ok($? == 0, "$shell-direct_run_help-runs | head");
-    ok($output =~ m/^ishlib/, "$shell-direct_run_help");
+    ok($output =~ m/^.*ishlib/, "$shell-direct_run_help");
     return;
 }
 

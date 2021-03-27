@@ -21,6 +21,11 @@ ishlib_main() {
       print_DOCSTRINGs "$fn"
       exit 0
       ;;
+    -d)
+      export DEBUG=1
+      export ISHLIB_DEBUG=1
+      shift
+      ;;
     *)
       warn "Unknown option: $1"
       shift

@@ -8,48 +8,91 @@
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1 # source guard
 
+: <<'DOCSTRING'
+# ishlib 2021-03-27.1320.88aee6b
+
+This is a collection of various scripts and tricks collected along the years.
+
+The script is meant to be sourced elsewhere, but can be invoked as
+`./ishlib.sh -h` flag to show the same documentation as below. The source
+files in `./src` need not be manually used, they are already in `ishlib.sh`.
+
+The documentation contains references to original sources where available,
+but in practice this has been accumulated along the years, so many sources
+are likely listed. Feel free to drop me a note if you notice some source or
+acknowledgement that is missing.
+
+## Known bugs and issues
+
+- Documentation for `dry_run` is wrong.
+
+## Documentation
+DOCSTRING
+
+: <<'DOCSTRING'
+### POSIX-compliant functions
+DOCSTRING
+
 DEBUG=${DEBUG:-0}
 DRY_RUN=${DRY_RUN:-0}
 
-export ish_ColorNC='\e[0m'
-export ish_ColorBlack='\e[0;30m'
-export ish_ColorGray='\e[1;30m'
-export ish_ColorRed='\e[0;31m'
-export ish_ColorLightRed='\e[1;31m'
-export ish_ColorGreen='\e[0;32m'
-export ish_ColorLightGreen='\e[1;32m'
-export ish_ColorBrown='\e[0;33m'
-export ish_ColorYellow='\e[1;33m'
-export ish_ColorBlue='\e[0;34m'
-export ish_ColorLightBlue='\e[1;34m'
-export ish_ColorPurple='\e[0;35m'
-export ish_ColorLightPurple='\e[1;35m'
-export ish_ColorCyan='\e[0;36m'
-export ish_ColorLightCyan='\e[1;36m'
-export ish_ColorLightGray='\e[0;37m'
-export ish_ColorWhite='\e[1;37m'
+ISHLIB_DEBUG=${DEBUG:-0}
 
+export ish_VERSION_NAME="ishlib"
+export ish_VERSION_NUMBER="2021-03-27.1419.88aee6b"
+export ish_VERSION_VARIANT="POSIX"
+
+export TERM_COLOR_NC='\e[0m'
+export TERM_COLOR_BLACK='\e[0;30m'
+export TERM_COLOR_GRAY='\e[1;30m'
+export TERM_COLOR_RED='\e[0;31m'
+export TERM_COLOR_LIGHT_RED='\e[1;31m'
+export TERM_COLOR_GREEN='\e[0;32m'
+export TERM_COLOR_LIGHT_GREEN='\e[1;32m'
+export TERM_COLOR_BROWN='\e[0;33m'
+export TERM_COLOR_YELLOW='\e[1;33m'
+export TERM_COLOR_BLUE='\e[0;34m'
+export TERM_COLOR_LIGHT_BLUE='\e[1;34m'
+export TERM_COLOR_PURPLE='\e[0;35m'
+export TERM_COLOR_LIGHT_PURPLE='\e[1;35m'
+export TERM_COLOR_CYAN='\e[0;36m'
+export TERM_COLOR_LIGHT_Cyan='\e[1;36m'
+export TERM_COLOR_LIGHT_GRAY='\e[0;37m'
+export TERM_COLOR_WHITE='\e[1;37m'
+
+# shellcheck disable=SC2034
 ish_ColorNC='\033[0m'
-ish_ColorDebug="${ish_ColorNC}"
-ish_ColorSay="${ish_ColorBlue}"
-ish_ColorWarn="${ish_ColorPurple}"
-ish_ColorFail="${ish_ColorRed}"
-ish_ColorDryRun="${ish_ColorBrown}"
+# shellcheck disable=SC2034
+ish_ColorDebug="${TERM_COLOR_NC}"
+# shellcheck disable=SC2034
+ish_ColorSay="${TERM_COLOR_BLUE}"
+# shellcheck disable=SC2034
+ish_ColorWarn="${TERM_COLOR_PURPLE}"
+# shellcheck disable=SC2034
+ish_ColorFail="${TERM_COLOR_RED}"
+# shellcheck disable=SC2034
+ish_ColorDryRun="${TERM_COLOR_BROWN}"
 
-#------------------------------------------------------------------------------
-ish_Version="0.1"
+# shellcheck disable=SC2034
+ish_DebugTag="ishlib:"
+
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-ishlib 0.1
-==========
+ishlib_version
+--------------
 
-The following functions are always exposed when sourcing the library and
-should be POSIX compliant (e.g., work with sh or dash).
+Print out the version of ishlib loaded. Is redefined for bash.
 
-POSIX compliant functions
-=========================
+Arguments:
+  -
+Returns:
+  0
 
 DOCSTRING
+ishlib_version() {
+  say "${ish_VERSION_NAME} ${ish_VERSION_NUMBER} (${ish_VERSION_VARIANT})"
+  return 0
+}
 
 #------------------------------------------------------------------------------
 ishlib_main() {
@@ -63,6 +106,11 @@ ishlib_main() {
       print_DOCSTRINGs "$fn"
       exit 0
       ;;
+    -d)
+      export DEBUG=1
+      export ISHLIB_DEBUG=1
+      shift
+      ;;
     *)
       warn "Unknown option: $1"
       shift
@@ -72,6 +120,121 @@ ishlib_main() {
   warn "ishlib run directly wihout parameters!"
   say "To print docs:       ./ishlib.sh -h"
   exit 0
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+`print_docstrings file [options]`
+
+Prints out specific docstrings found in the given file. Default is to just
+print the here-documents as they are. However, the script can optionally try
+to convert to plain text or markdown. Note that the conversion relies very
+specific and largely undocumented conventions followed in ishlib.sh, and will
+likely misbehave in other contexts.
+
+Arguments:
+  file - the file to read for here-documents
+Options:
+  --markdown - Attempt to produce markdown
+  --text-only - Attempt to remove markdown notations
+  --tag TAG - use the given TAG for docstrings (default is DOCSTIRNG)
+  --no-newlines - prevent insertion of newlines
+Returns:
+  0
+
+DOCSTRING
+print_docstrings() {
+  fail "work in progress, not implemented"
+  _t="{ish_DebugTag}print_docstring:";
+
+  _ishlib_filename=''
+  _ishlib_do_newlines=1
+  _ishlib_tag='DOCSTRING'
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --markdown)
+      warn "Not ipmlemented"
+      shift
+      ;;
+    --text-only)
+      warn "Not implemented"
+      shift
+      ;;
+    --tag)
+      _ishlib_tag="$2"
+      shift 2
+      ;;
+    --no-newlines)
+      _ishlib_do_newlines=0
+      shift
+      ;;
+    *)
+      if [ -n "${_ishlib_filename}" ]; then
+        warn "${_t} multiple filenames given: ${_ishlib_filename} and ${1}"
+        return 1
+      fi
+      _ishlib_filename="$1"
+      shift;
+      ;;
+    esac
+  done
+
+  ishlib_debug "${_t} reading ${_ishlib_filename}"
+
+  _old_IFS="$IFS"
+  IFS=''
+  _ishlib_print=0
+  _ishlib_newline=1
+  _ishlib_indent=''
+
+  while read -r line; do
+    if [ "$line" = ": <<'\''${_ishlib_tag}'\''" ]; then
+      [ "${_ishlib_do_newlines}" = 1 ] && [ ${_ishlib_newline} = 0 ] && echo && _ishlib_newline=1
+      _ishlib_print=1
+      _ishlib_indent=''
+    elif [ "$line" = "$_ishlib_tag" ]; then
+      _ishlib_print=0
+      _ishlib_indent=''
+    else
+      if [ ${_ishlib_print} != 0 ]; then
+        if has_prefix "$line" "----"; then
+          _ishlib_print=2
+        elif has_prefix "$line" "===="; then
+          _ishlib_print=1
+        elif has_prefix "$line" "Globals:"; then
+          _ishlib_indent='  '
+          _ishlib_print=3
+        elif has_prefix "$line" "Arguments:"; then
+          _ishlib_indent='  '
+          _ishlib_print=3
+        elif has_prefix "$line" "Returns:"; then
+          _ishlib_indent='  '
+          _ishlib_print=3
+        fi
+
+        [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
+        printf '%s%s\n' "$_ishlib_indent" "$line"
+
+        case $_ishlib_print in
+        2) _ishlib_indent='  ' ;;
+        3) _ishlib_indent='    ' ;;
+        *) _ishlib_indent='' ;;
+        esac
+      fi
+    fi
+  done <"${_ishlib_filename}"
+  # Restore IFS
+  IFS="${_old_IFS}"
+  # Unset our "local" variables
+  unset _old_IFSs
+  unset _ishblib_print
+  unset _ishblib_newline
+  unset _ishblib_indent
+  unset _ishlib_filename
+  unset _ishlib_do_newlines
+  unset _ishlib_tag
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -155,6 +318,25 @@ DOCSTRING
 debug() {
   [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
   printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
+  return 0
+}
+
+#------------------------------------------------------------------------------
+: <<'DOCSTRING'
+`ishlib_debug ...`
+
+Passes args to debug, but only if ISHLIB_DEBUG is set to 1.
+
+Globals:
+  ISHLIB_DEBUG - does nothing unless this is 1
+Arguments:
+  ... - all arguments are printed
+Returns:
+  0 - always
+DOCSTRING
+ishlib_debug() {
+  [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
+  debug "$@"
   return 0
 }
 
@@ -325,46 +507,21 @@ has_command() {
   return 1
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-ishlibVersion
--------------
-
-Print out the version of ishlib loaded. Is redefined for bash.
-
-Arguments:
-  -
-Returns:
-  0
-
-DOCSTRING
-ishlibVersion() {
-  say "Using ishlib ${ish_Version} (sh-only)"
-  return 0
-}
-
-#------------------------------------------------------------------------------
-# End here unless we're on bash
+# End here unless we're on bash, and enter main if directly run
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
-
   debug "ishlib: load done (sh-only)"
-
   # Call ishlib_main if called stand-alone
   [ "$0" = "ishlib.sh" ] && ishlib_main "$@"
   case "$0" in */ishlib.sh) ishlib_main "$@" ;; esac
-
-  # Stop processing rest of file
-  return 0
+  return 0 # Stop processing rest of file
 fi
-# The following token is used to generate a POSIX-only file for testing
-###EOF4SH
+###EOF4SH # this is just for testing
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-Bash-only functions
-==================
-
+### Bash-only functions
 DOCSTRING
+
+export ish_VERSION_VARIANT="POSIX+bash"
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
@@ -678,30 +835,8 @@ rename_function() {
   return 0
 }
 
-#------------------------------------------------------------------------------
-# non-POSIX version, see doc for POSIX version above
-unset -f ishlibVersion
-ishlibVersion() {
-  say "ishlib: using ishlib ${ish_Version} (with bash extensions)"
-}
-
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-Author and license
-==================
-
-Author: Hans Liljestrand <hans@liljestrand.dev>
-Copyright (C) 2021 Hans Liljestrand <hans@liljestrand.dev>
-
-Distributed under terms of the MIT license.
-
-DOCSTRING
-
-#------------------------------------------------------------------------------
-# End of the bash extension, finish and enter main if appropriate
-
 debug "ishlib: load done (bash extensions)"
-
+# Entering main if we are being directly run
 if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
   _ishlib_sourced=0
   case $ZSH_EVAL_CONTEXT in *:file) _ishlib_sourced=1 ;; esac

@@ -11,16 +11,17 @@ my $ishlib_name    = "ishlib";
 my $ishlib_version = '';
 
 my $base_fn   = 'src/base.sh';
-my $output_fn = 'ishlib.sh';
 
 my $header_end =
 '###############################################################################';
 
 # my $ishlib = File::Spec->catfile(getcwd(), 'ishlib.sh');
 
+my $readme_documentation_start = "## Documentation";
+
 my $src_dir = dirname($base_fn);
 
-my $current_fn = $base_fn;
+my $current_fn  = $base_fn;
 my $empty_lines = 0;
 
 sub set_version {
@@ -37,21 +38,36 @@ sub set_version {
     return;
 }
 
+sub source_readme {
+    my ( $out_fh, $fn_base ) = @_;
+    my $fn = 'README.md';
+
+    print "Inserting $fn\n";
+
+    open my $fh, "<", "$fn" or croak "Failed to open < $fn";
+    while (<$fh>) {
+        process_oneline( $out_fh, $_ );
+        if (m/^$readme_documentation_start\s*$/) {
+            close $fh;
+            return;
+        }
+    }
+    croak "Unexpected EOF file";
+}
+
 sub source_file {
     my ( $out_fh, $fn_base ) = @_;
-
     my $start_reading = 0;
     my $fn            = File::Spec->catfile( $src_dir, $fn_base );
 
     print "Sourcing $fn\n";
 
-    # Update $current_fn
-    my $old_fn = $current_fn;
-    $current_fn = $fn;
+    my $old_fn = $current_fn;    # Store previous $current_fn
+    $current_fn = $fn;           # and set $current_fn to this file
 
     open my $fh, "<", "$fn" or croak "Failed to open < $fn";
     while (<$fh>) {
-        if (m/^$header_end\s*$/) {
+        if (m/^$header_end\s*$/) {    # Ignore until we see the header_end
             $start_reading = 1;
         } elsif ($start_reading) {
             process_oneline( $out_fh, $_ );
@@ -59,31 +75,23 @@ sub source_file {
     }
     close $fh;
 
-    # Restore $current_fn
-    $current_fn = $old_fn;
+    $current_fn = $old_fn;            # Restore $current_fn
     return;
 }
 
 sub process_oneline {
     my ( $out_fh, $line ) = @_;
 
-    # chomp $line;
-    $line =~ s/__ISHLIB_VERSION__/$ishlib_version/g;
-    $line =~ s/__ISHLIB_NAME__/$ishlib_name/g;
-
-    if ($line =~ m/^\s*$/) {
-        # Squash multiple empty lines
-        if ($empty_lines++) {
-            print "Squasing repeated empty line in $current_fn\n"
-        } else {
-            print $out_fh "\n";
-        }
-    } elsif ( $line =~ m/^\. ([\w_\.]+)$/ ) {
-        # Inline source statements
+    if ( $line =~ m/^__ISHLIB_README__\s*$/ ) {    # inline README
+        source_readme( $out_fh, $_ );
+    } elsif ( $line =~ m/^\. ([\w_\.]+)$/ ) {      # inline source
         source_file( $out_fh, $1 );
-    } else {
-        # Print the line
+    } elsif ( $line =~ m/^\s*$/ ) {                # Squash multiple empty lines
+        $empty_lines++ or print $out_fh "\n";
+    } else {                                       # Otherwise print the line
         $empty_lines = 0;
+        $line =~ s/__ISHLIB_VERSION__/$ishlib_version/g;
+        $line =~ s/__ISHLIB_NAME__/$ishlib_name/g;
         print $out_fh $line;
     }
 
@@ -91,8 +99,7 @@ sub process_oneline {
 }
 
 sub build_ishlib {
-    set_version();
-
+    my $output_fn = shift;
     print "Starting from base  $base_fn\n";
 
     open my $base_fh, "<", $base_fn   or croak "Failed to open < $base_fn";
@@ -107,6 +114,32 @@ sub build_ishlib {
     return;
 }
 
-build_ishlib();
+sub reset_readme {
+    my $fn = shift;
+    my @lines = ( "# $ishlib_name $ishlib_version " );
+
+    my $skip = 0;
+
+    open my $fh, "<", $fn   or croak "Failed to open < $fn";
+    while (<$fh>) {
+        $skip++ or next; # Skip first line
+        push @lines, $_;
+        m/^$readme_documentation_start\s*$/ and last;
+    }
+    close $fh;
+    return;
+}
+
+set_version();
+
+print "Updating README.md version";
+
+
+print "Resetting README.md\n";
+reset_readme("README.md");
+print "Generating ishlib.sh\n";
+build_ishlib('ishlib.sh');
+print "Generating README.md with ishlib.sh\n";
+qx|./ishlib.sh -h > README.md|;
 
 1;
