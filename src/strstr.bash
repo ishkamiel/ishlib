@@ -32,9 +32,9 @@ DOCSTRING
 strstr() {
   x="${1%%$2*}"
   if [[ "$x" = "$1" ]]; then
-    [[ -v "$3" ]] && printf -v "$3" "%s" "-1"
+    [[ -n "${3+x}" ]] && printf -v "$3" "%s" "-1"
     return 1
   fi
-  [[ -v "$3" ]] && printf -v "$3" "%s" "${#x}"
+  [[ -n "${3+x}" ]] && printf -v "$3" "%s" "${#x}"
   return 0
 }

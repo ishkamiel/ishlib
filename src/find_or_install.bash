@@ -32,7 +32,7 @@ Returns:
 DOCSTRING
 find_or_install() {
   [[ -n "$1" ]] || fail "ishlib:find_or_install: missing 1st argument"
-  [[ -v "$1" ]] || fail "ishlib:find_or_install: Unbound variable: '$1'"
+  [[ -n "${1+x}" ]] || fail "ishlib:find_or_install: Unbound variable: '$1'"
   [[ -n "${!1}" ]] || fail "ishlib:find_or_install: Empty variable: $1"
   local var="$1"
   local func="${2:-}"

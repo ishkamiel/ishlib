@@ -28,7 +28,7 @@ dump() {
   local vars=("$@")
   local unbound=0
   for var in "${vars[@]}"; do
-    if [[ -v "$var" ]]; then
+    if [[ -n "${var+x}" ]]; then
       debug "$var=${!var}"
     else
       debug "$var is unbound"

@@ -39,7 +39,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2021-03-27.1419.88aee6b"
+export ish_VERSION_NUMBER="2021-03-27.1426.31679ea"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -570,10 +570,10 @@ DOCSTRING
 strstr() {
   x="${1%%$2*}"
   if [[ "$x" = "$1" ]]; then
-    [[ -v "$3" ]] && printf -v "$3" "%s" "-1"
+    [[ -n "${3+x}" ]] && printf -v "$3" "%s" "-1"
     return 1
   fi
-  [[ -v "$3" ]] && printf -v "$3" "%s" "${#x}"
+  [[ -n "${3+x}" ]] && printf -v "$3" "%s" "${#x}"
   return 0
 }
 
@@ -599,7 +599,7 @@ Returns:
 DOCSTRING
 find_or_install() {
   [[ -n "$1" ]] || fail "ishlib:find_or_install: missing 1st argument"
-  [[ -v "$1" ]] || fail "ishlib:find_or_install: Unbound variable: '$1'"
+  [[ -n "${1+x}" ]] || fail "ishlib:find_or_install: Unbound variable: '$1'"
   [[ -n "${!1}" ]] || fail "ishlib:find_or_install: Empty variable: $1"
   local var="$1"
   local func="${2:-}"
@@ -650,7 +650,7 @@ dump() {
   local vars=("$@")
   local unbound=0
   for var in "${vars[@]}"; do
-    if [[ -v "$var" ]]; then
+    if [[ -n "${var+x}" ]]; then
       debug "$var=${!var}"
     else
       debug "$var is unbound"
