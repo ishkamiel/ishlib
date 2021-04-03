@@ -12,24 +12,32 @@ ish_SOURCED_git_bash=1 # source guard
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-git_clone_or_update url dir
+git_clone_or_update [-b branc] [--update-submodules] url dir
 
 Arguments:
-  url - the git repository remote
-  dir - the local directory for the repository
+  url                   - the git remote URL
+  dir                   - The destianation directory
+  --update_submodules   - Run submodule update after clone
+  -b|--branc brach      - Specify branch to checkout / update
+  -c|--commit           - Also checkokut specific commit
 Globals:
-  bin_git - if specified, will use the given command in place of git
+  bin_git               - Path to git (default : git)
+  DRY_RUN               - Respects dry-run flag
 Returns:
   0 - on success
-  x - on failure, either 1 or return value of git
+  1 - on failure
 DOCSTRING
 git_clone_or_update() {
   local t="ishlib:git_clone_or_update:"
-  local url="$1"
-  local dir="$2"
+
+  local bin_git=${bin_git:-git}
+  has_command "${bin_git}" || (warn "$t cannot find ${bin_git}" && return 1)
+
+  local url=""
+  local dir=""
   local branch=""
+  local commit=""
   local update_submodules=0
-  shift 2
 
   local bad_args=0
   local positional=()
@@ -41,23 +49,31 @@ git_clone_or_update() {
       branch="$2"
       shift 2
       ;;
+    -c | --commit)
+      commit="$2"
+      shift 2
+      ;;
     --update-submodules)
       update_submodules=1
       shift
       ;;
     *)
-      warn "$t unknown argument $1"
-      bad_args=$((bad_args + 1))
-      shift
+      if [[ -z "${url}" ]]; then
+        url="$1"
+        shift
+      elif [[ -z "${dir}" ]]; then
+        dir="$1"
+        shift
+      else
+        warn "$t unknown argument $1"
+        bad_args=$((bad_args + 1))
+        shift
+      fi
       ;;
     esac
   done
   set -- "${positional[@]}" # restore positional parameters
   [[ $bad_args -eq 0 ]] || return 1
-
-  local bin_git=${bin_git:-git}
-
-  has_command "${bin_git}" || (warn "$t cannot find ${bin_git}" && return 1)
 
   if [[ ! -e "${dir}/.git" ]]; then
     local git_args=()
@@ -83,8 +99,16 @@ git_clone_or_update() {
       do_or_dry "$bin_git" checkout "$branch" || (warn "$t checkout $branch failed" && return 1)
     fi
 
-    do_or_dry "$bin_git" pull || (warn "ishlib:git_clone_or_update" && return 1)
+    do_or_dry "$bin_git" pull || (warn "$t failted to git pull ${dir}" && return 1)
     do_or_dry popd || (warn "$t filed to popd" && return 1)
   fi
+
+  if [[ -n "${commit}" ]]; then
+    debug "${t} checking out ${commit}"
+    do_or_dry pushd "${dir}" || (warn "$t failed to pusd ${dir}" && return 1)
+    do_or_dry "$bin_git" checkout "${commit}" || (warn "$t failed to checkout ${commit} in ${dir}" && return 1)
+    do_or_dry popd || (warn "$t filed to popd" && return 1)
+  fi
+
   return 0
 }
