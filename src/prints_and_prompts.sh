@@ -7,7 +7,8 @@
 #
 [ -n "${ish_SOURCED_prints_and_prompts_sh:-}" ] && return 0
 ish_SOURCED_prints_and_prompts_sh=1 # source guard
-. common.sh
+# shellcheck source=common.sh
+. src/common.sh
 ###############################################################################
 
 #------------------------------------------------------------------------------
@@ -86,7 +87,16 @@ Returns:
   0 - always
 DOCSTRING
 warn() {
-  printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
+  if [ -z "${BASH_VERSION:-}" ]; then
+    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
+  else
+    # shellcheck disable=2039 # Bash only!
+    printf >&2 "[WW] %b%b (at %b)%b\n" "${ish_ColorWarn}" \
+      "$*" \
+      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
+      "${ish_ColorNC}"
+  fi
+
   return 0
 }
 
@@ -107,7 +117,15 @@ Returns:
 
 DOCSTRING
 fail() {
-  printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  if [ -z "${BASH_VERSION:-}" ]; then
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  else
+    # shellcheck disable=2039 # Bash only!
+    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
+      "$*" \
+      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
+      "${ish_ColorNC}"
+  fi
   exit 1
 }
 
