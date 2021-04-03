@@ -20,10 +20,10 @@ specific and largely undocumented conventions followed in ishlib.sh, and will
 likely misbehave in other contexts.
 
 Arguments:
---markdown - Attempt to produce markdown
-file - the file to read for here-documents
---text-only - Attempt to remove markdown notations
---tag TAG - use the given TAG for docstrings (default is DOCSTIRNG)
+file          - the file to read for here-documents
+--markdown    - Attempt to produce markdown
+--text-only   - Attempt to remove markdown notations
+--tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
 --no-newlines - prevent insertion of newlines
 Returns:
   0
