@@ -1,6 +1,6 @@
 
 BUILD_SCRIPT = ./build.pl
-SRC_FILES = $(wildcard src/*.sh) $(wildcard src/.bash) src/readme_src.md
+SRC_FILES = $(wildcard src/*.sh) $(wildcard src/*.bash) src/readme_src.md
 
 all: README.md ishlib.sh verify
 
@@ -13,5 +13,7 @@ ishlib.sh: $(SRC_FILES) $(BUILD_SCRIPT)
 	$(BUILD_SCRIPT) 
 	chmod +x $@
 
-README.md: ishlib.sh
+README.md: ishlib.sh $(SRC_FILES)
 	./ishlib.sh -h --markdown > README.md
+
+print-%: ; @echo $* = $($*)
