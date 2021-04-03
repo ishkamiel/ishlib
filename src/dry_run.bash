@@ -7,34 +7,42 @@
 #
 [ -n "${ish_SOURCED_dry_run_bash:-}" ] && return 0
 ish_SOURCED_dry_run_bash=1 # source guard
-. common.sh
+# shellcheck source=common.sh
+. src/common.sh
+# shellcheck source=prints_and_prompts.sh
+. src/prints_and_prompts.sh
 ###############################################################################
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-do_or_dry cmd ...
-DOCSTRING
+: <<'################################################################DOCSTRING'
+do_or_dry [--bg [--pid=pid_var]] cmd [args...]
+
+TODO: merge do_or_dry_bg here using the above cmdline args
+################################################################DOCSTRING
 do_or_dry() {
   local cmd=$1
+  local t="${ish_DebugTag}do_or_dry:"
   shift
   local args=("$@")
 
-  debug "ishlib:do_or_dry: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
+  debug "$t cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     dry_run "$cmd" "${args[@]}"
-    return 0
   else
-    $cmd "${args[@]}"
-    return $?
+    if ! $cmd "${args[@]}"; then
+      warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
+      return 1
+    fi
   fi
+  return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRINg'
-do_or_dry_bg pid cmd ...
-DOCSTRINg
+: <<'################################################################DOCSTRING'
+do_or_dry_bg pid_var cmd [args...]
+
+TODO: merge do_or_dry_bg here using the above cmdline args
+################################################################DOCSTRING
 do_or_dry_bg() {
-    declare -n _ish_tmp_pid=$1
+    declare -n pid=$1
     local cmd=$2
     shift 2
     local args=("$@")
@@ -42,20 +50,26 @@ do_or_dry_bg() {
     debug "ishlib:do_or_dry_bg: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}" "\\adsf&"
     if is_dry; then
         dry_run "$cmd" "${args[@]}" "&"
-        _ish_tmp_pid=""
+        pid=""
         return 0
     else
         $cmd "${args[@]}" &
-        _ish_tmp_pid=$!
-        debug "ishlib:do_or_dry_bg: started $_ish_tmp_pid!"
+        pid=$!
+        debug "ishlib:do_or_dry_bg: started $pid!"
         return 0
     fi
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-do_or_dry cmd ...
-DOCSTRING
+: <<'################################################################DOCSTRING'
+is_dry
+
+Just a convenience function for checking DRY_RUN in constructs like:
+`if is_dry; then ...; fi`.
+
+Returns:
+  0       - if $DRY_RUN is 1
+  1       - if $DRY_RUN is not 1
+################################################################DOCSTRING
 is_dry() {
   [[ "${DRY_RUN:-}" = 1 ]] && return 0
   return 1
