@@ -1,4 +1,4 @@
-# ishlib 2021-04-03.1302.2b02367
+# ishlib 2021-04-03.1332.be44ba0
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -34,17 +34,17 @@ likely misbehave in other contexts.
 ##### Arguments:
 
 ```
-    file          - the file to read for here-documents  
-    --markdown    - Attempt to produce markdown  
-    --text-only   - Attempt to remove markdown notations  
-    --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)  
-    --no-newlines - prevent insertion of newlines  
+    file          - the file to read for here-documents
+    --markdown    - Attempt to produce markdown
+    --text-only   - Attempt to remove markdown notations
+    --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
+    --no-newlines - prevent insertion of newlines
 ```
 
 ##### Returns:
 
 ```
-      0  
+      0
 ```
 
 
@@ -72,7 +72,7 @@ Prints the args with the dry_run tag, mainly for internal use.
 ##### Globals:
 
 ```
-      DEBUG - does nothing unless DEBUG=1  
+      DEBUG - does nothing unless DEBUG=1
 ```
 
 
@@ -81,8 +81,8 @@ Prints the args with the dry_run tag, mainly for internal use.
 ##### Globals:
 
 ```
-      DEBUG        - does nothing unless DEBUG=1  
-      ISHLIB_DEBUG - does nothing unless this is 1  
+      DEBUG        - does nothing unless DEBUG=1
+      ISHLIB_DEBUG - does nothing unless this is 1
 ```
 
 
@@ -106,7 +106,7 @@ Just a convenience function for checking DRY_RUN in constructs like:
 ##### Returns:
 
 ```
-      0       - if $DRY_RUN is 1  
-      1       - if $DRY_RUN is not 1  
+      0       - if $DRY_RUN is 1
+      1       - if $DRY_RUN is not 1
 ```
 

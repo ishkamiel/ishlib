@@ -134,8 +134,7 @@ print_docstrings() {
       listitem)
         # Indent listitems
         [ "${_format}" = 'text' ] && printf '    %s\n' "$line"
-        # [ "${_format}" = 'markdown' ] && printf '%s %s\n' '-' "$line"
-        [ "${_format}" = 'markdown' ] && printf '    %s  \n' "$line"
+        [ "${_format}" = 'markdown' ] && printf '    %s\n' "$line"
         ;;
       listheader)
         [ "${_format}" = 'text' ] && printf '%s\n' "$line"

@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'################################################################DOCSTRING'
-# ishlib 2021-04-03.1302.2b02367
+# ishlib 2021-04-03.1332.be44ba0
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -37,7 +37,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2021-04-03.1302.2b02367"
+export ish_VERSION_NUMBER="2021-04-03.1332.be44ba0"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -106,6 +106,10 @@ ishlib_main() {
       _help_format=--markdown
       shift
       ;;
+    --html)
+      _help_format=html
+      shift
+      ;;
     -d)
       export DEBUG=1
       export ISHLIB_DEBUG=1
@@ -119,7 +123,51 @@ ishlib_main() {
   done
 
   if [ "${_target}" = help ]; then
-      print_docstrings "$fn" ${_help_format} --tag "${ish_DOCSTRING}"
+      if [ ${_help_format} = 'html' ]; then
+        cat <<EOF
+<!DOCTYPE html>
+<html>
+<head>
+<title>${ish_VERSION_NAME}</title>
+<script>
+window.onload = function(e) {
+  const code = document.querySelectorAll("code");
+  [...code].forEach(el => el.textContent = el.textContent.replace(/^\n/,''));
+}
+</script>
+<style>
+#content {
+  max-width: 70em;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  font-family: monospace;
+  white-space: pre;
+}
+code::first-line {
+  font-size: 0px;
+}
+h4 code {
+  font-family: monospace;
+  font-size: 110%;
+}
+</style>
+</head>
+<body>
+<div id="content">
+EOF
+
+        print_docstrings "$fn" --markdown --tag "${ish_DOCSTRING}" | markdown
+        cat <<EOF
+</div>
+</body>
+</html>
+EOF
+      else
+        print_docstrings "$fn" ${_help_format} --tag "${ish_DOCSTRING}"
+      fi
+
       exit 0
   fi
 
@@ -252,8 +300,7 @@ print_docstrings() {
       listitem)
         # Indent listitems
         [ "${_format}" = 'text' ] && printf '    %s\n' "$line"
-        # [ "${_format}" = 'markdown' ] && printf '%s %s\n' '-' "$line"
-        [ "${_format}" = 'markdown' ] && printf '    %s  \n' "$line"
+        [ "${_format}" = 'markdown' ] && printf '    %s\n' "$line"
         ;;
       listheader)
         [ "${_format}" = 'text' ] && printf '%s\n' "$line"
