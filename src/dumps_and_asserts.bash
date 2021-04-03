@@ -37,3 +37,51 @@ dump() {
   done
   return $unbound
 }
+
+assert_dir() {
+  local vars=("$@")
+  local bad=0
+
+  for d in "${vars[@]}"; do
+    if ! [[ -e "$d" ]]; then
+      warn "does not exist: $d"
+      bad=$((bad + 1))
+    elif ! [[ -d "$d" ]]; then
+      warn "not a directory: $d"
+      bad=$((bad + 1))
+    fi
+  done
+
+  return $bad
+}
+
+assert_exists() {
+  local vars=("$@")
+  local bad=0
+
+  for d in "${vars[@]}"; do
+    if ! [[ -e "$d" ]]; then
+      warn "does not exist: $d"
+      bad=$((bad + 1))
+    fi
+  done
+
+  return $bad
+}
+
+dump_and_assert_dir() {
+  local vars=("$@")
+  local bad=0
+
+  for var in "${vars[@]}"; do
+    if [[ -n "${var+x}" ]]; then
+      debug "${var}=${!var}"
+      assert_dir "${!var}"
+    else
+      debug "$var is unbound"
+      unbound=$((bad + 1))
+    fi
+  done
+
+  return $bad
+}
