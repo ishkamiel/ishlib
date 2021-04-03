@@ -76,6 +76,8 @@ print_docstrings() {
   _prev=nothing
 
   while read -r line; do
+    _prev2=${_prev}
+    _prev=${_print}
     if [ "$line" = ": <<'${_tag}'" ]; then
       ishlib_debug "${_t} found matching start of here-document"
       [ "${_do_newlines}" = 1 ] && [ ${_newline} = 0 ] && echo && _newline=1
@@ -83,7 +85,6 @@ print_docstrings() {
     elif [ "$line" = "$_tag" ]; then
       _print=0
     elif [ ${_print} != 0 ]; then
-      _prev=$_print
       # First see if we need to update what we're printing
       if has_prefix "$line" "# "; then
         _print="h1"
@@ -97,8 +98,8 @@ print_docstrings() {
       elif has_prefix "$line" "#### "; then
         _print="h4"
         [ "${_format}" = 'text' ] && substr --var line "${line}" 6
-      elif has_prefix "$line" '`'; then
-        # FIXME: This will match too much!
+      elif has_prefix "$line" '`' && [ "${_prev2}" = "0" ]; then
+        # Only catch these at beginning of docstring!
         _print="funcheader"
       elif has_prefix "$line" "Globals:"; then
         _print="listheader"
@@ -109,17 +110,19 @@ print_docstrings() {
       elif [ "$line" = '' ]; then
         _print="newline"
       fi
+    fi
 
-      # Markdown specific formatting
-      if [ $_format = "markdown" ]; then
-        # End listitems
-        if [ $_prev = "listitem" ] && [ $_print != "listitem" ]; then
-          # _newline=1
-          # printf "\n"
-          printf "%s\n\n" '```'
-        fi
+    # Markdown specific formatting
+    if [ $_format = "markdown" ]; then
+      # End listitems
+      if [ $_prev = "listitem" ] && [ $_print != "listitem" ]; then
+        # _newline=1
+        # printf "\n"
+        printf "%s\n\n" '```'
       fi
+    fi
 
+    if [ "$_prev" != 0 ] && [ "${_print}" != 0 ]; then
       # Then do the printing
       case $_print in
       newline)
