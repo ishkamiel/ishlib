@@ -11,81 +11,28 @@ ish_SOURCED_prints_and_prompts_sh=1 # source guard
 . src/common.sh
 ###############################################################################
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-say ...
--------
+: <<'################################################################DOCSTRING'
 
-Prints the given args to stderr, but only if DEBUG=1.
+#### Print and debug helpers
 
-Globals:
-  ish_ColorDebug - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
-debug() {
-  [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-  printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
-  return 0
-}
+The print functions all follow the same pattern, i.e, they print a short tag
+followed by the all arguments colorized as specificed by global color tags.
+At present, all printouts are to sdtderr. All functions return 0, or, ine
+case of fail, never returns.
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-`ishlib_debug ...`
+################################################################DOCSTRING
 
-Passes args to debug, but only if ISHLIB_DEBUG is set to 1.
-
-Globals:
-  ISHLIB_DEBUG - does nothing unless this is 1
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
-ishlib_debug() {
-  [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
-  debug "$@"
-  return 0
-}
-
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-say ...
--------
-
-Prints the given args to stderr.
-
-Globals:
-  ish_ColorSay - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
+: <<'################################################################DOCSTRING'
+`say ...`
+################################################################DOCSTRING
 say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
   return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-warn ...
---------
-
-Prints the given args to stderr.
-
-Globals:
-  ish_ColorWarn - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
+: <<'################################################################DOCSTRING'
+`warn ...`
+################################################################DOCSTRING
 warn() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
@@ -100,22 +47,11 @@ warn() {
   return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-fail ...
---------
+: <<'################################################################DOCSTRING'
+`fail ...`
 
-Prints the given args to stderr and then exits with the value 1.
-
-Globals:
-  ish_ColorFail - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  never returns
-
-DOCSTRING
+Prints the args and then calls `exit 1`
+################################################################DOCSTRING
 fail() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
@@ -129,24 +65,37 @@ fail() {
   exit 1
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-
-DOCSTRING
 : <<'################################################################DOCSTRING'
 `say_dry_run ...`
---------
 
-Prints the given args to stderr and then exits with the value 1.
-
-Globals:
-  ish_ColorDryRun - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  never returns
+Prints the args with the dry_run tag, mainly for internal use.
 ################################################################DOCSTRING
 say_dry_run() {
   printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
 }
+
+: <<'################################################################DOCSTRING'
+`debug ...`
+
+Globals:
+  DEBUG - does nothing unless DEBUG=1
+################################################################DOCSTRING
+debug() {
+  [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
+  printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
+  return 0
+}
+
+: <<'################################################################DOCSTRING'
+`ishlib_debug ...`
+
+Globals:
+  DEBUG        - does nothing unless DEBUG=1
+  ISHLIB_DEBUG - does nothing unless this is 1
+################################################################DOCSTRING
+ishlib_debug() {
+  [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
+  debug "$@"
+  return 0
+}
+

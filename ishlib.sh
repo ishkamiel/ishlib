@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'################################################################DOCSTRING'
-# ishlib 2021-04-03.1206.7397b40
+# ishlib 2021-04-03.1302.2b02367
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -37,7 +37,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2021-04-03.1206.7397b40"
+export ish_VERSION_NUMBER="2021-04-03.1302.2b02367"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -78,7 +78,6 @@ ish_DOCSTRING='################################################################D
 ish_DebugTag="ishlib:"
 
 : <<'################################################################DOCSTRING'
-
 `ishlib_version`
 
 Print out the version of ishlib loaded.
@@ -195,6 +194,8 @@ print_docstrings() {
   _prev=nothing
 
   while read -r line; do
+    _prev2=${_prev}
+    _prev=${_print}
     if [ "$line" = ": <<'${_tag}'" ]; then
       ishlib_debug "${_t} found matching start of here-document"
       [ "${_do_newlines}" = 1 ] && [ ${_newline} = 0 ] && echo && _newline=1
@@ -202,7 +203,6 @@ print_docstrings() {
     elif [ "$line" = "$_tag" ]; then
       _print=0
     elif [ ${_print} != 0 ]; then
-      _prev=$_print
       # First see if we need to update what we're printing
       if has_prefix "$line" "# "; then
         _print="h1"
@@ -216,8 +216,8 @@ print_docstrings() {
       elif has_prefix "$line" "#### "; then
         _print="h4"
         [ "${_format}" = 'text' ] && substr --var line "${line}" 6
-      elif has_prefix "$line" '`'; then
-        # FIXME: This will match too much!
+      elif has_prefix "$line" '`' && [ "${_prev2}" = "0" ]; then
+        # Only catch these at beginning of docstring!
         _print="funcheader"
       elif has_prefix "$line" "Globals:"; then
         _print="listheader"
@@ -228,17 +228,19 @@ print_docstrings() {
       elif [ "$line" = '' ]; then
         _print="newline"
       fi
+    fi
 
-      # Markdown specific formatting
-      if [ $_format = "markdown" ]; then
-        # End listitems
-        if [ $_prev = "listitem" ] && [ $_print != "listitem" ]; then
-          # _newline=1
-          # printf "\n"
-          printf "%s\n\n" '```'
-        fi
+    # Markdown specific formatting
+    if [ $_format = "markdown" ]; then
+      # End listitems
+      if [ $_prev = "listitem" ] && [ $_print != "listitem" ]; then
+        # _newline=1
+        # printf "\n"
+        printf "%s\n\n" '```'
       fi
+    fi
 
+    if [ "$_prev" != 0 ] && [ "${_print}" != 0 ]; then
       # Then do the printing
       case $_print in
       newline)
@@ -367,81 +369,28 @@ print_DOCSTRINGs() {
   return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-say ...
--------
+: <<'################################################################DOCSTRING'
 
-Prints the given args to stderr, but only if DEBUG=1.
+#### Print and debug helpers
 
-Globals:
-  ish_ColorDebug - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
-debug() {
-  [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-  printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
-  return 0
-}
+The print functions all follow the same pattern, i.e, they print a short tag
+followed by the all arguments colorized as specificed by global color tags.
+At present, all printouts are to sdtderr. All functions return 0, or, ine
+case of fail, never returns.
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-`ishlib_debug ...`
+################################################################DOCSTRING
 
-Passes args to debug, but only if ISHLIB_DEBUG is set to 1.
-
-Globals:
-  ISHLIB_DEBUG - does nothing unless this is 1
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
-ishlib_debug() {
-  [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
-  debug "$@"
-  return 0
-}
-
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-say ...
--------
-
-Prints the given args to stderr.
-
-Globals:
-  ish_ColorSay - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
+: <<'################################################################DOCSTRING'
+`say ...`
+################################################################DOCSTRING
 say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
   return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-warn ...
---------
-
-Prints the given args to stderr.
-
-Globals:
-  ish_ColorWarn - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  0 - always
-DOCSTRING
+: <<'################################################################DOCSTRING'
+`warn ...`
+################################################################DOCSTRING
 warn() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
@@ -456,22 +405,11 @@ warn() {
   return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-fail ...
---------
+: <<'################################################################DOCSTRING'
+`fail ...`
 
-Prints the given args to stderr and then exits with the value 1.
-
-Globals:
-  ish_ColorFail - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  never returns
-
-DOCSTRING
+Prints the args and then calls `exit 1`
+################################################################DOCSTRING
 fail() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
@@ -485,24 +423,38 @@ fail() {
   exit 1
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-dry_run ...
---------
+: <<'################################################################DOCSTRING'
+`say_dry_run ...`
 
-Prints the given args to stderr and then exits with the value 1.
+Prints the args with the dry_run tag, mainly for internal use.
+################################################################DOCSTRING
+say_dry_run() {
+  printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
+}
+
+: <<'################################################################DOCSTRING'
+`debug ...`
 
 Globals:
-  ish_ColorDryRun - printed before arguments (e.g., to set color)
-  ish_ColorNC - printed after arguments (e.g., to reset color)
-Arguments:
-  ... - all arguments are printed
-Returns:
-  never returns
+  DEBUG - does nothing unless DEBUG=1
+################################################################DOCSTRING
+debug() {
+  [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
+  printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
+  return 0
+}
 
-DOCSTRING
-dry_run() {
-  printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
+: <<'################################################################DOCSTRING'
+`ishlib_debug ...`
+
+Globals:
+  DEBUG        - does nothing unless DEBUG=1
+  ISHLIB_DEBUG - does nothing unless this is 1
+################################################################DOCSTRING
+ishlib_debug() {
+  [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
+  debug "$@"
+  return 0
 }
 
 #------------------------------------------------------------------------------
@@ -892,7 +844,7 @@ dump_and_assert_dir() {
 }
 
 : <<'################################################################DOCSTRING'
-do_or_dry [--bg [--pid=pid_var]] cmd [args...]
+`do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
 ################################################################DOCSTRING
@@ -904,7 +856,7 @@ do_or_dry() {
 
   debug "$t cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
-    dry_run "$cmd" "${args[@]}"
+    say_dry_run "$cmd" "${args[@]}"
   else
     if ! $cmd "${args[@]}"; then
       warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
@@ -915,7 +867,7 @@ do_or_dry() {
 }
 
 : <<'################################################################DOCSTRING'
-do_or_dry_bg pid_var cmd [args...]
+`do_or_dry_bg pid_var cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
 ################################################################DOCSTRING
@@ -927,7 +879,7 @@ do_or_dry_bg() {
 
     debug "ishlib:do_or_dry_bg: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}" "\\adsf&"
     if is_dry; then
-        dry_run "$cmd" "${args[@]}" "&"
+        say_dry_run "$cmd" "${args[@]}" "&"
         pid=""
         return 0
     else
@@ -939,7 +891,7 @@ do_or_dry_bg() {
 }
 
 : <<'################################################################DOCSTRING'
-is_dry
+`is_dry`
 
 Just a convenience function for checking DRY_RUN in constructs like:
 `if is_dry; then ...; fi`.

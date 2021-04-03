@@ -56,7 +56,6 @@ ish_DOCSTRING='################################################################D
 ish_DebugTag="ishlib:"
 
 : <<'################################################################DOCSTRING'
-
 `ishlib_version`
 
 Print out the version of ishlib loaded.

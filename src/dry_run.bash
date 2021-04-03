@@ -14,7 +14,7 @@ ish_SOURCED_dry_run_bash=1 # source guard
 ###############################################################################
 
 : <<'################################################################DOCSTRING'
-do_or_dry [--bg [--pid=pid_var]] cmd [args...]
+`do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
 ################################################################DOCSTRING
@@ -37,7 +37,7 @@ do_or_dry() {
 }
 
 : <<'################################################################DOCSTRING'
-do_or_dry_bg pid_var cmd [args...]
+`do_or_dry_bg pid_var cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
 ################################################################DOCSTRING
@@ -61,7 +61,7 @@ do_or_dry_bg() {
 }
 
 : <<'################################################################DOCSTRING'
-is_dry
+`is_dry`
 
 Just a convenience function for checking DRY_RUN in constructs like:
 `if is_dry; then ...; fi`.
