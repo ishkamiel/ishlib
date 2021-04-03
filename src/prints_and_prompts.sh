@@ -131,7 +131,10 @@ fail() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-dry_run ...
+
+DOCSTRING
+: <<'################################################################DOCSTRING'
+`say_dry_run ...`
 --------
 
 Prints the given args to stderr and then exits with the value 1.
@@ -143,8 +146,7 @@ Arguments:
   ... - all arguments are printed
 Returns:
   never returns
-
-DOCSTRING
-dry_run() {
+################################################################DOCSTRING
+say_dry_run() {
   printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
 }

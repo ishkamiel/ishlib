@@ -26,7 +26,7 @@ do_or_dry() {
 
   debug "$t cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
-    dry_run "$cmd" "${args[@]}"
+    say_dry_run "$cmd" "${args[@]}"
   else
     if ! $cmd "${args[@]}"; then
       warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
@@ -49,7 +49,7 @@ do_or_dry_bg() {
 
     debug "ishlib:do_or_dry_bg: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}" "\\adsf&"
     if is_dry; then
-        dry_run "$cmd" "${args[@]}" "&"
+        say_dry_run "$cmd" "${args[@]}" "&"
         pid=""
         return 0
     else
