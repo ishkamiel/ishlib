@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'################################################################DOCSTRING'
-# ishlib 2021-03-27.1720.da9a5f4
+# ishlib 2021-04-03.1206.7397b40
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -37,7 +37,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2021-03-27.1720.da9a5f4"
+export ish_VERSION_NUMBER="2021-04-03.1206.7397b40"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -139,10 +139,10 @@ specific and largely undocumented conventions followed in ishlib.sh, and will
 likely misbehave in other contexts.
 
 Arguments:
---markdown - Attempt to produce markdown
-file - the file to read for here-documents
---text-only - Attempt to remove markdown notations
---tag TAG - use the given TAG for docstrings (default is DOCSTIRNG)
+file          - the file to read for here-documents
+--markdown    - Attempt to produce markdown
+--text-only   - Attempt to remove markdown notations
+--tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
 --no-newlines - prevent insertion of newlines
 Returns:
   0
@@ -443,7 +443,16 @@ Returns:
   0 - always
 DOCSTRING
 warn() {
-  printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
+  if [ -z "${BASH_VERSION:-}" ]; then
+    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
+  else
+    # shellcheck disable=2039 # Bash only!
+    printf >&2 "[WW] %b%b (at %b)%b\n" "${ish_ColorWarn}" \
+      "$*" \
+      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
+      "${ish_ColorNC}"
+  fi
+
   return 0
 }
 
@@ -464,7 +473,15 @@ Returns:
 
 DOCSTRING
 fail() {
-  printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  if [ -z "${BASH_VERSION:-}" ]; then
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  else
+    # shellcheck disable=2039 # Bash only!
+    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
+      "$*" \
+      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
+      "${ish_ColorNC}"
+  fi
   exit 1
 }
 
@@ -826,31 +843,84 @@ dump() {
   return $unbound
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-do_or_dry cmd ...
-DOCSTRING
+assert_dir() {
+  local vars=("$@")
+  local bad=0
+
+  for d in "${vars[@]}"; do
+    if ! [[ -e "$d" ]]; then
+      warn "does not exist: $d"
+      bad=$((bad + 1))
+    elif ! [[ -d "$d" ]]; then
+      warn "not a directory: $d"
+      bad=$((bad + 1))
+    fi
+  done
+
+  return $bad
+}
+
+assert_exists() {
+  local vars=("$@")
+  local bad=0
+
+  for d in "${vars[@]}"; do
+    if ! [[ -e "$d" ]]; then
+      warn "does not exist: $d"
+      bad=$((bad + 1))
+    fi
+  done
+
+  return $bad
+}
+
+dump_and_assert_dir() {
+  local vars=("$@")
+  local bad=0
+
+  for var in "${vars[@]}"; do
+    if [[ -n "${var+x}" ]]; then
+      debug "${var}=${!var}"
+      assert_dir "${!var}"
+    else
+      debug "$var is unbound"
+      unbound=$((bad + 1))
+    fi
+  done
+
+  return $bad
+}
+
+: <<'################################################################DOCSTRING'
+do_or_dry [--bg [--pid=pid_var]] cmd [args...]
+
+TODO: merge do_or_dry_bg here using the above cmdline args
+################################################################DOCSTRING
 do_or_dry() {
   local cmd=$1
+  local t="${ish_DebugTag}do_or_dry:"
   shift
   local args=("$@")
 
-  debug "ishlib:do_or_dry: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
+  debug "$t cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     dry_run "$cmd" "${args[@]}"
-    return 0
   else
-    $cmd "${args[@]}"
-    return $?
+    if ! $cmd "${args[@]}"; then
+      warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
+      return 1
+    fi
   fi
+  return 0
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRINg'
-do_or_dry_bg pid cmd ...
-DOCSTRINg
+: <<'################################################################DOCSTRING'
+do_or_dry_bg pid_var cmd [args...]
+
+TODO: merge do_or_dry_bg here using the above cmdline args
+################################################################DOCSTRING
 do_or_dry_bg() {
-    declare -n _ish_tmp_pid=$1
+    declare -n pid=$1
     local cmd=$2
     shift 2
     local args=("$@")
@@ -858,20 +928,26 @@ do_or_dry_bg() {
     debug "ishlib:do_or_dry_bg: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}" "\\adsf&"
     if is_dry; then
         dry_run "$cmd" "${args[@]}" "&"
-        _ish_tmp_pid=""
+        pid=""
         return 0
     else
         $cmd "${args[@]}" &
-        _ish_tmp_pid=$!
-        debug "ishlib:do_or_dry_bg: started $_ish_tmp_pid!"
+        pid=$!
+        debug "ishlib:do_or_dry_bg: started $pid!"
         return 0
     fi
 }
 
-#------------------------------------------------------------------------------
-: <<'DOCSTRING'
-do_or_dry cmd ...
-DOCSTRING
+: <<'################################################################DOCSTRING'
+is_dry
+
+Just a convenience function for checking DRY_RUN in constructs like:
+`if is_dry; then ...; fi`.
+
+Returns:
+  0       - if $DRY_RUN is 1
+  1       - if $DRY_RUN is not 1
+################################################################DOCSTRING
 is_dry() {
   [[ "${DRY_RUN:-}" = 1 ]] && return 0
   return 1
@@ -879,24 +955,32 @@ is_dry() {
 
 #------------------------------------------------------------------------------
 : <<'DOCSTRING'
-git_clone_or_update url dir
+git_clone_or_update [-b branc] [--update-submodules] url dir
 
 Arguments:
-  url - the git repository remote
-  dir - the local directory for the repository
+  url                   - the git remote URL
+  dir                   - The destianation directory
+  --update_submodules   - Run submodule update after clone
+  -b|--branc brach      - Specify branch to checkout / update
+  -c|--commit           - Also checkokut specific commit
 Globals:
-  bin_git - if specified, will use the given command in place of git
+  bin_git               - Path to git (default : git)
+  DRY_RUN               - Respects dry-run flag
 Returns:
   0 - on success
-  x - on failure, either 1 or return value of git
+  1 - on failure
 DOCSTRING
 git_clone_or_update() {
   local t="ishlib:git_clone_or_update:"
-  local url="$1"
-  local dir="$2"
+
+  local bin_git=${bin_git:-git}
+  has_command "${bin_git}" || (warn "$t cannot find ${bin_git}" && return 1)
+
+  local url=""
+  local dir=""
   local branch=""
+  local commit=""
   local update_submodules=0
-  shift 2
 
   local bad_args=0
   local positional=()
@@ -908,23 +992,31 @@ git_clone_or_update() {
       branch="$2"
       shift 2
       ;;
+    -c | --commit)
+      commit="$2"
+      shift 2
+      ;;
     --update-submodules)
       update_submodules=1
       shift
       ;;
     *)
-      warn "$t unknown argument $1"
-      bad_args=$((bad_args + 1))
-      shift
+      if [[ -z "${url}" ]]; then
+        url="$1"
+        shift
+      elif [[ -z "${dir}" ]]; then
+        dir="$1"
+        shift
+      else
+        warn "$t unknown argument $1"
+        bad_args=$((bad_args + 1))
+        shift
+      fi
       ;;
     esac
   done
   set -- "${positional[@]}" # restore positional parameters
   [[ $bad_args -eq 0 ]] || return 1
-
-  local bin_git=${bin_git:-git}
-
-  has_command "${bin_git}" || (warn "$t cannot find ${bin_git}" && return 1)
 
   if [[ ! -e "${dir}/.git" ]]; then
     local git_args=()
@@ -950,9 +1042,17 @@ git_clone_or_update() {
       do_or_dry "$bin_git" checkout "$branch" || (warn "$t checkout $branch failed" && return 1)
     fi
 
-    do_or_dry "$bin_git" pull || (warn "ishlib:git_clone_or_update" && return 1)
+    do_or_dry "$bin_git" pull || (warn "$t failted to git pull ${dir}" && return 1)
     do_or_dry popd || (warn "$t filed to popd" && return 1)
   fi
+
+  if [[ -n "${commit}" ]]; then
+    debug "${t} checking out ${commit}"
+    do_or_dry pushd "${dir}" || (warn "$t failed to pusd ${dir}" && return 1)
+    do_or_dry "$bin_git" checkout "${commit}" || (warn "$t failed to checkout ${commit} in ${dir}" && return 1)
+    do_or_dry popd || (warn "$t filed to popd" && return 1)
+  fi
+
   return 0
 }
 
