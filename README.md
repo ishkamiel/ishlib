@@ -2,6 +2,9 @@
 
 This is a collection of various scripts and tricks collected along the years.
 
+DISCLAIMER: This is ostly just for playing around with bash / shell scripts,
+so no guarantees that this is in a stable state at any given time.
+
 The script is meant to be sourced elsewhere, but can be invoked as
 `./ishlib.sh -h` flag to show the same documentation as below. The source
 files in `./src` need not be manually used, they are already in `ishlib.sh`.
