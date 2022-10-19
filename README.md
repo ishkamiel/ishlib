@@ -2,7 +2,7 @@
 
 This is a collection of various scripts and tricks collected along the years.
 
-DISCLAIMER: This is ostly just for playing around with bash / shell scripts,
+DISCLAIMER: This is mostly just for playing around with bash / shell scripts,
 so no guarantees that this is in a stable state at any given time.
 
 The script is meant to be sourced elsewhere, but can be invoked as
