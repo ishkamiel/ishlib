@@ -57,7 +57,7 @@ sub source_readme {
 }
 
 sub source_file {
-    my ( $out_fh, $fn_base ) = @_;
+    my ( $out_fh, $fn_base, $do_includes ) = @_;
     my $start_reading = 0;
     my $fn            = File::Spec->catfile( $src_dir, $fn_base );
 
@@ -68,25 +68,44 @@ sub source_file {
 
     open my $fh, "<", "$fn" or croak "Failed to open < $fn";
     while (<$fh>) {
-        if (m/^$header_end\s*$/) {    # Ignore until we see the header_end
-            $start_reading = 1;
-        } elsif ($start_reading) {
-            process_oneline( $out_fh, $_ );
+        if ( !$start_reading ) {
+            if (m/^#/) {
+
+                # Ignore comments in header
+            } elsif (m/^\[ -n "\${ish_SOURCE.*:-}" \] && return 0$/) {
+
+                # Ignore the include guard
+            } elsif (m/^ish_SOURCED.*=1\s*(#.*)?$/) {
+
+                # Ignore the include guard
+                # } elsif (!$do_includes && m/^\. \w+\.\w+\s*(#.*)?$/) {
+            } elsif ( !$do_includes && m|^\. (\w+/)*\w+\.\w+$| ) {
+                # Ignore includes, unless do_includes is set
+            } else {
+                $start_reading = 1;
+            }
+        }
+        if ($start_reading) {
+            process_oneline( $out_fh, $_, $do_includes );
+        } else {
+            print("Ignoring: $_");
         }
     }
     close $fh;
 
-    $current_fn = $old_fn;            # Restore $current_fn
+    $current_fn = $old_fn;    # Restore $current_fn
     return;
 }
 
 sub process_oneline {
-    my ( $out_fh, $line ) = @_;
+    my ( $out_fh, $line, $do_includes ) = @_;
 
     if ( $line =~ m/^__ISHLIB_README__\s*$/ ) {    # inline README
         source_readme( $out_fh, $_ );
     } elsif ( $line =~ m/^\. ([\w_\.]+)$/ ) {      # inline source
-        source_file( $out_fh, $1 );
+        if ($do_includes) {
+            source_file( $out_fh, $1 );
+        }
     } elsif ( $line =~ m/^\s*$/ ) {                # Squash multiple empty lines
         $empty_lines++ or print $out_fh "\n";
     } else {                                       # Otherwise print the line
@@ -107,7 +126,7 @@ sub build_ishlib {
     open my $out_fh,  ">", $output_fn or croak "Cannot open > $output_fn";
 
     while (<$base_fh>) {
-        process_oneline( $out_fh, $_ );
+        process_oneline( $out_fh, $_, 1 );
     }
 
     close $base_fh;
@@ -116,14 +135,14 @@ sub build_ishlib {
 }
 
 sub reset_readme {
-    my $fn = shift;
-    my @lines = ( "# $ishlib_name $ishlib_version " );
+    my $fn    = shift;
+    my @lines = ("# $ishlib_name $ishlib_version ");
 
     my $skip = 0;
 
-    open my $fh, "<", $fn   or croak "Failed to open < $fn";
+    open my $fh, "<", $fn or croak "Failed to open < $fn";
     while (<$fh>) {
-        $skip++ or next; # Skip first line
+        $skip++ or next;    # Skip first line
         push @lines, $_;
         m/^$readme_documentation_start\s*$/ and last;
     }

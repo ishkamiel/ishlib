@@ -8,22 +8,19 @@
 [ -n "${ish_SOURCED_download_file_sh:-}" ] && return 0
 ish_SOURCED_download_file_sh=1 # source guard
 # shellcheck source=common.sh
-. common.sh
-###############################################################################
+. src/common.sh
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-download_file $url $dst
------------------------
+`download_file url dst`
 
 Attempts to download file at $url to $dst, creating the containing directory
 if needed. Will first try curl, then wget, and finally fail if neither is
-awailable.
+available.
 
 Arguments:
   url - the URL to download
-  dsg - the filename to store the download at
-Returns: 
+  dst - the filename to save to
+Returns:
   0 - on success
   1 - bad arguments given
   2 - when neither curl nor wget was found

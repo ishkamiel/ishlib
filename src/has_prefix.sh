@@ -8,14 +8,12 @@
 [ -n "${ish_SOURCED_has_prefix_sh:-}" ] && return 0
 ish_SOURCED_has_prefix_sh=1 # source guard
 # shellcheck source=common.sh
-. common.sh
-###############################################################################
+. src/common.sh
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-has_prefix str prefx
+`has_prefix str prefx`
 
-Source: 
+Source:
 
 Arguments:
   str - string to look into

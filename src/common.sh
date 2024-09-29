@@ -7,11 +7,11 @@
 #
 [ -n "${ish_SOURCED_common_sh:-}" ] && return 0
 ish_SOURCED_common_sh=1 # source guard
-###############################################################################
 
 DEBUG=${DEBUG:-0}
 DRY_RUN=${DRY_RUN:-0}
 
+# shellcheck disable=SC2034
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="__ISHLIB_NAME__"
@@ -50,17 +50,17 @@ ish_ColorFail="${TERM_COLOR_RED}"
 ish_ColorDryRun="${TERM_COLOR_BROWN}"
 
 # shellcheck disable=SC2034
-ish_DOCSTRING='################################################################DOCSTRING'
+ish_DOCSTRING='DOCSTRING'
 
 # shellcheck disable=SC2034
 ish_DebugTag="ishlib:"
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `ishlib_version`
 
 Print out the version of ishlib loaded.
 
-################################################################DOCSTRING
+DOCSTRING
 ishlib_version() {
   say "${ish_VERSION_NAME} ${ish_VERSION_NUMBER} (${ish_VERSION_VARIANT})"
   return 0

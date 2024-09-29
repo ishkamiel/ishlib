@@ -7,6 +7,5 @@
 #
 [ -n "${ish_SOURCED_common_bash:-}" ] && return 0
 ish_SOURCED_common_bash=1 # source guard
-###############################################################################
 
 export ish_VERSION_VARIANT="POSIX+bash"

@@ -8,8 +8,8 @@
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1 # source guard
 
-: <<'################################################################DOCSTRING'
-# ishlib 2021-04-03.1332.be44ba0
+: <<'DOCSTRING'
+# ishlib 2024-09-29.1835.ff160bb
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -29,15 +29,16 @@ acknowledgement that is missing.
 ## Documentation
 
 ### POSIX-compliant functions
-################################################################DOCSTRING
+DOCSTRING
 
 DEBUG=${DEBUG:-0}
 DRY_RUN=${DRY_RUN:-0}
 
+# shellcheck disable=SC2034
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2021-04-03.1332.be44ba0"
+export ish_VERSION_NUMBER="2024-09-29.1835.ff160bb"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -72,17 +73,17 @@ ish_ColorFail="${TERM_COLOR_RED}"
 ish_ColorDryRun="${TERM_COLOR_BROWN}"
 
 # shellcheck disable=SC2034
-ish_DOCSTRING='################################################################DOCSTRING'
+ish_DOCSTRING='DOCSTRING'
 
 # shellcheck disable=SC2034
 ish_DebugTag="ishlib:"
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `ishlib_version`
 
 Print out the version of ishlib loaded.
 
-################################################################DOCSTRING
+DOCSTRING
 ishlib_version() {
   say "${ish_VERSION_NAME} ${ish_VERSION_NUMBER} (${ish_VERSION_VARIANT})"
   return 0
@@ -171,12 +172,12 @@ EOF
       exit 0
   fi
 
-  warn "ishlib run directly wihout parameters!"
+  warn "ishlib run directly without parameters!"
   say "To print docs:       ./ishlib.sh -h"
   exit 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `print_docstrings file [options]`
 
 Prints out specific docstrings found in the given file. Default is to just
@@ -188,13 +189,13 @@ likely misbehave in other contexts.
 Arguments:
 file          - the file to read for here-documents
 --markdown    - Attempt to produce markdown
---text-only   - Attempt to remove markdown notations
+--text-only   - Attempt to produce texst-only
 --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
 --no-newlines - prevent insertion of newlines
 Returns:
   0
 
-################################################################DOCSTRING
+DOCSTRING
 print_docstrings() {
   _t="${ish_DebugTag}print_docstring:"
 
@@ -284,7 +285,7 @@ print_docstrings() {
       if [ $_prev = "listitem" ] && [ $_print != "listitem" ]; then
         # _newline=1
         # printf "\n"
-        printf "%s\n\n" '```'
+        printf "%s\n" '```'
       fi
     fi
 
@@ -292,7 +293,7 @@ print_docstrings() {
       # Then do the printing
       case $_print in
       newline)
-        # Skip consqutive newlines, unless this behavior is disables
+        # Skip consqutive newlines, unless this behavior is disabled
         if [ ${_do_newlines} = 0 ] || [ ${_newline} = 0 ]; then
           printf "\n"
         fi
@@ -332,7 +333,7 @@ print_docstrings() {
         _newline=1       # Make sure we remember we had a newline
         ;;
       *)
-        _print=paragraph # By default, assume paragrpah is next
+        _print=paragraph # By default, assume paragraph is next
         ;;
       esac
     fi
@@ -353,96 +354,33 @@ print_docstrings() {
   return 0
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-print_DOCSTRINGs
-----------------
-
-Prints out documentation (i.e., the anonymous DOCSTRINGs).
-
-Arguments:
-  -
-Returns:
-  0
-
-DOCSTRING
-print_DOCSTRINGs() {
-  _old_IFS="$IFS"
-  IFS=''
-  _ishlib_print=0
-  _ishlib_newline=1
-  _ishlib_indent=''
-  while read -r line; do
-    if [ "$line" = ': <<'\''DOCSTRING'\''' ]; then
-      [ ${_ishlib_newline} = 0 ] && echo && _ishlib_newline=1
-      _ishlib_print=1
-      _ishlib_indent=''
-    elif [ "$line" = 'DOCSTRING' ]; then
-      _ishlib_print=0
-      _ishlib_indent=''
-    else
-      if [ ${_ishlib_print} != 0 ]; then
-        if has_prefix "$line" "----"; then
-          _ishlib_print=2
-        elif has_prefix "$line" "===="; then
-          _ishlib_print=1
-        elif has_prefix "$line" "Globals:"; then
-          _ishlib_indent='  '
-          _ishlib_print=3
-        elif has_prefix "$line" "Arguments:"; then
-          _ishlib_indent='  '
-          _ishlib_print=3
-        elif has_prefix "$line" "Returns:"; then
-          _ishlib_indent='  '
-          _ishlib_print=3
-        fi
-
-        [ "$line" = '' ] && _ishlib_newline=1 || _ishlib_newline=0
-        printf '%s%s\n' "$_ishlib_indent" "$line"
-
-        case $_ishlib_print in
-        2) _ishlib_indent='  ' ;;
-        3) _ishlib_indent='    ' ;;
-        *) _ishlib_indent='' ;;
-        esac
-      fi
-    fi
-  done <"$1"
-  IFS="${_old_IFS}"
-  unset _old_IFSs
-  unset _ishblib_print
-  unset _ishblib_newline
-  unset _ishblib_indent
-  return 0
-}
-
-: <<'################################################################DOCSTRING'
 
 #### Print and debug helpers
 
 The print functions all follow the same pattern, i.e, they print a short tag
-followed by the all arguments colorized as specificed by global color tags.
-At present, all printouts are to sdtderr. All functions return 0, or, ine
-case of fail, never returns.
+followed by the all arguments colorized as specified by global color tags.
+At present, all printouts are to sdtderr. All functions return 0, or in
+case of failure, never returns.
 
-################################################################DOCSTRING
+DOCSTRING
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `say ...`
-################################################################DOCSTRING
+DOCSTRING
 say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `warn ...`
-################################################################DOCSTRING
+DOCSTRING
 warn() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
   else
-    # shellcheck disable=2039 # Bash only!
+    #shellcheck disable=SC3044
     printf >&2 "[WW] %b%b (at %b)%b\n" "${ish_ColorWarn}" \
       "$*" \
       "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
@@ -452,16 +390,16 @@ warn() {
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `fail ...`
 
 Prints the args and then calls `exit 1`
-################################################################DOCSTRING
+DOCSTRING
 fail() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
   else
-    # shellcheck disable=2039 # Bash only!
+    #shellcheck disable=SC3044
     printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
       "$*" \
       "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
@@ -470,45 +408,44 @@ fail() {
   exit 1
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `say_dry_run ...`
 
 Prints the args with the dry_run tag, mainly for internal use.
-################################################################DOCSTRING
+DOCSTRING
 say_dry_run() {
   printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `debug ...`
 
 Globals:
   DEBUG - does nothing unless DEBUG=1
-################################################################DOCSTRING
+DOCSTRING
 debug() {
   [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
   printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `ishlib_debug ...`
 
 Globals:
   DEBUG        - does nothing unless DEBUG=1
   ISHLIB_DEBUG - does nothing unless this is 1
-################################################################DOCSTRING
+DOCSTRING
 ishlib_debug() {
   [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
   debug "$@"
   return 0
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-has_prefix str prefx
+`has_prefix str prefx`
 
-Source: 
+Source:
 
 Arguments:
   str - string to look into
@@ -523,19 +460,17 @@ has_prefix() {
   return 1
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-download_file $url $dst
------------------------
+`download_file url dst`
 
 Attempts to download file at $url to $dst, creating the containing directory
 if needed. Will first try curl, then wget, and finally fail if neither is
-awailable.
+available.
 
 Arguments:
   url - the URL to download
-  dsg - the filename to store the download at
-Returns: 
+  dst - the filename to save to
+Returns:
   0 - on success
   1 - bad arguments given
   2 - when neither curl nor wget was found
@@ -569,12 +504,11 @@ download_file() {
   warn "downloadFile: Cannot find curl or wget!" && return 2
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
 has_command cmd
 ---------------
 
-Checks if a comman exists, either as an executable in the path, or as a shell
+Checks if a command exists, either as an executable in the path, or as a shell
 function. Returns 0 if found, 1 otherwise. No output.
 
 Arguments:
@@ -590,9 +524,9 @@ has_command() {
   return 1
 }
 
-: <<'################################################################DOCSTRING'
-`substr string start [end] [--var result_var]`
-################################################################DOCSTRING
+: <<'DOCSTRING'
+substr string start [end] [--var result_var]
+DOCSTRING
 substr() {
   _t="${ish_DebugTag}substr:"
   _ishlib_str=
@@ -652,9 +586,9 @@ substr() {
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `strlen string [--var result_var]`
-################################################################DOCSTRING
+DOCSTRING
 strlen() {
   warn "Just use \${\#var}"
   _ishlib_str=
@@ -705,15 +639,13 @@ DOCSTRING
 
 export ish_VERSION_VARIANT="POSIX+bash"
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-array_from_ssv var str
-----------------------
+`array_from_ssv var str`
 
 Read space-separated values into an array variable.
 
 Arguments:
-  var - the name of an array varialbe to populate
+  var - the name of an array variable to populate
   str - the string to split
 Returns:
   0 - on success
@@ -724,13 +656,14 @@ array_from_ssv() {
   # Create a local reference
   declare -n _ish_tmp="${1}"
   # Then allows us to populate local variables...
+
+  #shellcheck disable=SC2048
   for e in ${*:2}; do
     _ish_tmp+=("$e")
   done
   return 0
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
 strstr haystack needle [pos_var]
 --------------------------------
@@ -738,7 +671,7 @@ strstr haystack needle [pos_var]
 Finds needle in given haystack, if pos_var is given, then also stores the
 position of the found variable into ${!pos_var}.
 
-Arguments: 
+Arguments:
     haystack - the string to look in
     needle - the string to search for
     pos_var - name of a variable for positionli
@@ -750,7 +683,7 @@ Returns:
 
 DOCSTRING
 strstr() {
-  local x="${1%%$2*}"
+  local x=${1%%"$2"*}
   if [[ "$x" = "$1" ]]; then
     [[ -n "${3+x}" ]] && printf -v "$3" "%s" "-1"
     return 1
@@ -759,9 +692,8 @@ strstr() {
   return 0
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-find_or_install var [installer [installer args]]
+`find_or_install var [installer [args...]]`
 -----------------------------
 
 Tries to find and set path for command defined by the variable named var,
@@ -769,9 +701,9 @@ i.e., ${!var}. Will also update the var variable with a full path if
 applicable.
 
 Arguments:
-  var - name of variable holding command
-  installer - optional installer function
-  install_path - where the installer will install the binary
+  var       - Indirect reference to command
+  installer - Optional installer function
+  args      - Additional argumednts to installer function
 Side effects:
   ${!var} - the variable named by var is set to the found or installed cmd
 Returns:
@@ -814,9 +746,8 @@ find_or_install() {
   return 1
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-dump var1 [var2 var3 ...]
+`dump $var1 [var2 var3 ...]`
 -----------------
 
 Will call dumpVariable for each member of vars.
@@ -890,11 +821,12 @@ dump_and_assert_dir() {
   return $bad
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
-################################################################DOCSTRING
+
+DOCSTRING
 do_or_dry() {
   local cmd=$1
   local t="${ish_DebugTag}do_or_dry:"
@@ -913,11 +845,12 @@ do_or_dry() {
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `do_or_dry_bg pid_var cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
-################################################################DOCSTRING
+
+DOCSTRING
 do_or_dry_bg() {
     declare -n pid=$1
     local cmd=$2
@@ -937,7 +870,7 @@ do_or_dry_bg() {
     fi
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `is_dry`
 
 Just a convenience function for checking DRY_RUN in constructs like:
@@ -946,21 +879,20 @@ Just a convenience function for checking DRY_RUN in constructs like:
 Returns:
   0       - if $DRY_RUN is 1
   1       - if $DRY_RUN is not 1
-################################################################DOCSTRING
+DOCSTRING
 is_dry() {
   [[ "${DRY_RUN:-}" = 1 ]] && return 0
   return 1
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-git_clone_or_update [-b branc] [--update-submodules] url dir
+`git_clone_or_update [-b branch] [--update-submodules] url dir`
 
 Arguments:
   url                   - the git remote URL
   dir                   - The destianation directory
   --update_submodules   - Run submodule update after clone
-  -b|--branc brach      - Specify branch to checkout / update
+  -b|--branch branch      - Specify branch to checkout / update
   -c|--commit           - Also checkokut specific commit
 Globals:
   bin_git               - Path to git (default : git)
@@ -1055,10 +987,8 @@ git_clone_or_update() {
   return 0
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-copy_function src dst
-----------------------
+`copy_function src dst`
 
 Copies the src function to a new function named dst.
 
@@ -1077,10 +1007,8 @@ copy_function() {
   eval "${_/$1/$2}" || return 1
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-rename_function src dst
------------------------
+`rename_function src dst`
 
 Renames the src function to dst.
 

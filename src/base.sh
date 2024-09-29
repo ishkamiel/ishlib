@@ -8,11 +8,11 @@
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1 # source guard
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 __ISHLIB_README__
 
 ### POSIX-compliant functions
-################################################################DOCSTRING
+DOCSTRING
 
 . common.sh
 . main.sh

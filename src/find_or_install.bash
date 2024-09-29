@@ -7,12 +7,11 @@
 #
 [ -n "${ish_SOURCED_find_or_install_bash:-}" ] && return 0
 ish_SOURCED_find_or_install_bash=1 # source guard
-. common.sh
-###############################################################################
+# shellcheck source=common.sh
+. src/common.sh
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-find_or_install var [installer [installer args]]
+`find_or_install var [installer [args...]]`
 -----------------------------
 
 Tries to find and set path for command defined by the variable named var,
@@ -20,9 +19,9 @@ i.e., ${!var}. Will also update the var variable with a full path if
 applicable.
 
 Arguments:
-  var - name of variable holding command
-  installer - optional installer function
-  install_path - where the installer will install the binary
+  var       - Indirect reference to command
+  installer - Optional installer function
+  args      - Additional argumednts to installer function
 Side effects:
   ${!var} - the variable named by var is set to the found or installed cmd
 Returns:

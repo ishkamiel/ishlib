@@ -7,12 +7,11 @@
 #
 [ -n "${ish_SOURCED_dumps_and_asserts_bash:-}" ] && return 0
 ish_SOURCED_dumps_and_asserts_bash=1 # source guard
-. common.sh
-###############################################################################
+# shellcheck source=common.sh
+. src/common.sh
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-dump var1 [var2 var3 ...]
+`dump $var1 [var2 var3 ...]`
 -----------------
 
 Will call dumpVariable for each member of vars.

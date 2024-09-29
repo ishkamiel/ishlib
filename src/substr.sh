@@ -7,12 +7,12 @@
 #
 [ -n "${ish_SOURCED_strstr_bash:-}" ] && return 0
 ish_SOURCED_strstr_bash=1 # source guard
-. common.sh
-###############################################################################
+# shellcheck source=common.sh
+. src/common.sh
 
-: <<'################################################################DOCSTRING'
-`substr string start [end] [--var result_var]`
-################################################################DOCSTRING
+: <<'DOCSTRING'
+substr string start [end] [--var result_var]
+DOCSTRING
 substr() {
   _t="${ish_DebugTag}substr:"
   _ishlib_str=
@@ -72,9 +72,9 @@ substr() {
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `strlen string [--var result_var]`
-################################################################DOCSTRING
+DOCSTRING
 strlen() {
   warn "Just use \${\#var}"
   _ishlib_str=

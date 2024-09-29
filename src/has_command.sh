@@ -9,14 +9,12 @@
 ish_SOURCED_has_command_sh=1 # source guard
 # shellcheck source=common.sh
 . common.sh
-###############################################################################
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
 has_command cmd
 ---------------
 
-Checks if a comman exists, either as an executable in the path, or as a shell
+Checks if a command exists, either as an executable in the path, or as a shell
 function. Returns 0 if found, 1 otherwise. No output.
 
 Arguments:

@@ -7,13 +7,11 @@
 #
 [ -n "${ish_SOURCED_bash_tricks_bash:-}" ] && return 0
 ish_SOURCED_bash_tricks_bash=1 # source guard
-. common.sh
-###############################################################################
+# shellcheck source=common.sh
+. src/common.sh
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-copy_function src dst
-----------------------
+`copy_function src dst`
 
 Copies the src function to a new function named dst.
 
@@ -32,10 +30,8 @@ copy_function() {
   eval "${_/$1/$2}" || return 1
 }
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-rename_function src dst
------------------------
+`rename_function src dst`
 
 Renames the src function to dst.
 

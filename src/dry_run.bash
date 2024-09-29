@@ -11,13 +11,13 @@ ish_SOURCED_dry_run_bash=1 # source guard
 . src/common.sh
 # shellcheck source=prints_and_prompts.sh
 . src/prints_and_prompts.sh
-###############################################################################
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
-################################################################DOCSTRING
+
+DOCSTRING
 do_or_dry() {
   local cmd=$1
   local t="${ish_DebugTag}do_or_dry:"
@@ -36,11 +36,12 @@ do_or_dry() {
   return 0
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `do_or_dry_bg pid_var cmd [args...]`
 
 TODO: merge do_or_dry_bg here using the above cmdline args
-################################################################DOCSTRING
+
+DOCSTRING
 do_or_dry_bg() {
     declare -n pid=$1
     local cmd=$2
@@ -60,7 +61,7 @@ do_or_dry_bg() {
     fi
 }
 
-: <<'################################################################DOCSTRING'
+: <<'DOCSTRING'
 `is_dry`
 
 Just a convenience function for checking DRY_RUN in constructs like:
@@ -69,7 +70,7 @@ Just a convenience function for checking DRY_RUN in constructs like:
 Returns:
   0       - if $DRY_RUN is 1
   1       - if $DRY_RUN is not 1
-################################################################DOCSTRING
+DOCSTRING
 is_dry() {
   [[ "${DRY_RUN:-}" = 1 ]] && return 0
   return 1

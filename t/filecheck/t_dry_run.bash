@@ -22,7 +22,7 @@ test_do_or_dry_bg)
   [[ -n "$proc_pid" ]] || is_dry # We don't get a pid when doing dry run
   ;;
 test_do_or_dry_bg_dont_touch)
-# Just to check I udnerstand how declare -n works...
+# Just to check I understand how declare -n works...
 # CHECK: DRY_RUN=1 | bash | test_do_or_dry_bg_dont_touch | ^.*dry run.*echo asdf.*$ | 0
 # CHECK: DRY_RUN=0 | bash | test_do_or_dry_bg_dont_touch | ^asdf$ | 0
 # CHECK:           | bash | test_do_or_dry_bg_dont_touch | ^asdf$ | 0

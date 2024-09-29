@@ -7,8 +7,8 @@
 #
 [ -n "${ish_SOURCED_main_sh:-}" ] && return 0
 ish_SOURCED_main_sh=1 # source guard
-. common.sh
-###############################################################################
+# shellcheck source=common.sh
+. src/common.sh
 
 ishlib_main() {
   [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"
@@ -79,7 +79,7 @@ h4 code {
 <body>
 <div id="content">
 EOF
-      
+
         print_docstrings "$fn" --markdown --tag "${ish_DOCSTRING}" | markdown
         cat <<EOF
 </div>
@@ -93,7 +93,7 @@ EOF
       exit 0
   fi
 
-  warn "ishlib run directly wihout parameters!"
+  warn "ishlib run directly without parameters!"
   say "To print docs:       ./ishlib.sh -h"
   exit 0
 }

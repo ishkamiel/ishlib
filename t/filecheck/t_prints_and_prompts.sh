@@ -18,7 +18,7 @@ C() {
 }
 
 do_a_warn() {
-  warn "varning"
+  warn "warning"
 }
 
 case $1 in
@@ -47,16 +47,16 @@ test_fail_abc)
 test_debug)
   debug "Hello World"
   ;;
-# CHECK: DEBUG=1 | sh | test_warn | varning| 0
-# CHECK: DEBUG=1 | bash | test_warn | varning | 0
-# CHECK: DEBUG=1 | zsh | test_warn | varning | 0
-# CHECK: DEBUG=0 | sh | test_warn | varning | 0
-# CHECK: DEBUG=0 | bash | test_warn | varning | 0
-# CHECK: DEBUG=0 | zsh | test_warn | varning | 0
-# CHECK: | sh | test_warn | varning | 0
-# CHECK: | bash | test_warn | varning | 0
-# CHECK: | zsh | test_warn | varning | 0
-# CHECK: DEBUG=1 | bash | test_warn | varning.*t_prints_and_prompts.sh, line 21| 0
+# CHECK: DEBUG=1 | sh | test_warn | warning| 0
+# CHECK: DEBUG=1 | bash | test_warn | warning | 0
+# CHECK: DEBUG=1 | zsh | test_warn | warning | 0
+# CHECK: DEBUG=0 | sh | test_warn | warning | 0
+# CHECK: DEBUG=0 | bash | test_warn | warning | 0
+# CHECK: DEBUG=0 | zsh | test_warn | warning | 0
+# CHECK: | sh | test_warn | warning | 0
+# CHECK: | bash | test_warn | warning | 0
+# CHECK: | zsh | test_warn | warning | 0
+# CHECK: DEBUG=1 | bash | test_warn | warning.*t_prints_and_prompts.sh, line 21| 0
 test_warn)
   do_a_warn
   ;;

@@ -25,7 +25,7 @@ sub direct_run {
     chdir $dir;
     my $cmd = qq|env -C "$dir" -i $t->{env} $t->{shell} $t->{fn} $t->{args} 2>&1|;
     my $output = qx|$cmd|;
-    my $exitval = $? >> 8;    # TODO: Read up on why we need the shfit?
+    my $exitval = $? >> 8;    # TODO: Read up on why we need the shift?
 
     # print Dumper($_);
     # print STDERR $cmd;

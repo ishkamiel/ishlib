@@ -7,18 +7,17 @@
 #
 [ -n "${ish_SOURCED_git_bash:-}" ] && return 0
 ish_SOURCED_git_bash=1 # source guard
+# shellcheck source=common.sh
 . common.sh
-###############################################################################
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
-git_clone_or_update [-b branc] [--update-submodules] url dir
+`git_clone_or_update [-b branch] [--update-submodules] url dir`
 
 Arguments:
   url                   - the git remote URL
   dir                   - The destianation directory
   --update_submodules   - Run submodule update after clone
-  -b|--branc brach      - Specify branch to checkout / update
+  -b|--branch branch      - Specify branch to checkout / update
   -c|--commit           - Also checkokut specific commit
 Globals:
   bin_git               - Path to git (default : git)

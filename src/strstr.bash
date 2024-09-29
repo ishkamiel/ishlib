@@ -7,10 +7,9 @@
 #
 [ -n "${ish_SOURCED_strstr_bash:-}" ] && return 0
 ish_SOURCED_strstr_bash=1 # source guard
-. common.sh
-###############################################################################
+# shellcheck source=common.sh
+. src/common.sh
 
-#------------------------------------------------------------------------------
 : <<'DOCSTRING'
 strstr haystack needle [pos_var]
 --------------------------------
@@ -18,7 +17,7 @@ strstr haystack needle [pos_var]
 Finds needle in given haystack, if pos_var is given, then also stores the
 position of the found variable into ${!pos_var}.
 
-Arguments: 
+Arguments:
     haystack - the string to look in
     needle - the string to search for
     pos_var - name of a variable for positionli
@@ -30,7 +29,7 @@ Returns:
 
 DOCSTRING
 strstr() {
-  local x="${1%%$2*}"
+  local x=${1%%"$2"*}
   if [[ "$x" = "$1" ]]; then
     [[ -n "${3+x}" ]] && printf -v "$3" "%s" "-1"
     return 1
