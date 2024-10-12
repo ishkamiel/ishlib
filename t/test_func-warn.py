@@ -27,7 +27,7 @@ def test_include_warn_debug(shell, tmp_path, src_file, ishlib):
     ISHLIB="{Path(ishlib).parent}"
     cd "{Path(src_file).parent}"
     . "{str(src_file)}"
-    warn "test_warning_goes_here"
+    ish_warn "test_warning_goes_here"
     """
     )
     print(f"script_content:\n{script_content}")
@@ -42,7 +42,7 @@ def test_ishlib_warn_debug(shell, tmp_path, ishlib):
     #!/usr/bin/env {shell}
     DEBUG=1
     . "{str(ishlib)}"
-    warn "test_warning_goes_here"
+    ish_warn "test_warning_goes_here"
     """
     )
     print(f"script_content:\n{script_content}")

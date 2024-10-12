@@ -23,17 +23,17 @@ case of failure, never returns.
 DOCSTRING
 
 : <<'DOCSTRING'
-`say ...`
+`ish_say ...`
 DOCSTRING
-say() {
+ish_say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
   return 0
 }
 
 : <<'DOCSTRING'
-`warn ...`
+`ish_warn ...`
 DOCSTRING
-warn() {
+ish_warn() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
   else
@@ -48,11 +48,11 @@ warn() {
 }
 
 : <<'DOCSTRING'
-`fail ...`
+`ish_fail ...`
 
 Prints the args and then calls `exit 1`
 DOCSTRING
-fail() {
+ish_fail() {
   if [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
   else
@@ -66,21 +66,21 @@ fail() {
 }
 
 : <<'DOCSTRING'
-`say_dry_run ...`
+`ish_say_dry_run ...`
 
 Prints the args with the dry_run tag, mainly for internal use.
 DOCSTRING
-say_dry_run() {
+ish_say_dry_run() {
   printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
 }
 
 : <<'DOCSTRING'
-`debug ...`
+`ish_debug ...`
 
 Globals:
   DEBUG - does nothing unless DEBUG=1
 DOCSTRING
-debug() {
+ish_debug() {
   [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
   printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
   return 0
@@ -95,6 +95,6 @@ Globals:
 DOCSTRING
 ishlib_debug() {
   [ -z "${ISHLIB_DEBUG:-}" ] || [ "${ISHLIB_DEBUG:-}" -ne 1 ] && return 0
-  debug "$@"
+  ish_debug "ISHLIB - " "$@"
   return 0
 }

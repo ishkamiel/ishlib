@@ -25,12 +25,12 @@ do_or_dry() {
   shift
   local args=("$@")
 
-  debug "$t cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
+  ishlib_debug "$t cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
-    say_dry_run "$cmd" "${args[@]}"
+    ish_say_dry_run "$cmd" "${args[@]}"
   else
     if ! $cmd "${args[@]}"; then
-      warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
+      ish_warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
       return 1
     fi
   fi
@@ -50,15 +50,15 @@ do_or_dry_bg() {
     shift 2
     local args=("$@")
 
-    debug "ishlib:do_or_dry_bg: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}" "\\adsf&"
+    ishlib_debug "ishlib:do_or_dry_bg: cwd=$(if is_dry; then echo "\$(pwd)"; else pwd; fi), running $cmd" "${args[@]}" "\\adsf&"
     if is_dry; then
-        say_dry_run "$cmd" "${args[@]}" "&"
+        ish_say_dry_run "$cmd" "${args[@]}" "&"
         pid=""
         return 0
     else
         $cmd "${args[@]}" &
         pid=$!
-        debug "ishlib:do_or_dry_bg: started $pid!"
+        ishlib_debug "ishlib:do_or_dry_bg: started $pid!"
         return 0
     fi
 }
@@ -82,26 +82,37 @@ ish_run() {
   local dry_run=${DRY_RUN:-0}
   local quiet=0
 
-  while getopts ":fnq" opt; do
-    case ${opt} in
-      f )
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force)
         dry_run=0
+        shift
         ;;
-      n )
+      -n|--dry-run)
         dry_run=1
+        shift
         ;;
-      q )
+      -q|--quiet)
         quiet=1
+        shift
         ;;
-      \? )
-        echo "Invalid option: -$OPTARG" >&2
+      --)
+        shift
+        break
+        ;;
+      -*)
+        ish_warn "Invalid option: $1" >&2
         return 1
+        ;;
+      *)
+        break
         ;;
     esac
   done
-  shift $((OPTIND -1))
 
   local cmd=( "$@" )
+
+  ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=" "${cmd[@]}"
 
   [[ $quiet -eq 0 ]] && echo "${cmd[*]}"
   [[ $dry_run -eq 1 ]] || "${cmd[@]}"

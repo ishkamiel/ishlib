@@ -29,9 +29,9 @@ dump() {
   local unbound=0
   for var in "${vars[@]}"; do
     if [[ -n "${var+x}" ]]; then
-      debug "$var=${!var}"
+      ish_say "$var=${!var}"
     else
-      debug "$var is unbound"
+      ish_say "$var is unbound"
       unbound=$((unbound + 1))
     fi
   done
@@ -44,10 +44,10 @@ assert_dir() {
 
   for d in "${vars[@]}"; do
     if ! [[ -e "$d" ]]; then
-      warn "does not exist: $d"
+      ish_warn "does not exist: $d"
       bad=$((bad + 1))
     elif ! [[ -d "$d" ]]; then
-      warn "not a directory: $d"
+      ish_warn "not a directory: $d"
       bad=$((bad + 1))
     fi
   done
@@ -61,7 +61,7 @@ assert_exists() {
 
   for d in "${vars[@]}"; do
     if ! [[ -e "$d" ]]; then
-      warn "does not exist: $d"
+      ish_warn "does not exist: $d"
       bad=$((bad + 1))
     fi
   done
@@ -75,10 +75,10 @@ dump_and_assert_dir() {
 
   for var in "${vars[@]}"; do
     if [[ -n "${var+x}" ]]; then
-      debug "${var}=${!var}"
+      ish_debug "${var}=${!var}"
       assert_dir "${!var}"
     else
-      debug "$var is unbound"
+      ish_debug "$var is unbound"
       unbound=$((bad + 1))
     fi
   done

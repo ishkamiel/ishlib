@@ -39,7 +39,7 @@ ishlib_main() {
       shift
       ;;
     *)
-      warn "Unknown option: $1"
+      ish_warn "Unknown option: $1"
       shift
       ;;
     esac
@@ -94,7 +94,7 @@ EOF
       exit 0
   fi
 
-  warn "ishlib run directly without parameters!"
+  ish_warn "ishlib run directly without parameters!"
   say "To print docs:       ./ishlib.sh -h"
   exit 0
 }

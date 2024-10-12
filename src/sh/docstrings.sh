@@ -58,7 +58,7 @@ print_docstrings() {
       ;;
     *)
       if [ -n "${_filename}" ]; then
-        warn "${_t} multiple filenames given: ${_filename} and ${1}"
+        ish_warn "${_t} multiple filenames given: ${_filename} and ${1}"
         return 1
       fi
       _filename="$1"

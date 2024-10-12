@@ -23,7 +23,7 @@ Arguments:
     needle - the string to search for
     pos_var - name of a variable for positionli
 Side-effects:
-    ${!pos_var} - set to -1 on fail, otherwise to the position of needle
+    ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
 Returns:
     0 - if needle was found
     1 - otherwise

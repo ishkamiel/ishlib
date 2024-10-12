@@ -30,10 +30,12 @@ DOCSTRING
 . "$ISHLIB/src/sh/has_command.sh"
 # shellcheck source=substr.sh
 . "$ISHLIB/src/sh/substr.sh"
+# shellcheck source=path.sh
+. "$ISHLIB/src/sh/path.sh"
 
 # End here unless we're on bash, and enter main if directly run
 if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_EVAL_CONTEXT:-}" ]; then
-  debug "ishlib: load done (sh-only)"
+  ish_debug "ishlib: load done (sh-only)"
   # Call ishlib_main if called stand-alone
   [ "$0" = "ishlib.sh" ] && ishlib_main "$@"
   case "$0" in */ishlib.sh) ishlib_main "$@" ;; esac
@@ -62,7 +64,7 @@ DOCSTRING
 # shellcheck source=../bash/bash_tricks.bash
 . "$ISHLIB/src/bash/bash_tricks.bash"
 
-debug "ishlib: load done (bash extensions)"
+ish_debug "ishlib: load done (bash extensions)"
 # Entering main if we are being directly run
 if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
   _ishlib_sourced=0

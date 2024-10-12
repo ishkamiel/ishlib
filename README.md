@@ -1,4 +1,4 @@
-# ishlib 2024-10-12.1326.f95da72
+# ishlib 2024-10-12.1422.30545d4
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -53,19 +53,19 @@ followed by the all arguments colorized as specified by global color tags.
 At present, all printouts are to sdtderr. All functions return 0, or in
 case of failure, never returns.
 
-#### `say ...`
+#### `ish_say ...`
 
-#### `warn ...`
+#### `ish_warn ...`
 
-#### `fail ...`
+#### `ish_fail ...`
 
 Prints the args and then calls `exit 1`
 
-#### `say_dry_run ...`
+#### `ish_say_dry_run ...`
 
 Prints the args with the dry_run tag, mainly for internal use.
 
-#### `debug ...`
+#### `ish_debug ...`
 
 ##### Globals:
 
@@ -102,7 +102,7 @@ Source:
 #### `download_file url dst`
 
 Attempts to download file at $url to $dst, creating the containing directory
-if needed. Will first try curl, then wget, and finally fail if neither is
+if needed. Will first try curl, then wget, and finally ish_fail if neither is
 available.
 
 ##### Arguments:
@@ -143,6 +143,10 @@ substr string start [end] [--var result_var]
 
 #### `strlen string [--var result_var]`
 
+#### `ish_prepend_to_path`
+
+Add path to beginning of  $PATH unless it already exists.
+
 ### Bash-only functions
 
 #### `array_from_ssv var str`
@@ -175,7 +179,7 @@ position of the found variable into ${!pos_var}.
         needle - the string to search for
         pos_var - name of a variable for positionli
     Side-effects:
-        ${!pos_var} - set to -1 on fail, otherwise to the position of needle
+        ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
 ```
 ##### Returns:
 
@@ -309,3 +313,4 @@ Source: https://stackoverflow.com/a/18839557
       0 - on success
       1 - on failure
 ```
+

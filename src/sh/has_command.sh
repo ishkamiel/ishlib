@@ -26,7 +26,7 @@ Returns:
   2 - if argument was missing
 DOCSTRING
 has_command() {
-  [ -z "$1" ] && warn "has_command: bad 1st arg" && return 2
+  [ -z "$1" ] && ish_warn "has_command: bad 1st arg" && return 2
   if command -v "$1" >/dev/null 2>&1; then return 0; fi
   return 1
 }

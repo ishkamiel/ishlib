@@ -39,7 +39,7 @@ substr() {
         _ishlib_res=3
         _ishlib_end="$1"
       else
-        warn "${_t} too many arguments!"
+        ish_warn "${_t} too many arguments!"
         return 1
       fi
       shift 1
@@ -48,12 +48,12 @@ substr() {
   done
 
   if [ "${_ishlib_res}" -lt 2 ]; then
-    warn "${_t} too few arguments ${_ishlib_res}!"
+    ish_warn "${_t} too few arguments ${_ishlib_res}!"
     return 1
   fi
 
   if [ -n "${_ishlib_var+x}" ] && [ -z "${_ishlib_var+x}" ]; then
-    warn "${_t} ${_ishlib_var} is not a bound variable"
+    ish_warn "${_t} ${_ishlib_var} is not a bound variable"
     return 1
   fi
 
@@ -77,7 +77,7 @@ substr() {
 `strlen string [--var result_var]`
 DOCSTRING
 strlen() {
-  warn "Just use \${\#var}"
+  ish_warn "Just use \${\#var}"
   _ishlib_str=
   _ishlib_var=
   _ishlib_res=
@@ -89,7 +89,7 @@ strlen() {
       shift 2
       ;;
     *)
-      [ -z "${_ishlib_str}" ] || (warn "bad arguments to strlen" && return 1)
+      [ -z "${_ishlib_str}" ] || (ish_warn "bad arguments to strlen" && return 1)
       _ishlib_str="$1"
       sfhit
       ;;
