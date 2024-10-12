@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_array_from_ssv_bash:-}" ] && return 0
 ish_SOURCED_array_from_ssv_bash=1 # source guard
-# shellcheck source=common.sh
-. src/common.sh
+
+# shellcheck source=common.bash
+. "$ISHLIB/src/bash/common.bash"
 
 : <<'DOCSTRING'
 `array_from_ssv var str`

@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_download_file_sh:-}" ] && return 0
 ish_SOURCED_download_file_sh=1 # source guard
+
 # shellcheck source=common.sh
-. src/common.sh
+. "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
 `download_file url dst`

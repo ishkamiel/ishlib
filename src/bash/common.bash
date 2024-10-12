@@ -9,3 +9,6 @@
 ish_SOURCED_common_bash=1 # source guard
 
 export ish_VERSION_VARIANT="POSIX+bash"
+
+# shellcheck source=../sh/common.sh
+. "$ISHLIB/src/sh/common.sh"

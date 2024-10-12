@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_strstr_bash:-}" ] && return 0
 ish_SOURCED_strstr_bash=1 # source guard
-# shellcheck source=common.sh
-. src/common.sh
+
+# shellcheck source=common.bash
+. "$ISHLIB/src/bash/common.bash"
 
 : <<'DOCSTRING'
 strstr haystack needle [pos_var]

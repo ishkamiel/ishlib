@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_docstrings_sh:-}" ] && return 0
 ish_SOURCED_docstrings_sh=1 # source guard
+
 # shellcheck source=common.sh
-. src/common.sh
+. "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
 `print_docstrings file [options]`

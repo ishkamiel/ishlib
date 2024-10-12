@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2024-09-29.1835.ff160bb
+# ishlib 2024-10-12.1326.f95da72
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2024-09-29.1835.ff160bb"
+export ish_VERSION_NUMBER="2024-10-12.1326.f95da72"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -883,6 +883,35 @@ DOCSTRING
 is_dry() {
   [[ "${DRY_RUN:-}" = 1 ]] && return 0
   return 1
+}
+
+ish_run() {
+  local dry_run=${DRY_RUN:-0}
+  local quiet=0
+
+  while getopts ":fnq" opt; do
+    case ${opt} in
+      f )
+        dry_run=0
+        ;;
+      n )
+        dry_run=1
+        ;;
+      q )
+        quiet=1
+        ;;
+      \? )
+        echo "Invalid option: -$OPTARG" >&2
+        return 1
+        ;;
+    esac
+  done
+  shift $((OPTIND -1))
+
+  local cmd=( "$@" )
+
+  [[ $quiet -eq 0 ]] && echo "${cmd[*]}"
+  [[ $dry_run -eq 1 ]] || "${cmd[@]}"
 }
 
 : <<'DOCSTRING'

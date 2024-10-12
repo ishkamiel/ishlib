@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_main_sh:-}" ] && return 0
 ish_SOURCED_main_sh=1 # source guard
+
 # shellcheck source=common.sh
-. src/common.sh
+. "$ISHLIB/src/sh/common.sh"
 
 ishlib_main() {
   [ -n "${ZSH_SCRIPT+x}" ] && fn="$ZSH_SCRIPT" || fn="$0"

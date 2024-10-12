@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_bash_tricks_bash:-}" ] && return 0
 ish_SOURCED_bash_tricks_bash=1 # source guard
-# shellcheck source=common.sh
-. src/common.sh
+
+# shellcheck source=common.bash
+. "$ISHLIB/src/bash/common.bash"
 
 : <<'DOCSTRING'
 `copy_function src dst`

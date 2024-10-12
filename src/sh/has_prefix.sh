@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_has_prefix_sh:-}" ] && return 0
 ish_SOURCED_has_prefix_sh=1 # source guard
+
 # shellcheck source=common.sh
-. src/common.sh
+. "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
 `has_prefix str prefx`

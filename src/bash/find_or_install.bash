@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_find_or_install_bash:-}" ] && return 0
 ish_SOURCED_find_or_install_bash=1 # source guard
-# shellcheck source=common.sh
-. src/common.sh
+
+# shellcheck source=common.bash
+. "$ISHLIB/src/bash/common.bash"
 
 : <<'DOCSTRING'
 `find_or_install var [installer [args...]]`

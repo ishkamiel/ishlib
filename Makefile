@@ -1,7 +1,7 @@
 
-SRC_FILES = $(wildcard src/*.sh) $(wildcard src/*.bash) src/readme_src.md
+SRC_FILES = $(wildcard src/sh/*.sh) $(wildcard src/bash/*.bash) src/readme_src.md
 
-PYTEST_ARGS = -n$(shell nproc)
+PYTEST_ARGS = -d -n$(shell nproc)
 
 all: README.md ishlib.sh verify
 
@@ -12,7 +12,7 @@ verify: ishlib.sh $(SRC_FILES)
 
 ishlib.sh: $(SRC_FILES) $(BUILD_SCRIPT)
 	$(info === Updating $@)
-	./build.pl
+	./build_ishlib.py
 	chmod +x $@
 
 README.md: ishlib.sh $(SRC_FILES)

@@ -7,10 +7,11 @@
 #
 [ -n "${ish_SOURCED_dry_run_bash:-}" ] && return 0
 ish_SOURCED_dry_run_bash=1 # source guard
-# shellcheck source=common.sh
-. src/common.sh
-# shellcheck source=prints_and_prompts.sh
-. src/prints_and_prompts.sh
+
+# shellcheck source=common.bash
+. "$ISHLIB/src/bash/common.bash"
+# shellcheck source=../sh/prints_and_prompts.sh
+. "$ISHLIB/src/sh/prints_and_prompts.sh"
 
 : <<'DOCSTRING'
 `do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
@@ -35,6 +36,7 @@ do_or_dry() {
   fi
   return 0
 }
+
 
 : <<'DOCSTRING'
 `do_or_dry_bg pid_var cmd [args...]`
@@ -74,4 +76,33 @@ DOCSTRING
 is_dry() {
   [[ "${DRY_RUN:-}" = 1 ]] && return 0
   return 1
+}
+
+ish_run() {
+  local dry_run=${DRY_RUN:-0}
+  local quiet=0
+
+  while getopts ":fnq" opt; do
+    case ${opt} in
+      f )
+        dry_run=0
+        ;;
+      n )
+        dry_run=1
+        ;;
+      q )
+        quiet=1
+        ;;
+      \? )
+        echo "Invalid option: -$OPTARG" >&2
+        return 1
+        ;;
+    esac
+  done
+  shift $((OPTIND -1))
+
+  local cmd=( "$@" )
+
+  [[ $quiet -eq 0 ]] && echo "${cmd[*]}"
+  [[ $dry_run -eq 1 ]] || "${cmd[@]}"
 }

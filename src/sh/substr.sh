@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_strstr_bash:-}" ] && return 0
 ish_SOURCED_strstr_bash=1 # source guard
+
 # shellcheck source=common.sh
-. src/common.sh
+. "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
 substr string start [end] [--var result_var]

@@ -2,8 +2,8 @@
 
 set -e
 
-# shellcheck source=../../src/prints_and_prompts.sh
-. src/dry_run.bash
+ISHLIB=$(pwd)
+. src/bash/dry_run.bash
 
 case $1 in
 test_do_or_dry)

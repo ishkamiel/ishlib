@@ -2,8 +2,8 @@
 
 set -e
 
-# shellcheck source=../../src/prints_and_prompts.sh
-. src/prints_and_prompts.sh
+export ISHLIB=$(pwd)
+. src/sh/prints_and_prompts.sh
 
 A() {
   B

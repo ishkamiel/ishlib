@@ -7,8 +7,9 @@
 #
 [ -n "${ish_SOURCED_git_bash:-}" ] && return 0
 ish_SOURCED_git_bash=1 # source guard
-# shellcheck source=common.sh
-. common.sh
+
+# shellcheck source=common.bash
+. "$ISHLIB/src/bash/common.bash"
 
 : <<'DOCSTRING'
 `git_clone_or_update [-b branch] [--update-submodules] url dir`
