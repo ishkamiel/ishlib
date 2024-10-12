@@ -12,9 +12,9 @@ shellcheck_shells = ["bash", "sh"]
 ishlib_bash_variant = 'export ish_VERSION_VARIANT="POSIX+bash"'
 
 
-def rel_path(path):
-    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    return (script_dir.parent / path).resolve()
+def rel_path(path: Path) -> Path:
+    root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
+    return (root / path).resolve()
 
 
 def get_src_files():
