@@ -28,3 +28,14 @@ repos:
     rev: v0.13.0
     hooks:
     -   id: markdownlint
+-   repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.1
+    hooks:
+      - id: insert-license
+        exclude: vim-templates/.*
+        name: insert-license-shell
+        files: \.(sh|bash|py)$
+        args:
+          - --use-current-year
+          - --license-filepath
+          - .LICENSE_HEADER
