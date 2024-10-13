@@ -5,4 +5,8 @@
 #
 # Distributed under terms of the MIT license.
 
-from .src.pyishlib import *
+import os
+import glob
+import importlib
+
+from .command_runner import CommandRunner
