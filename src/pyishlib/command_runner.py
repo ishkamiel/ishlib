@@ -11,7 +11,7 @@ import subprocess
 import os
 from pathlib import Path
 import shutil
-from typing import Optional
+from typing import Optional, Iterable
 from .ish_comp import IshComp
 
 
@@ -45,7 +45,7 @@ class CommandRunner(IshComp):
 
     def run(
         self,
-        command: list[str],
+        command: Iterable[str],
         sudo: Optional[bool] = False,
         force_sudo: Optional[bool] = False,
         **kwargs,
@@ -119,7 +119,7 @@ class CommandRunner(IshComp):
         path.mkdir(parents=parents)
         return True
 
-    def _print_cmd(self, command: list[str]) -> None:
+    def _print_cmd(self, command: Iterable[str]) -> None:
         if not self.quiet:
             self.print(" ".join([str(c) for c in command]))
 
@@ -149,7 +149,7 @@ class CommandRunner(IshComp):
         self.log_error(msg)
 
     def _check_sudo(
-        self, command: list[str], force_sudo: Optional[bool] = False
+        self, command: Iterable[str], force_sudo: Optional[bool] = False
     ) -> bool:
         if self._always_sudo or force_sudo:
             return True
