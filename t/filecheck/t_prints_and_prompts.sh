@@ -1,4 +1,9 @@
 #! /usr/bin/env sh
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
 
 set -e
 
@@ -31,7 +36,7 @@ test_fail)
 # CHECK: DEBUG=1 | sh | test_fail_abc | failed in function | 1
 # CHECK: DEBUG=1 | bash | test_fail_abc | failed in function | 1
 # CHECK: DEBUG=1 | zsh | test_fail_abc | failed in function | 1
-# CHECK: DEBUG=1 | bash | test_fail_abc | failed in function.*t_prints_and_prompts.sh, line 17| 1
+# CHECK: DEBUG=1 | bash | test_fail_abc | failed in function.*t_prints_and_prompts.sh, line| 1
 test_fail_abc)
   A
   ;;
@@ -56,7 +61,7 @@ test_debug)
 # CHECK: | sh | test_warn | warning | 0
 # CHECK: | bash | test_warn | warning | 0
 # CHECK: | zsh | test_warn | warning | 0
-# CHECK: DEBUG=1 | bash | test_warn | warning.*t_prints_and_prompts.sh, line 21| 0
+# CHECK: DEBUG=1 | bash | test_warn | warning.*t_prints_and_prompts.sh, line| 0
 test_warn)
   do_a_warn
   ;;
