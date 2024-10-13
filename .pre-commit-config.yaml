@@ -48,3 +48,14 @@ repos:
         pass_filenames: false
         # types: [python]
         require_serial: true
+    -   id: pylint
+        name: pylint
+        entry: pylint
+        language: system
+        types: [python]
+        require_serial: true
+        args: [
+          "-rn", # Only display messages
+          "-sn" # Don't display the score
+        ]
+        exclude: "^pytest/.*"

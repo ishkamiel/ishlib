@@ -4,17 +4,20 @@
 # Copyright (C) 2024 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
+"""Helper commands for running commands and common shell tasks"""
 
 import subprocess
 
 import os
 from pathlib import Path
 import shutil
+from typing import Optional, NoReturn
 from .ish_comp import IshComp
-from typing import Optional, Any, Union, NoReturn
 
 
 class CommandRunner(IshComp):
+    """Helper class for running commands and common shell tasks"""
+
     def __init__(
         self, dry_run: Optional[bool] = False, always_sudo: Optional[bool] = False
     ) -> None:
@@ -22,12 +25,17 @@ class CommandRunner(IshComp):
         self._dry_run = dry_run
         super().__init__()
 
+    def __getattr__(self, name):
+        raise AttributeError(f"No member {name} in {self.__class__.__name__}")
+
     @property
     def dry_run(self) -> bool:
+        """Is dry-run mode enabled"""
         return self._get_opt("dry_run", False)
 
     @property
     def always_sudo(self) -> bool:
+        """Is always-sudo mode enabled, i.e., sudo without asking"""
         return self._get_opt("dry_run", False)
 
     @always_sudo.setter
@@ -45,17 +53,18 @@ class CommandRunner(IshComp):
         force_sudo: Optional[bool] = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
+        """Run command, optionally with sudo"""
         command = [str(c) for c in command]
         if sudo:
             command = ["sudo"] + command
             if not self._check_sudo(command, force_sudo):
-                raise Exception("Sudo not allowed")
+                raise KeyboardInterrupt("User aborted sudo command")
 
         self._print_cmd(command)
         if not self.dry_run:
+            # pylint: disable=W1510
             return subprocess.run(command, **kwargs)
-        else:
-            return subprocess.CompletedProcess(args=command, returncode=0)
+        return subprocess.CompletedProcess(args=command, returncode=0)
 
     def chdir(
         self,
@@ -63,6 +72,7 @@ class CommandRunner(IshComp):
         mkdir: Optional[bool] = False,
         may_fail: Optional[bool] = False,
     ) -> bool:
+        """Change directory to path, optionally creating it if it does not exist"""
         if os.getcwd() == str(path):
             self.log_debug(f"Already in directory {path}, skipping chdir")
             return True
@@ -84,6 +94,7 @@ class CommandRunner(IshComp):
         return True
 
     def rm(self, path: Path, recursive: Optional[bool] = False) -> bool:
+        """Remove path, optionally recursively"""
         if not path.exists():
             self.log_debug(f"Path {path} does not exist, skipping delete")
             return True
@@ -99,6 +110,7 @@ class CommandRunner(IshComp):
         return True
 
     def mkdir(self, path: Path, parents: Optional[bool] = False) -> bool:
+        """Create path, optionally creating parent directories"""
         if path.exists():
             self.log_debug(f"Path {path} already exists, skipping mkdir")
             return True
@@ -142,7 +154,7 @@ class CommandRunner(IshComp):
     def _check_sudo(
         self, command: list[str], force_sudo: Optional[bool] = False
     ) -> bool:
-        if self._always_sudo:
+        if self._always_sudo or force_sudo:
             return True
 
         if self.dry_run:

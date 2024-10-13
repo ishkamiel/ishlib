@@ -18,3 +18,6 @@ ishlib.sh: $(SRC_FILES) $(BUILD_SCRIPT)
 README.md: ishlib.sh $(SRC_FILES)
 	$(info === Updating $@)
 	./ishlib.sh -h --markdown > README.md
+
+print-%:
+	@echo $* = $($*)

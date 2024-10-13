@@ -5,6 +5,7 @@
 # Copyright (C) 2024 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
+"""Build ishlib.sh from src/sh/base.sh and src/readme_src.md (for internal use)"""
 
 import os
 import subprocess
@@ -20,36 +21,33 @@ OUT_FN = os.path.join(ROOT_DIR, "ishlib.sh")
 BASE_FN = os.path.join(ROOT_DIR, "src/sh/base.sh")
 README_FN = os.path.join(ROOT_DIR, "src/readme_src.md")
 
-header_end = (
-    "###############################################################################"
-)
+README_DOCUMENTATION_START = "## Documentation"
 
-readme_documentation_start = "## Documentation"
+DEBUG_MODE = False
 
-# src_dir = os.path.dirname(base_fn)
 
-debug_mode = False
+def log_debug(message):
+    """Print debug message if DEBUG_MODE is True"""
+    if DEBUG_MODE:
+        print(f"DEBUG: {message}")
 
 
 def main():
-    global debug_mode
+    """Main function"""
 
     parser = argparse.ArgumentParser(description="Build the ishlib project.")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    debug_mode = args.debug
+    # pylint: disable=W0603
+    global DEBUG_MODE
+    DEBUG_MODE = args.debug
 
-    Parser(ROOT_DIR, BASE_FN, OUT_FN).build_ishlib()
-
-
-def log_debug(message):
-    global debug_mode
-    if debug_mode:
-        print(f"DEBUG: {message}")
+    Parser(BASE_FN, OUT_FN).build_ishlib()
 
 
 def get_ishlib_version():
+    """Get the ishlib version"""
     git_revision = (
         subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
         .strip()
@@ -59,28 +57,30 @@ def get_ishlib_version():
 
 
 class Parser:
-    def __init__(self, root, base, output):
-        # self.cwd = root
+    """Parser class"""
+
+    def __init__(self, base, output):
         self.base = base
         self.output = output
         self.ishlib_version = get_ishlib_version()
-        # self.src_dir = os.path.dirname(base)
         self.empty_lines = 0
+        self.out_fh = None
 
     def build_ishlib(self):
-        # self.current_fn = ROOT_DIR
-
+        """Build the ishlib.sh file"""
         log_debug(f"Starting from base {self.base}")
-        # os.chdir(os.path.dirname(self.base))
-        with open(self.base, "r") as base_fh, open(self.output, "w") as self.out_fh:
+        with open(self.base, "r", encoding="utf-8") as base_fh, open(
+            self.output, "w", encoding="utf-8"
+        ) as self.out_fh:
             for line in base_fh:
                 self.process_oneline(line, True)
-        print("Generated ishlib.sh (version %s)" % self.ishlib_version)
+        print(f"Generated ishlib.sh (version {self.ishlib_version})")
 
     def process_oneline(self, line, do_includes=False):
+        """Process a single line"""
         # Handle __ISHLIB_README__
         if line.strip() == "__ISHLIB_README__":
-            self.source_readme(line)
+            self.source_readme()
             return
 
         # Handle includes
@@ -107,16 +107,18 @@ class Parser:
         line = line.replace("__ISHLIB_NAME__", ISHLIB_NAME)
         self.out_fh.write(line)
 
-    def source_readme(self, fn):
+    def source_readme(self):
+        """Source the README file"""
         log_debug(f"source_readme from {README_FN}")
-        with open(README_FN, "r") as fh:
+        with open(README_FN, "r", encoding="utf-8") as fh:
             for line in fh:
                 self.process_oneline(line)
-                if line.strip() == readme_documentation_start:
+                if line.strip() == README_DOCUMENTATION_START:
                     return
-        raise Exception("Unexpected EOF file")
+        raise EOFError("Unexpected EOF file")
 
     def is_ignored_header_line(self, line, do_includes=False):
+        """Check if a line should be ignored as part of the file header"""
         # Ignore leading comments
         if line.startswith("#"):
             return True
@@ -140,6 +142,7 @@ class Parser:
         return False
 
     def source_file(self, path, do_includes=False):
+        """Source a file"""
         log_debug(f"source_file {path}")
         start_reading = False
 
@@ -150,13 +153,10 @@ class Parser:
             fn = fn[1:-1]
 
         log_debug(f"Sourcing {fn}")
-        with open(fn, "r") as fh:
+        with open(fn, "r", encoding="utf-8") as fh:
             for line in fh:
                 if not start_reading and self.is_ignored_header_line(line, do_includes):
                     log_debug(f"Ignoring: {line.strip()}")
-                    pass
-                # elif not do_includes and line.strip().startswith('.'):
-                #     self.source_file(line.strip().split()[1])
                 else:
                     start_reading = True
                     self.process_oneline(line, do_includes)
