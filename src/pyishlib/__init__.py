@@ -5,6 +5,8 @@
 #
 # Distributed under terms of the MIT license.
 
+"""Helper library for common sysadmin and developments tasks"""
+
 import os
 import glob
 import importlib

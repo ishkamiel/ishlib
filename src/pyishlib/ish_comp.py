@@ -74,6 +74,11 @@ class IshComp:
         """Set the configuration object, e.g., a json or tomlib file"""
         self._conf = conf
 
+    def log_debug(self, msg: str) -> NoReturn:
+        """Log a debug message"""
+        if self.verbose:
+            print(f"[DD]: {msg}")
+
     def log_info(self, msg: str) -> NoReturn:
         """Log an info message"""
         if self.verbose:

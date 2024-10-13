@@ -25,9 +25,6 @@ class CommandRunner(IshComp):
         self._dry_run = dry_run
         super().__init__()
 
-    def __getattr__(self, name):
-        raise AttributeError(f"No member {name} in {self.__class__.__name__}")
-
     @property
     def dry_run(self) -> bool:
         """Is dry-run mode enabled"""
