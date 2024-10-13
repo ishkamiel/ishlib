@@ -39,3 +39,12 @@ repos:
           - --use-current-year
           - --license-filepath
           - .LICENSE_HEADER
+-   repo: local
+    hooks:
+    -   id: pytest
+        name: pytest
+        entry: pytest --dist=load --numprocesses=logical
+        language: system
+        pass_filenames: false
+        # types: [python]
+        require_serial: true
