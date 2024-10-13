@@ -11,7 +11,7 @@ import subprocess
 import os
 from pathlib import Path
 import shutil
-from typing import Optional, NoReturn
+from typing import Optional
 from .ish_comp import IshComp
 
 
@@ -36,11 +36,11 @@ class CommandRunner(IshComp):
         return self._get_opt("dry_run", False)
 
     @always_sudo.setter
-    def always_sudo(self, always_sudo: bool) -> NoReturn:
+    def always_sudo(self, always_sudo: bool) -> None:
         self._always_sudo = always_sudo
 
     @dry_run.setter
-    def dry_run(self, dry_run: bool) -> NoReturn:
+    def dry_run(self, dry_run: bool) -> None:
         self._dry_run = dry_run
 
     def run(
@@ -119,11 +119,11 @@ class CommandRunner(IshComp):
         path.mkdir(parents=parents)
         return True
 
-    def _print_cmd(self, command: list[str]) -> NoReturn:
+    def _print_cmd(self, command: list[str]) -> None:
         if not self.quiet:
             self.print(" ".join([str(c) for c in command]))
 
-    def _print_rm(self, path: Path, recursive: Optional[bool] = False) -> NoReturn:
+    def _print_rm(self, path: Path, recursive: Optional[bool] = False) -> None:
         if self.quiet:
             return
 
@@ -132,7 +132,7 @@ class CommandRunner(IshComp):
         else:
             self._print_cmd([f"rm -f {path}"])
 
-    def _print_mkdir(self, path: Path, parents: Optional[bool] = False) -> NoReturn:
+    def _print_mkdir(self, path: Path, parents: Optional[bool] = False) -> None:
         if self.quiet:
             return
 

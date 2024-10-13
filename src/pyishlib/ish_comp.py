@@ -42,7 +42,7 @@ class IshComp:
         conf: Optional[Any] = None,
         dry_run: Optional[bool] = None,
         quiet: Optional[bool] = None,
-    ) -> NoReturn:
+    ) -> None:
         self._args = args
         self._conf = conf
         self._quiet = quiet
@@ -59,37 +59,37 @@ class IshComp:
         return self._get_opt("quiet", False)
 
     @verbose.setter
-    def verbose(self, verbose: bool) -> NoReturn:
+    def verbose(self, verbose: bool) -> None:
         self._verbose = verbose
 
     @quiet.setter
-    def quiet(self, quiet: bool) -> NoReturn:
+    def quiet(self, quiet: bool) -> None:
         self._quiet = quiet
 
-    def set_args(self, args: Any) -> NoReturn:
+    def set_args(self, args: Any) -> None:
         """Set optional the arguments object, assuming argparse behavior"""
         self._args = args
 
-    def set_conf(self, conf: Any) -> NoReturn:
+    def set_conf(self, conf: Any) -> None:
         """Set the configuration object, e.g., a json or tomlib file"""
         self._conf = conf
 
-    def log_debug(self, msg: str) -> NoReturn:
+    def log_debug(self, msg: str) -> None:
         """Log a debug message"""
         if self.verbose:
             print(f"[DD]: {msg}")
 
-    def log_info(self, msg: str) -> NoReturn:
+    def log_info(self, msg: str) -> None:
         """Log an info message"""
         if self.verbose:
             print(f"[--]: {msg}")
 
-    def log_warn(self, msg: str) -> NoReturn:
+    def log_warn(self, msg: str) -> None:
         """Log a warning"""
         if not self.quiet:
             print(f"[WW]: {msg}")
 
-    def log_error(self, msg: str) -> NoReturn:
+    def log_error(self, msg: str) -> None:
         """Log an error"""
         print(f"[EE]: {msg}", file=sys.stderr)
 
@@ -98,7 +98,7 @@ class IshComp:
         print(f"[!!]: {msg}", file=sys.stderr)
         sys.exit(exit_code)
 
-    def print(self, msg: str) -> NoReturn:
+    def print(self, msg: str) -> None:
         """Print message without any decoration or prefix"""
         if not self.quiet:
             print(msg)
