@@ -11,30 +11,31 @@ from enum import Enum
 from typing import Optional, Any, NoReturn
 
 
+class Choice(Enum):
+    """Enum for choices"""
+
+    YES = "y"
+    NO = "n"
+    ALWAYS = "a"
+
+    @property
+    def yes(self) -> bool:
+        """Return True if the choice is 'yes' or 'always'"""
+        return self in (self.YES, self.ALWAYS)
+
+    @property
+    def no(self) -> bool:
+        """Return True if the choice is 'no'"""
+        return self == self.NO
+
+    @property
+    def always(self) -> bool:
+        """Return True if the choice is 'always'"""
+        return self == self.ALWAYS
+
+
 class IshComp:
-    """Base class for all ishpy classes"""
-
-    class Choice(Enum):
-        """Enum for choices"""
-
-        YES = "y"
-        NO = "n"
-        ALWAYS = "a"
-
-        @property
-        def yes(self) -> bool:
-            """Return True if the choice is 'yes' or 'always'"""
-            return self in (self.YES, self.ALWAYS)
-
-        @property
-        def no(self) -> bool:
-            """Return True if the choice is 'no'"""
-            return self == self.NO
-
-        @property
-        def always(self) -> bool:
-            """Return True if the choice is 'always'"""
-            return self == self.ALWAYS
+    """Base class for all ishlib classes"""
 
     def __init__(
         self,
@@ -43,10 +44,10 @@ class IshComp:
         dry_run: Optional[bool] = None,
         quiet: Optional[bool] = None,
     ) -> None:
-        self._args = args
-        self._conf = conf
-        self._quiet = quiet
-        self._dry_run = dry_run
+        self._args: Any | None = args
+        self._conf: Any | None = conf
+        self._quiet: bool | None = quiet
+        self._dry_run: bool | None = dry_run
 
     @property
     def verbose(self) -> bool:
@@ -103,12 +104,12 @@ class IshComp:
         if not self.quiet:
             print(msg)
 
-    def prompt_yes_no_always(self, msg: str) -> "IshComp.Choice":
+    def prompt_yes_no_always(self, msg: str) -> Choice:
         """Prompt for a yes/no/always choice"""
         while True:
             choice = input(f"{msg} [y/n/A] (Ctr-C to abort): ").strip().lower()
             if choice in ["y", "n", "a"]:
-                return self.Choice(choice)
+                return Choice(choice)
 
     def _get_opt(self, opt: str, default: Optional[Any] = None) -> Any:
         if self._args is not None and hasattr(self._args, opt):

@@ -18,12 +18,9 @@ from .ish_comp import IshComp
 class CommandRunner(IshComp):
     """Helper class for running commands and common shell tasks"""
 
-    def __init__(
-        self, dry_run: Optional[bool] = False, always_sudo: Optional[bool] = False
-    ) -> None:
-        self._always_sudo = always_sudo
-        self._dry_run = dry_run
-        super().__init__()
+    def __init__(self, always_sudo: Optional[bool] = False, **kwargs) -> None:
+        self._always_sudo: bool | None = always_sudo
+        super().__init__(**kwargs)
 
     @property
     def dry_run(self) -> bool:
@@ -46,7 +43,7 @@ class CommandRunner(IshComp):
     def run(
         self,
         command: Iterable[str],
-        sudo: Optional[bool] = False,
+        sudo: Optional[bool] = None,
         force_sudo: Optional[bool] = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
