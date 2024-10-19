@@ -44,10 +44,10 @@ class IshComp:
         dry_run: Optional[bool] = None,
         quiet: Optional[bool] = None,
     ) -> None:
-        self._args: Any | None = args
-        self._conf: Any | None = conf
-        self._quiet: bool | None = quiet
-        self._dry_run: bool | None = dry_run
+        self._args: Optional[Any] = args
+        self._conf: Optional[Any] = conf
+        self._quiet: Optional[bool] = quiet
+        self._dry_run: Optional[bool] = dry_run
 
     @property
     def verbose(self) -> bool:

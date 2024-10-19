@@ -19,7 +19,7 @@ class CommandRunner(IshComp):
     """Helper class for running commands and common shell tasks"""
 
     def __init__(self, always_sudo: Optional[bool] = False, **kwargs) -> None:
-        self._always_sudo: bool | None = always_sudo
+        self._always_sudo: Optional[bool] = always_sudo
         super().__init__(**kwargs)
 
     @property

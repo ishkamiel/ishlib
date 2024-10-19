@@ -26,8 +26,8 @@ class PackageInfo:
 
     def __init__(self, command: str, conf: "InstallerConfig") -> None:
         self._command: str = command
-        self._cargo_pkg: str | None = conf.get_cargo_pkg(command)
-        self._apt_pkg: str | None = conf.get_apt_pkg(command)
+        self._cargo_pkg: Optional[str] = conf.get_cargo_pkg(command)
+        self._apt_pkg: Optional[str] = conf.get_apt_pkg(command)
 
     def __repr__(self) -> str:
         return json.dumps(self.__dict__)
@@ -79,13 +79,13 @@ class InstallerConfig:
         """Get information for package that provides command"""
         return PackageInfo(command, self)
 
-    def get_cargo_pkg(self, cmd: str) -> str | None:
+    def get_cargo_pkg(self, cmd: str) -> Optional[str]:
         """Get the cargo package that provides a command"""
         if cmd in self._config["cargo_packages"]:
             return self._config["cargo_packages"][cmd]
         return None
 
-    def get_apt_pkg(self, cmd: str) -> str | None:
+    def get_apt_pkg(self, cmd: str) -> Optional[str]:
         """Get the apt package that provides a command"""
         if cmd in self._config["apt_packages"]:
             return self._config["apt_packages"][cmd]
@@ -96,7 +96,7 @@ class Installer(IshComp):
     """Installer class for installing packages."""
 
     def __init__(self, runner: Optional[CommandRunner] = None, **kwargs: Any) -> None:
-        self._runner: CommandRunner | None = runner
+        self._runner: Optional[CommandRunner] = runner
         super().__init__(**kwargs)
 
     @property
