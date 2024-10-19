@@ -8,8 +8,7 @@
 
 # Standard imports
 from pathlib import Path
-from typing import Any, Optional, Iterable
-from collections.abc import Mapping
+from typing import Any, Optional, Iterable, Mapping
 import json
 import shutil
 import toml
