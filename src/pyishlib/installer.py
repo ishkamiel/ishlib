@@ -8,7 +8,8 @@
 
 # Standard imports
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Iterable
+from collections.abc import Mapping
 import json
 import shutil
 import toml
@@ -59,7 +60,7 @@ class InstallerConfig:
         # Read the TOML file
         assert config_file.exists() and config_file.name.endswith(".toml")
         with open(config_file, "r", encoding="utf-8") as config_fh:
-            self._config: dict[str, Any] = toml.load(config_fh)
+            self._config: Mapping[str, Any] = toml.load(config_fh)
 
         # Load the schema from a YAML file
         assert schema_file.exists() and config_file.name.endswith(".yaml")
@@ -114,23 +115,25 @@ class Installer(IshComp):
         """Check if a command is available."""
         return shutil.which(command) is not None
 
-    def _get_not_found_pkgs(self, *commands: str) -> list[str]:
+    def _get_not_found_pkgs(self, *commands: str) -> Iterable[str]:
         """Check if a list of commands are available."""
         return [
             pkg["package"] for pkg in commands if shutil.which(pkg["command"]) is None
         ]
 
-    def install_unless_cmd(self, *packages: list[dict[str:str]], **kwargs) -> bool:
+    def install_unless_cmd(
+        self, *packages: Iterable[Mapping[str, str]], **kwargs
+    ) -> bool:
         """Install a package unless the command is available."""
         return self.install(*self._get_not_found_pkgs(*packages), **kwargs)
 
     def install(self, *packages) -> bool:
         """Install a package."""
-        packages: list[str] = self._get_not_found_pkgs(*packages)
+        packages: Iterable[str] = self._get_not_found_pkgs(*packages)
         self.log_info(f"Need to install packages for {packages}")
         assert False, "Not implemented"
 
-    def install_apt_unless_cmd(self, *packages: list[str], **kwargs) -> bool:
+    def install_apt_unless_cmd(self, *packages: Iterable[str], **kwargs) -> bool:
         """Install a package using apt unless the command is available."""
         return self.install_apt(*self._get_not_found_pkgs(*packages), **kwargs)
 
@@ -138,10 +141,10 @@ class Installer(IshComp):
         """Install a package using apt."""
         return self.runner.run(["apt", "install", *packages], sudo=sudo, **kwargs)
 
-    def install_cargo_unless_cmd(self, *packages: list[str], **kwargs) -> bool:
+    def install_cargo_unless_cmd(self, *packages: Iterable[str], **kwargs) -> bool:
         """Install a package using cargo unless the command is available."""
         return self.install_cargo(*self._get_not_found_pkgs(*packages), **kwargs)
 
-    def install_cargo(self, *packages: list[str], **kwargs) -> bool:
+    def install_cargo(self, *packages: Iterable[str], **kwargs) -> bool:
         """Install a package using cargo."""
         return self.runner.run(["cargo", "install", *packages], **kwargs)
