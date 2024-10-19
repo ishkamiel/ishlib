@@ -1,0 +1,16 @@
+commands:
+  type: list
+  schema:
+    type: string
+cargo_package:
+  type: dict
+  keysrules:
+    type: string
+  valuesrules:
+    type: string
+apt_package:
+  type: dict
+  keysrules:
+    type: string
+  valuesrules:
+    type: string
