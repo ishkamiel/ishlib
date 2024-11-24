@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2024-10-12.1422.30545d4
+# ishlib 2024-11-24.1558.41c47d8
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2024-10-12.1422.30545d4"
+export ish_VERSION_NUMBER="2024-11-24.1558.41c47d8"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -370,6 +370,16 @@ DOCSTRING
 DOCSTRING
 ish_say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
+  return 0
+}
+
+: <<'DOCSTRING'
+`ish_prompt ...`
+DOCSTRING
+ish_prompt() {
+  printf >&2 "[??] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
+  printf "Press any key to continue... (or Ctrl-C to abort)"
+  read -r
   return 0
 }
 
@@ -901,6 +911,7 @@ is_dry() {
 ish_run() {
   local dry_run=${DRY_RUN:-0}
   local quiet=0
+  local do_sudo=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -914,6 +925,10 @@ ish_run() {
         ;;
       -q|--quiet)
         quiet=1
+        shift
+        ;;
+      -s|--sudo)
+        do_sudo=1
         shift
         ;;
       --)
@@ -931,6 +946,11 @@ ish_run() {
   done
 
   local cmd=( "$@" )
+
+  if [[ $do_sudo -eq 1 ]]; then
+    cmd=( sudo "${cmd[@]}" )
+    ish_prompt "Running as sudo: ${cmd[*]}"
+  fi
 
   ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=" "${cmd[@]}"
 

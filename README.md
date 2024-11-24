@@ -1,4 +1,4 @@
-# ishlib 2024-10-12.1422.30545d4
+# ishlib 2024-11-24.1558.41c47d8
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -54,6 +54,8 @@ At present, all printouts are to sdtderr. All functions return 0, or in
 case of failure, never returns.
 
 #### `ish_say ...`
+
+#### `ish_prompt ...`
 
 #### `ish_warn ...`
 

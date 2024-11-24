@@ -81,6 +81,7 @@ is_dry() {
 ish_run() {
   local dry_run=${DRY_RUN:-0}
   local quiet=0
+  local do_sudo=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -94,6 +95,10 @@ ish_run() {
         ;;
       -q|--quiet)
         quiet=1
+        shift
+        ;;
+      -s|--sudo)
+        do_sudo=1
         shift
         ;;
       --)
@@ -111,6 +116,11 @@ ish_run() {
   done
 
   local cmd=( "$@" )
+
+  if [[ $do_sudo -eq 1 ]]; then
+    cmd=( sudo "${cmd[@]}" )
+    ish_prompt "Running as sudo: ${cmd[*]}"
+  fi
 
   ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=" "${cmd[@]}"
 

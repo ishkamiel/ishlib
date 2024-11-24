@@ -31,6 +31,16 @@ ish_say() {
 }
 
 : <<'DOCSTRING'
+`ish_prompt ...`
+DOCSTRING
+ish_prompt() {
+  printf >&2 "[??] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
+  printf "Press any key to continue... (or Ctrl-C to abort)"
+  read -r
+  return 0
+}
+
+: <<'DOCSTRING'
 `ish_warn ...`
 DOCSTRING
 ish_warn() {
