@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Helper commands for running commands and common shell tasks"""
@@ -115,6 +115,10 @@ class CommandRunner(IshComp):
 
         path.mkdir(parents=parents)
         return True
+
+    def which(self, command: str) -> Optional[str]:
+        """Find the path to a command"""
+        return shutil.which(command)
 
     def _print_cmd(self, command: Iterable[str]) -> None:
         if not self.quiet:
