@@ -40,12 +40,14 @@ class CommandRunner(IshComp):
     def dry_run(self, dry_run: bool) -> None:
         self._dry_run = dry_run
 
+    # pylint: disable=R0913
     def run(
         self,
         command: Iterable[str],
         work_dir: Optional[Path] = None,
         sudo: Optional[bool] = None,
         force_sudo: Optional[bool] = False,
+        check: Optional[bool] = True,
         **kwargs,
     ) -> subprocess.CompletedProcess:
         """Run command, optionally with sudo"""
@@ -59,14 +61,16 @@ class CommandRunner(IshComp):
 
         self._print_cmd(command)
 
-        if not self.dry_run:
+        if self.dry_run:
             # pylint: disable=W1510
-            return subprocess.run(command, **kwargs)
+            return subprocess.CompletedProcess(
+                args=command, returncode=0, stdout=b"", stderr=b""
+            )
 
         if work_dir is not None:
             old_path: Path = Path(os.getcwd())
             os.chdir(work_dir)
-        result = subprocess.CompletedProcess(args=command, returncode=0)
+        result = subprocess.run(command, check=check, **kwargs)
         if work_dir is not None:
             os.chdir(old_path)
         return result

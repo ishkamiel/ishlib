@@ -38,6 +38,14 @@ class Installer(IshComp):
             )
         return self._runner
 
+    def install_all(self, pkgs: Iterable[dict]) -> None:
+        """Install all packages."""
+        for pkg in pkgs:
+            if not self.is_installed(pkg):
+                self.install_package(pkg)
+            else:
+                self.log.debug("%s is already installed", pkg["name"])
+
     def is_installed(self, package: str) -> bool:
         """Check if packageö is installed"""
         result: bool = self._is_installed(package)
