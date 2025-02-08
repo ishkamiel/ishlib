@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -12,14 +12,14 @@ ish_SOURCED_has_command_sh=1 # source guard
 . "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
-has_command cmd
----------------
+`has_command cmd`
 
 Checks if a command exists, either as an executable in the path, or as a shell
 function. Returns 0 if found, 1 otherwise. No output.
 
 Arguments:
   cmd - name of binary or function to check for
+
 Returns:
   0 - if command was found
   1 - if command not found

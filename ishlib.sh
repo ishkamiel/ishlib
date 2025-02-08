@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2024-11-24.1558.41c47d8
+# ishlib 2025-02-09.0042
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2024-11-24.1558.41c47d8"
+export ish_VERSION_NUMBER="2025-02-09.0042"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -192,6 +192,7 @@ file          - the file to read for here-documents
 --text-only   - Attempt to produce texst-only
 --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
 --no-newlines - prevent insertion of newlines
+
 Returns:
   0
 
@@ -279,6 +280,12 @@ print_docstrings() {
       fi
     fi
 
+    if has_prefix "$line" "Source: "; then
+      _url=$(echo "$line" | cut -d' ' -f2)
+      _bare_url=$(echo "$_url" | sed 's/https\?:\/\///')
+      line="Source [$_bare_url]($_url)"
+    fi
+
     # Markdown specific formatting
     if [ $_format = "markdown" ]; then
       # End listitems
@@ -323,7 +330,7 @@ print_docstrings() {
       listheader)
         _print=listitem # listitems after a listheader
         # Need to add a new line for markdown before the items
-        [ "${_format}" = 'markdown' ] && printf "\n%s\n" '```'
+        [ "${_format}" = 'markdown' ] && printf "\n%s\n" '```text'
         ;;
       listitem)
         # Assume listitems continue
@@ -367,6 +374,8 @@ DOCSTRING
 
 : <<'DOCSTRING'
 `ish_say ...`
+
+Print an info message.
 DOCSTRING
 ish_say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
@@ -375,6 +384,8 @@ ish_say() {
 
 : <<'DOCSTRING'
 `ish_prompt ...`
+
+Print a message and read input from stdin.
 DOCSTRING
 ish_prompt() {
   printf >&2 "[??] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
@@ -385,6 +396,8 @@ ish_prompt() {
 
 : <<'DOCSTRING'
 `ish_warn ...`
+
+Print a warning message.
 DOCSTRING
 ish_warn() {
   if [ -z "${BASH_VERSION:-}" ]; then
@@ -430,6 +443,8 @@ ish_say_dry_run() {
 : <<'DOCSTRING'
 `ish_debug ...`
 
+Print a debug message if DEBUG is set to 1.
+
 Globals:
   DEBUG - does nothing unless DEBUG=1
 DOCSTRING
@@ -441,6 +456,8 @@ ish_debug() {
 
 : <<'DOCSTRING'
 `ishlib_debug ...`
+
+Print a debug message if ISHLIB_DEBUG and DEBUG are set to 1.
 
 Globals:
   DEBUG        - does nothing unless DEBUG=1
@@ -460,6 +477,7 @@ Source:
 Arguments:
   str - string to look into
   prefix - the prefix to check for
+
 Returns:
   0 - if prefix is found
   1 - if prefix isn't found
@@ -480,6 +498,7 @@ available.
 Arguments:
   url - the URL to download
   dst - the filename to save to
+
 Returns:
   0 - on success
   1 - bad arguments given
@@ -515,14 +534,14 @@ download_file() {
 }
 
 : <<'DOCSTRING'
-has_command cmd
----------------
+`has_command cmd`
 
 Checks if a command exists, either as an executable in the path, or as a shell
 function. Returns 0 if found, 1 otherwise. No output.
 
 Arguments:
   cmd - name of binary or function to check for
+
 Returns:
   0 - if command was found
   1 - if command not found
@@ -670,6 +689,7 @@ Read space-separated values into an array variable.
 Arguments:
   var - the name of an array variable to populate
   str - the string to split
+
 Returns:
   0 - on success
   1 - on failure
@@ -688,8 +708,7 @@ array_from_ssv() {
 }
 
 : <<'DOCSTRING'
-strstr haystack needle [pos_var]
---------------------------------
+`strstr haystack needle [pos_var]`
 
 Finds needle in given haystack, if pos_var is given, then also stores the
 position of the found variable into ${!pos_var}.
@@ -698,8 +717,10 @@ Arguments:
     haystack - the string to look in
     needle - the string to search for
     pos_var - name of a variable for positionli
+
 Side-effects:
     ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
+
 Returns:
     0 - if needle was found
     1 - otherwise
@@ -717,7 +738,6 @@ strstr() {
 
 : <<'DOCSTRING'
 `find_or_install var [installer [args...]]`
------------------------------
 
 Tries to find and set path for command defined by the variable named var,
 i.e., ${!var}. Will also update the var variable with a full path if
@@ -727,8 +747,10 @@ Arguments:
   var       - Indirect reference to command
   installer - Optional installer function
   args      - Additional argumednts to installer function
+
 Side effects:
   ${!var} - the variable named by var is set to the found or installed cmd
+
 Returns:
   0 - if cmd found or installed
   1 - if cmd not found, nor successfully installed
@@ -771,13 +793,12 @@ find_or_install() {
 
 : <<'DOCSTRING'
 `dump $var1 [var2 var3 ...]`
------------------
 
 Will call dumpVariable for each member of vars.
 
-Globals:
 Arguments:
   varN - name of a variable to dump
+
 Returns:
   0 - if all varN were bound
   n - number of unbound varN encountered
@@ -952,7 +973,7 @@ ish_run() {
     ish_prompt "Running as sudo: ${cmd[*]}"
   fi
 
-  ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=" "${cmd[@]}"
+  ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=${cmd[*]}"
 
   [[ $quiet -eq 0 ]] && echo "${cmd[*]}"
   [[ $dry_run -eq 1 ]] || "${cmd[@]}"
@@ -967,9 +988,11 @@ Arguments:
   --update_submodules   - Run submodule update after clone
   -b|--branch branch      - Specify branch to checkout / update
   -c|--commit           - Also checkokut specific commit
+
 Globals:
   bin_git               - Path to git (default : git)
   DRY_RUN               - Respects dry-run flag
+
 Returns:
   0 - on success
   1 - on failure
@@ -1070,6 +1093,7 @@ Source: https://stackoverflow.com/a/18839557
 Arguments:
   src - the name to rename from
   dst - the name to rename to
+
 Returns:
   0 - on success
   1 - on failure
@@ -1090,6 +1114,7 @@ Source: https://stackoverflow.com/a/18839557
 Arguments:
   src - the name to rename from
   dst - the name to rename to
+
 Returns:
   0 - on success
   1 - on failure

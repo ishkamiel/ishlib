@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -19,6 +19,7 @@ Source:
 Arguments:
   str - string to look into
   prefix - the prefix to check for
+
 Returns:
   0 - if prefix is found
   1 - if prefix isn't found

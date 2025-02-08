@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -19,6 +19,7 @@ Read space-separated values into an array variable.
 Arguments:
   var - the name of an array variable to populate
   str - the string to split
+
 Returns:
   0 - on success
   1 - on failure

@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -20,9 +20,11 @@ Arguments:
   --update_submodules   - Run submodule update after clone
   -b|--branch branch      - Specify branch to checkout / update
   -c|--commit           - Also checkokut specific commit
+
 Globals:
   bin_git               - Path to git (default : git)
   DRY_RUN               - Respects dry-run flag
+
 Returns:
   0 - on success
   1 - on failure

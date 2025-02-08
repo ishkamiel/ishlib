@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -122,7 +122,7 @@ ish_run() {
     ish_prompt "Running as sudo: ${cmd[*]}"
   fi
 
-  ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=" "${cmd[@]}"
+  ishlib_debug "ish_run: dry_run=$dry_run, quiet=$quiet, cmd=${cmd[*]}"
 
   [[ $quiet -eq 0 ]] && echo "${cmd[*]}"
   [[ $dry_run -eq 1 ]] || "${cmd[@]}"

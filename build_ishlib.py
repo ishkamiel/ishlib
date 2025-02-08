@@ -2,13 +2,12 @@
 # -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Build ishlib.sh from src/sh/base.sh and src/readme_src.md (for internal use)"""
 
 import os
-import subprocess
 import time
 import argparse
 import re
@@ -48,12 +47,7 @@ def main():
 
 def get_ishlib_version():
     """Get the ishlib version"""
-    git_revision = (
-        subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
-        .strip()
-        .decode("utf-8")
-    )
-    return time.strftime("%Y-%m-%d.%H%M.") + git_revision
+    return time.strftime("%Y-%m-%d.%H%M")
 
 
 class Parser:

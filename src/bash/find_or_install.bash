@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -13,7 +13,6 @@ ish_SOURCED_find_or_install_bash=1 # source guard
 
 : <<'DOCSTRING'
 `find_or_install var [installer [args...]]`
------------------------------
 
 Tries to find and set path for command defined by the variable named var,
 i.e., ${!var}. Will also update the var variable with a full path if
@@ -23,8 +22,10 @@ Arguments:
   var       - Indirect reference to command
   installer - Optional installer function
   args      - Additional argumednts to installer function
+
 Side effects:
   ${!var} - the variable named by var is set to the found or installed cmd
+
 Returns:
   0 - if cmd found or installed
   1 - if cmd not found, nor successfully installed

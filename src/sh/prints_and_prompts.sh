@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -24,6 +24,8 @@ DOCSTRING
 
 : <<'DOCSTRING'
 `ish_say ...`
+
+Print an info message.
 DOCSTRING
 ish_say() {
   printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
@@ -32,6 +34,8 @@ ish_say() {
 
 : <<'DOCSTRING'
 `ish_prompt ...`
+
+Print a message and read input from stdin.
 DOCSTRING
 ish_prompt() {
   printf >&2 "[??] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
@@ -42,6 +46,8 @@ ish_prompt() {
 
 : <<'DOCSTRING'
 `ish_warn ...`
+
+Print a warning message.
 DOCSTRING
 ish_warn() {
   if [ -z "${BASH_VERSION:-}" ]; then
@@ -87,6 +93,8 @@ ish_say_dry_run() {
 : <<'DOCSTRING'
 `ish_debug ...`
 
+Print a debug message if DEBUG is set to 1.
+
 Globals:
   DEBUG - does nothing unless DEBUG=1
 DOCSTRING
@@ -98,6 +106,8 @@ ish_debug() {
 
 : <<'DOCSTRING'
 `ishlib_debug ...`
+
+Print a debug message if ISHLIB_DEBUG and DEBUG are set to 1.
 
 Globals:
   DEBUG        - does nothing unless DEBUG=1

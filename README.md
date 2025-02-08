@@ -1,4 +1,4 @@
-# ishlib 2024-11-24.1558.41c47d8
+# ishlib 2025-02-09.0042
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -33,16 +33,17 @@ likely misbehave in other contexts.
 
 ##### Arguments:
 
-```
+```text
     file          - the file to read for here-documents
     --markdown    - Attempt to produce markdown
     --text-only   - Attempt to produce texst-only
     --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
     --no-newlines - prevent insertion of newlines
 ```
+
 ##### Returns:
 
-```
+```text
       0
 ```
 
@@ -55,9 +56,15 @@ case of failure, never returns.
 
 #### `ish_say ...`
 
+Print an info message.
+
 #### `ish_prompt ...`
 
+Print a message and read input from stdin.
+
 #### `ish_warn ...`
+
+Print a warning message.
 
 #### `ish_fail ...`
 
@@ -69,17 +76,21 @@ Prints the args with the dry_run tag, mainly for internal use.
 
 #### `ish_debug ...`
 
+Print a debug message if DEBUG is set to 1.
+
 ##### Globals:
 
-```
+```text
       DEBUG - does nothing unless DEBUG=1
 ```
 
 #### `ishlib_debug ...`
 
+Print a debug message if ISHLIB_DEBUG and DEBUG are set to 1.
+
 ##### Globals:
 
-```
+```text
       DEBUG        - does nothing unless DEBUG=1
       ISHLIB_DEBUG - does nothing unless this is 1
 ```
@@ -90,13 +101,14 @@ Source:
 
 ##### Arguments:
 
-```
+```text
       str - string to look into
       prefix - the prefix to check for
 ```
+
 ##### Returns:
 
-```
+```text
       0 - if prefix is found
       1 - if prefix isn't found
 ```
@@ -109,33 +121,34 @@ available.
 
 ##### Arguments:
 
-```
+```text
       url - the URL to download
       dst - the filename to save to
 ```
+
 ##### Returns:
 
-```
+```text
       0 - on success
       1 - bad arguments given
       2 - when neither curl nor wget was found
       x - error code from curl/wget
 ```
 
-has_command cmd
----------------
+#### `has_command cmd`
 
 Checks if a command exists, either as an executable in the path, or as a shell
 function. Returns 0 if found, 1 otherwise. No output.
 
 ##### Arguments:
 
-```
+```text
       cmd - name of binary or function to check for
 ```
+
 ##### Returns:
 
-```
+```text
       0 - if command was found
       1 - if command not found
       2 - if argument was missing
@@ -157,41 +170,42 @@ Read space-separated values into an array variable.
 
 ##### Arguments:
 
-```
+```text
       var - the name of an array variable to populate
       str - the string to split
 ```
+
 ##### Returns:
 
-```
+```text
       0 - on success
       1 - on failure
 ```
 
-strstr haystack needle [pos_var]
---------------------------------
+#### `strstr haystack needle [pos_var]`
 
 Finds needle in given haystack, if pos_var is given, then also stores the
 position of the found variable into ${!pos_var}.
 
 ##### Arguments:
 
-```
+```text
         haystack - the string to look in
         needle - the string to search for
         pos_var - name of a variable for positionli
-    Side-effects:
-        ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
 ```
+
+Side-effects:
+    ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
+
 ##### Returns:
 
-```
+```text
         0 - if needle was found
         1 - otherwise
 ```
 
 #### `find_or_install var [installer [args...]]`
------------------------------
 
 Tries to find and set path for command defined by the variable named var,
 i.e., ${!var}. Will also update the var variable with a full path if
@@ -199,37 +213,35 @@ applicable.
 
 ##### Arguments:
 
-```
+```text
       var       - Indirect reference to command
       installer - Optional installer function
       args      - Additional argumednts to installer function
-    Side effects:
-      ${!var} - the variable named by var is set to the found or installed cmd
 ```
+
+Side effects:
+  ${!var} - the variable named by var is set to the found or installed cmd
+
 ##### Returns:
 
-```
+```text
       0 - if cmd found or installed
       1 - if cmd not found, nor successfully installed
 ```
 
 #### `dump $var1 [var2 var3 ...]`
------------------
 
 Will call dumpVariable for each member of vars.
 
-##### Globals:
-
-```
-```
 ##### Arguments:
 
-```
+```text
       varN - name of a variable to dump
 ```
+
 ##### Returns:
 
-```
+```text
       0 - if all varN were bound
       n - number of unbound varN encountered
 ```
@@ -249,7 +261,7 @@ Just a convenience function for checking DRY_RUN in constructs like:
 
 ##### Returns:
 
-```
+```text
       0       - if $DRY_RUN is 1
       1       - if $DRY_RUN is not 1
 ```
@@ -258,22 +270,24 @@ Just a convenience function for checking DRY_RUN in constructs like:
 
 ##### Arguments:
 
-```
+```text
       url                   - the git remote URL
       dir                   - The destianation directory
       --update_submodules   - Run submodule update after clone
       -b|--branch branch      - Specify branch to checkout / update
       -c|--commit           - Also checkokut specific commit
 ```
+
 ##### Globals:
 
-```
+```text
       bin_git               - Path to git (default : git)
       DRY_RUN               - Respects dry-run flag
 ```
+
 ##### Returns:
 
-```
+```text
       0 - on success
       1 - on failure
 ```
@@ -282,17 +296,18 @@ Just a convenience function for checking DRY_RUN in constructs like:
 
 Copies the src function to a new function named dst.
 
-Source: https://stackoverflow.com/a/18839557
+Source [stackoverflow.com/a/18839557](https://stackoverflow.com/a/18839557)
 
 ##### Arguments:
 
-```
+```text
       src - the name to rename from
       dst - the name to rename to
 ```
+
 ##### Returns:
 
-```
+```text
       0 - on success
       1 - on failure
 ```
@@ -301,17 +316,18 @@ Source: https://stackoverflow.com/a/18839557
 
 Renames the src function to dst.
 
-Source: https://stackoverflow.com/a/18839557
+Source [stackoverflow.com/a/18839557](https://stackoverflow.com/a/18839557)
 
 ##### Arguments:
 
-```
+```text
       src - the name to rename from
       dst - the name to rename to
 ```
+
 ##### Returns:
 
-```
+```text
       0 - on success
       1 - on failure
 ```

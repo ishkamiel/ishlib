@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -21,6 +21,7 @@ available.
 Arguments:
   url - the URL to download
   dst - the filename to save to
+
 Returns:
   0 - on success
   1 - bad arguments given

@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -26,6 +26,7 @@ file          - the file to read for here-documents
 --text-only   - Attempt to produce texst-only
 --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
 --no-newlines - prevent insertion of newlines
+
 Returns:
   0
 
@@ -113,6 +114,12 @@ print_docstrings() {
       fi
     fi
 
+    if has_prefix "$line" "Source: "; then
+      _url=$(echo "$line" | cut -d' ' -f2)
+      _bare_url=$(echo "$_url" | sed 's/https\?:\/\///')
+      line="Source [$_bare_url]($_url)"
+    fi
+
     # Markdown specific formatting
     if [ $_format = "markdown" ]; then
       # End listitems
@@ -157,7 +164,7 @@ print_docstrings() {
       listheader)
         _print=listitem # listitems after a listheader
         # Need to add a new line for markdown before the items
-        [ "${_format}" = 'markdown' ] && printf "\n%s\n" '```'
+        [ "${_format}" = 'markdown' ] && printf "\n%s\n" '```text'
         ;;
       listitem)
         # Assume listitems continue
