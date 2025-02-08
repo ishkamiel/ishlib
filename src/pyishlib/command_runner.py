@@ -43,22 +43,33 @@ class CommandRunner(IshComp):
     def run(
         self,
         command: Iterable[str],
+        work_dir: Optional[Path] = None,
         sudo: Optional[bool] = None,
         force_sudo: Optional[bool] = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
         """Run command, optionally with sudo"""
+
         command = [str(c) for c in command]
-        if sudo:
+
+        if sudo:  # Handle sudo if requested
             command = ["sudo"] + command
             if not self._check_sudo(command, force_sudo):
                 raise KeyboardInterrupt("User aborted sudo command")
 
         self._print_cmd(command)
+
         if not self.dry_run:
             # pylint: disable=W1510
             return subprocess.run(command, **kwargs)
-        return subprocess.CompletedProcess(args=command, returncode=0)
+
+        if work_dir is not None:
+            old_path: Path = Path(os.getcwd())
+            os.chdir(work_dir)
+        result = subprocess.CompletedProcess(args=command, returncode=0)
+        if work_dir is not None:
+            os.chdir(old_path)
+        return result
 
     def chdir(
         self,
@@ -68,16 +79,16 @@ class CommandRunner(IshComp):
     ) -> bool:
         """Change directory to path, optionally creating it if it does not exist"""
         if os.getcwd() == str(path):
-            self.log_debug(f"Already in directory {path}, skipping chdir")
+            self.log.debug("Already in directory %s, skipping chdir", path)
             return True
 
         if not path.exists():
             if mkdir:
                 self.mkdir(path)
             else:
-                self._error_or_die(
-                    f"Path {path} does not exist, cannot change directory", may_fail
-                )
+                self.log.error("Path %s does not exist, cannot chdir", path)
+                if not may_fail:
+                    self.die("Path %s does not exist, stopping")
                 return False
 
         self._print_cmd([f"cd {path}"])
@@ -90,7 +101,7 @@ class CommandRunner(IshComp):
     def rm(self, path: Path, recursive: Optional[bool] = False) -> bool:
         """Remove path, optionally recursively"""
         if not path.exists():
-            self.log_debug(f"Path {path} does not exist, skipping delete")
+            self.log.debug("Path %s does not exist, skipping delete", path)
             return True
 
         self._print_rm(path, recursive)
@@ -106,7 +117,7 @@ class CommandRunner(IshComp):
     def mkdir(self, path: Path, parents: Optional[bool] = False) -> bool:
         """Create path, optionally creating parent directories"""
         if path.exists():
-            self.log_debug(f"Path {path} already exists, skipping mkdir")
+            self.log.debug("Path %s already exists, skipping mkdir", path)
             return True
 
         self._print_mkdir(path, parents)
@@ -146,8 +157,8 @@ class CommandRunner(IshComp):
         self, msg: str, is_fatal: Optional[bool] = False, exit_code: Optional[int] = 1
     ) -> None:
         if is_fatal:
-            self.log_fatal(msg, exit_code)
-        self.log_error(msg)
+            self.die(msg, exit_code)
+        self.log.error(msg)
 
     def _check_sudo(
         self, command: Iterable[str], force_sudo: Optional[bool] = False
@@ -156,7 +167,7 @@ class CommandRunner(IshComp):
             return True
 
         if self.dry_run:
-            self.log_info("Dry run, skipping sudo check")
+            self.log.info("Dry run, skipping sudo check")
             return True
 
         choice = self.prompt_yes_no_always(f"Going to run{' '.join(command)}")
