@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "patternProperties": {
+    ".*": {
+      "properties": {
+        "apt": {
+          "type": "string"
+        },
+        "cargo": {
+          "type": "string"
+        },
+        "cmd": {
+          "type": "string"
+        },
+        "pip": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "ubuntu": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  "type": "object"
+}

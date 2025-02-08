@@ -15,6 +15,9 @@ repos:
     -   id: fix-encoding-pragma
     -   id: mixed-line-ending
     -   id: pretty-format-json
+        args: [
+          "--autofix"
+        ]
     -   id: trailing-whitespace
 -   repo: https://github.com/psf/black
     rev: 24.8.0
@@ -55,7 +58,8 @@ repos:
         types: [python]
         require_serial: true
         args: [
-          "-rn", # Only display messages
-          "-sn" # Don't display the score
+          # "--disable=W1201", # Don't warn about logging format string
+          "-rn",             # Only display messages
+          "-sn"              # Don't display the score
         ]
         exclude: "^pytest/.*"

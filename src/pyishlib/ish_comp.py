@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2024 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Some common functionality for internal ishpy use"""
@@ -9,6 +9,7 @@
 import sys
 from enum import Enum
 from typing import Optional, Any, NoReturn
+import logging
 
 
 class Choice(Enum):
@@ -34,6 +35,23 @@ class Choice(Enum):
         return self == self.ALWAYS
 
 
+class IshLogFormatter(logging.Formatter):
+    """Custom formatter to prefix log levels"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        if record.levelno == logging.DEBUG:
+            record.msg = f"[DD] {record.msg}"
+        elif record.levelno == logging.INFO:
+            record.msg = f"[--] {record.msg}"
+        elif record.levelno == logging.WARNING:
+            record.msg = f"[WW] {record.msg} - "
+        elif record.levelno == logging.ERROR:
+            record.msg = f"[EE] {record.msg}"
+        elif record.levelno == logging.CRITICAL:
+            record.msg = f"[!!] {record.msg}"
+        return super().format(record)
+
+
 class IshComp:
     """Base class for all ishlib classes"""
 
@@ -42,12 +60,20 @@ class IshComp:
         args: Optional[Any] = None,
         conf: Optional[Any] = None,
         dry_run: Optional[bool] = None,
-        quiet: Optional[bool] = None,
+        log_level=logging.INFO,
     ) -> None:
         self._args: Optional[Any] = args
         self._conf: Optional[Any] = conf
-        self._quiet: Optional[bool] = quiet
         self._dry_run: Optional[bool] = dry_run
+
+        # Start logging facilities
+        self.log: logging.Logger = logging.getLogger(__name__)
+        handler = logging.StreamHandler()
+        handler.setFormatter(IshLogFormatter())
+        self.log.handlers.clear()  # Remove any existing handlers
+        self.log.addHandler(handler)
+        self.log.setLevel(log_level)
+        self.log.debug("Log level set to %s", logging.getLevelName(log_level))
 
     @property
     def verbose(self) -> bool:
@@ -59,13 +85,14 @@ class IshComp:
         """Is quiet mode enabled, either by args, config, or explicitly"""
         return self._get_opt("quiet", False)
 
-    @verbose.setter
-    def verbose(self, verbose: bool) -> None:
-        self._verbose = verbose
+    @property
+    def dry_run(self) -> bool:
+        """Is dry-run mode enabled, either by args, config, or explicitly"""
+        return self._get_opt("dry_run", False)
 
-    @quiet.setter
-    def quiet(self, quiet: bool) -> None:
-        self._quiet = quiet
+    def set_dry_run(self, quiet: bool) -> None:
+        """Set dry-run mode"""
+        self._dry_run = quiet
 
     def set_args(self, args: Any) -> None:
         """Set optional the arguments object, assuming argparse behavior"""
@@ -75,39 +102,24 @@ class IshComp:
         """Set the configuration object, e.g., a json or tomlib file"""
         self._conf = conf
 
-    def log_debug(self, msg: str) -> None:
-        """Log a debug message"""
-        if self.verbose:
-            print(f"[DD]: {msg}")
+    def set_log_level(self, log_level: int) -> None:
+        """Set the log level"""
+        self.log.setLevel(log_level)
+        self.log.debug("Log level set to %s", logging.getLevelName(log_level))
 
-    def log_info(self, msg: str) -> None:
-        """Log an info message"""
-        if self.verbose:
-            print(f"[--]: {msg}")
-
-    def log_warn(self, msg: str) -> None:
-        """Log a warning"""
-        if not self.quiet:
-            print(f"[WW]: {msg}")
-
-    def log_error(self, msg: str) -> None:
-        """Log an error"""
-        print(f"[EE]: {msg}", file=sys.stderr)
-
-    def log_fatal(self, msg: str, exit_code: int = 1) -> NoReturn:
-        """Log a fatal error and exit"""
-        print(f"[!!]: {msg}", file=sys.stderr)
+    def die(self, msg: str, exit_code: int = 1) -> NoReturn:
+        """Log a critical message and exit"""
+        self.log.critical(msg)
         sys.exit(exit_code)
 
     def print(self, msg: str) -> None:
         """Print message without any decoration or prefix"""
-        if not self.quiet:
-            print(msg)
+        self.log.log(logging.NOTSET, msg)
 
     def prompt_yes_no_always(self, msg: str) -> Choice:
         """Prompt for a yes/no/always choice"""
         while True:
-            choice = input(f"{msg} [y/n/A] (Ctr-C to abort): ").strip().lower()
+            choice: str = input(f"{msg} [y/n/A] (Ctr-C to abort): ").strip().lower()
             if choice in ["y", "n", "a"]:
                 return Choice(choice)
 

@@ -1,0 +1,30 @@
+{
+  "config": {
+    "keysrules": {
+      "type": "string"
+    },
+    "valuesrules": {
+      "schema": {
+        "apt": {
+          "type": "string"
+        },
+        "cargo": {
+          "type": "string"
+        },
+        "cmd": {
+          "type": "string"
+        },
+        "pip": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "ubuntu": {
+          "type": "boolean"
+        }
+      },
+      "type": "dict"
+    }
+  }
+}
