@@ -60,7 +60,7 @@ class IshComp:
         args: Optional[Any] = None,
         conf: Optional[Any] = None,
         dry_run: Optional[bool] = None,
-        log_level=logging.INFO,
+        log_level: Optional[int] = None,
     ) -> None:
         self._args: Optional[Any] = args
         self._conf: Optional[Any] = conf
@@ -72,18 +72,34 @@ class IshComp:
         handler.setFormatter(IshLogFormatter())
         self.log.handlers.clear()  # Remove any existing handlers
         self.log.addHandler(handler)
+        if log_level is None:
+            if self._get_opt("debug", False):
+                log_level = logging.DEBUG
+            elif self._get_opt("verbose", False):
+                log_level = logging.INFO
+            elif self._get_opt("quiet", False):
+                log_level = logging.ERROR
+            else:
+                log_level = logging.WARNING
         self.log.setLevel(log_level)
-        self.log.debug("Log level set to %s", logging.getLevelName(log_level))
+        self.log.debug(
+            "Log level set to %s (%d)", logging.getLevelName(log_level), log_level
+        )
+
+    @property
+    def debug(self) -> bool:
+        """Is debug mode enabled, either by args, config, or explicitly"""
+        return self.log.level <= logging.DEBUG
 
     @property
     def verbose(self) -> bool:
         """Is verbose mode enabled, either by args, config, or explicitly"""
-        return self._get_opt("verbose", False)
+        return self.log.level <= logging.INFO
 
     @property
     def quiet(self) -> bool:
         """Is quiet mode enabled, either by args, config, or explicitly"""
-        return self._get_opt("quiet", False)
+        return self.log.level >= logging.ERROR
 
     @property
     def dry_run(self) -> bool:

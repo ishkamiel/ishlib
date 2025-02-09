@@ -24,24 +24,34 @@ class TestInstaller(unittest.TestCase):
         # installer.set_log_level(logging.DEBUG)
 
         pkg_config = {"name": "fakepkg", "apt": "fakepkg", "cmd": "fakecmd"}
-        assert installer.is_installed(pkg_config)
-        mock_which.assert_any_call("fakecmd")
 
-    @patch("pyishlib.installer.CommandRunner.which", return_value="apt")
+        have_pkg_result: bool = installer.have_pkg(pkg_config)
+
+        mock_which.assert_any_call("fakecmd")
+        assert have_pkg_result
+
+    def mock_which(cmd, *args, **kwargs):
+        if cmd == "apt":
+            return "apt"
+        return None
+
+    # @patch("pyishlib.installer.AptInstaller.can_use_apt", return_value=True)
+    @patch("pyishlib.installer.CommandRunner.which", side_effect=mock_which)
     @patch(
-        "pyishlib.installer.CommandRunner.run",
+        "pyishlib.installer.CommandRunner.run_sudo",
         return_value=subprocess.CompletedProcess(args=[], returncode=0),
     )
     def test_apt(self, mock_run, mock_which):
         runner = CommandRunner(dry_run=True)
         installer = Installer(runner=runner)
-        # installer.set_log_level(logging.DEBUG)
+        installer.set_log_level(logging.DEBUG)
 
         pkg_config = {"name": "fakepkg", "apt": "fakepkg", "cmd": "fakecmd"}
-        installer.install_package(pkg_config)
+        install_package_result: bool = installer.install_pkg(pkg_config)
 
         # mock_which.assert_called_once_with("fakecmd")
-        mock_run.assert_any_call(["apt", "install", "fakepkg"], sudo=True, check=True)
+        mock_run.assert_any_call(["apt", "install", "-y", "fakepkg"])
+        assert install_package_result
 
     # @patch("pyishlib.installer.shutil.which", return_value=None)
     # @patch("pyishlib.installer.CommandRunner.run", return_value=True)
@@ -75,5 +85,5 @@ class TestInstaller(unittest.TestCase):
     #     mock_run.assert_called_once_with(["cargo", "install", "fakepkg"])
 
 
-# if __name__ == "__main__":
-#     unittest.main()
+if __name__ == "__main__":
+    unittest.main()

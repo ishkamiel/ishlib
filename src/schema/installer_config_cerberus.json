@@ -17,6 +17,9 @@
         "pip": {
           "type": "string"
         },
+        "pref": {
+          "type": "list"
+        },
         "type": {
           "type": "string"
         },

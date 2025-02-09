@@ -7,7 +7,6 @@
 """Helper commands for running commands and common shell tasks"""
 
 import subprocess
-
 import os
 from pathlib import Path
 import shutil
@@ -40,26 +39,36 @@ class CommandRunner(IshComp):
     def dry_run(self, dry_run: bool) -> None:
         self._dry_run = dry_run
 
-    # pylint: disable=R0913
+    def run_sudo(
+        self, command: Iterable[str], force_sudo: Optional[bool] = False, **kwargs
+    ) -> subprocess.CompletedProcess:
+        """Run command with sudo"""
+        command = ["sudo"] + command
+        if not self._check_sudo(command, force_sudo):
+            raise KeyboardInterrupt("User aborted sudo command")
+        self.run(command, **kwargs)
+
     def run(
         self,
         command: Iterable[str],
         work_dir: Optional[Path] = None,
-        sudo: Optional[bool] = None,
-        force_sudo: Optional[bool] = False,
-        check: Optional[bool] = True,
+        quiet: Optional[bool] = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
-        """Run command, optionally with sudo"""
+        """Run command"""
 
         command = [str(c) for c in command]
 
-        if sudo:  # Handle sudo if requested
-            command = ["sudo"] + command
-            if not self._check_sudo(command, force_sudo):
-                raise KeyboardInterrupt("User aborted sudo command")
+        if "check" not in kwargs:
+            kwargs["check"] = True
 
         self._print_cmd(command)
+
+        if quiet:
+            if "stdout" not in kwargs:
+                kwargs["stdout"] = subprocess.DEVNULL
+            if "stderr" not in kwargs:
+                kwargs["stderr"] = subprocess.DEVNULL
 
         if self.dry_run:
             # pylint: disable=W1510
@@ -70,7 +79,9 @@ class CommandRunner(IshComp):
         if work_dir is not None:
             old_path: Path = Path(os.getcwd())
             os.chdir(work_dir)
-        result = subprocess.run(command, check=check, **kwargs)
+
+        # pylint: disable=W1510
+        result = subprocess.run(command, **kwargs)
         if work_dir is not None:
             os.chdir(old_path)
         return result
