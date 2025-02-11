@@ -86,6 +86,14 @@ class CommandRunner(IshComp):
             os.chdir(old_path)
         return result
 
+    def git(
+        self, command: Iterable[str], work_dir: Optional[Path] = None, **kwargs
+    ) -> subprocess.CompletedProcess:
+        """Run git command using Commandrunner.run"""
+        if work_dir is not None and "-C" not in command:
+            command = ["-C", str(work_dir)] + command
+        return self.run(["git"] + command, work_dir=work_dir, **kwargs)
+
     def chdir(
         self,
         path: Path,
