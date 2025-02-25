@@ -7,6 +7,9 @@
         "apt": {
           "type": "string"
         },
+        "brew": {
+          "type": "string"
+        },
         "cargo": {
           "type": "string"
         },
