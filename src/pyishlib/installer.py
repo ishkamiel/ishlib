@@ -72,6 +72,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
         # Then sort them by installer
         to_install: dict[str, list] = {
             "apt": [],
+            "brew": [],
             "cargo": [],
             "pip": [],
         }
