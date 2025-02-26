@@ -6,7 +6,7 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
-from typing import Any, Optional, Iterable
+from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 from .ish_comp import IshComp
 from .cargo_installer import CargoInstaller
@@ -63,14 +63,14 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
         self.log.debug("No installer found for %s", pkg["name"])
         return None
 
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Iterable[Mapping]) -> bool:
         """Install all packages."""
 
         # Get the packages that are missing
         missing_packages: Iterable[dict] = self.get_missing_pkgs(pkgs)
 
         # Then sort them by installer
-        to_install: dict[str, list] = {
+        to_install: Mapping[str, list] = {
             "apt": [],
             "brew": [],
             "cargo": [],
@@ -90,7 +90,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
             self.installer(i).install(i_pkgs)
         return True
 
-    def have_pkg(self, package: dict[Any]) -> bool:
+    def have_pkg(self, package: dict) -> bool:
         """Check if a package is installed."""
         found_checker = False
         if "cmd" in package:
