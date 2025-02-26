@@ -8,7 +8,7 @@
 
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Any, Optional, Iterable
+from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 from .ish_comp import IshComp
 
@@ -16,12 +16,12 @@ from .ish_comp import IshComp
 class PipInstaller:
     """Helper class for managing python packages via pip"""
 
-    PIP_UPDATE_PKG: dict[str, str] = {
+    PIP_UPDATE_PKG: Mapping[str, str] = {
         "name": "pip",
         "pip": "pip",
     }
 
-    PIP_INSTALL_CMD: list[str] = ["pip3", "install", "--user"]
+    PIP_INSTALL_CMD: Iterable[str] = ["pip3", "install", "--user"]
 
     def __init__(self) -> None:
         self._pip_checked: bool = False
@@ -63,7 +63,7 @@ class PipInstaller:
             return False
         return self.has_pip
 
-    def get_pip_pkgs(self, pkgs) -> list[dict]:
+    def get_pip_pkgs(self, pkgs) -> Iterable[dict]:
         """Get the pip packages from a list of packages"""
         return [pkg for pkg in pkgs if self.can_use_pip(pkg)]
 
@@ -97,7 +97,7 @@ class PipInstaller:
         ), "pkgs should be an iterable of dictionaries"
         assert all(self.can_use_pip(p) for p in pkgs)
 
-        pkg_list: list[str] = [pkg["pip"] for pkg in pkgs]
+        pkg_list: Iterable[str] = [pkg["pip"] for pkg in pkgs]
 
         self.log.info("Installing with pip: %s", " ".join(pkg_list))
         try:

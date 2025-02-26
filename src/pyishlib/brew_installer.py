@@ -54,7 +54,7 @@ class BrewInstaller:
             return False
         return self.has_brew
 
-    def get_brew_pkgs(self, pkgs) -> list[dict]:
+    def get_brew_pkgs(self, pkgs) -> Iterable[dict]:
         """Get the Homebrew packages from a list of packages"""
         return [pkg for pkg in pkgs if self.can_use_brew(pkg)]
 
@@ -86,7 +86,7 @@ class BrewInstaller:
         ), "pkgs should be an iterable of dictionaries"
         assert all(self.can_use_brew(p) for p in pkgs)
 
-        pkg_list: list[str] = [pkg["brew"] for pkg in pkgs]
+        pkg_list: Iterable[str] = [pkg["brew"] for pkg in pkgs]
 
         self.log.info("Installing with Homebrew: %s", " ".join(pkg_list))
         try:

@@ -18,7 +18,7 @@ from .brew_installer import BrewInstaller
 class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstaller):
     """Installer class for installing packages."""
 
-    INSTALLERS: list[list[str]] = [
+    INSTALLERS: Iterable[Iterable[str]] = [
         ["apt", "apt"],
         ["cargo", "cargo"],
         ["pip", "pip3"],
@@ -48,7 +48,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
             raise ValueError(f"Installer {installer} not found")
         return getattr(self, installer)
 
-    def get_installer(self, pkg: dict) -> str | None:
+    def get_installer(self, pkg: dict) -> Optional[str]:
         """Get the installer for a package."""
 
         # See if the package has a preferred installer
@@ -77,7 +77,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
             "pip": [],
         }
         for pkg in missing_packages:
-            installer: str | None = self.get_installer(pkg)
+            installer: Optional[str] = self.get_installer(pkg)
             if installer is not None:
                 to_install[installer].append(pkg)
                 continue

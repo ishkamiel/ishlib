@@ -8,7 +8,7 @@
 
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Any, Optional, Iterable
+from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 from .ish_comp import IshComp
 
@@ -16,13 +16,13 @@ from .ish_comp import IshComp
 class CargoInstaller:
     """Helper class for managing rust and cargo packages"""
 
-    CARGO_UPDATE_PKG: dict[str, str] = {
+    CARGO_UPDATE_PKG: Mapping[str, str] = {
         "name": "cargo-update",
         "cargo": "cargo-update",
     }
 
     # The --locked flags forces cargo to use the pkg-specific versions of deps
-    CARGO_INSTALL_CMD: list[str] = ["cargo", "install", "--locked"]
+    CARGO_INSTALL_CMD: Iterable[str] = ["cargo", "install", "--locked"]
 
     def __init__(self) -> None:
         self._cargo_checked: bool = False
@@ -62,7 +62,7 @@ class CargoInstaller:
             return False
         return self.has_cargo
 
-    def get_cargo_pkgs(self, pkgs) -> list[dict]:
+    def get_cargo_pkgs(self, pkgs) -> Iterable[dict]:
         """Get the cargo packages from a list of packages"""
         return [pkg for pkg in pkgs if self.can_use_cargo(pkg)]
 
@@ -94,7 +94,7 @@ class CargoInstaller:
         ), "pkgs should be an iterable of dictionaries"
         assert all(self.can_use_cargo(p) for p in pkgs)
 
-        pkg_list: list[str] = [pkg["cargo"] for pkg in pkgs]
+        pkg_list: Iterable[str] = [pkg["cargo"] for pkg in pkgs]
 
         self.log.info("Installing with cargo: %s", " ".join(pkg_list))
         try:

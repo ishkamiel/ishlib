@@ -57,7 +57,7 @@ class AptInstaller:
             return False
         return self.has_apt
 
-    def get_apt_pkgs(self, pkgs) -> list[dict]:
+    def get_apt_pkgs(self, pkgs) -> Iterable[dict]:
         """Get the apt packages from a list of packages"""
         return [pkg for pkg in pkgs if self.can_use_apt(pkg)]
 
@@ -89,7 +89,7 @@ class AptInstaller:
         ), "pkgs should be an iterable of dictionaries"
         assert all(self.can_use_apt(p) for p in pkgs)
 
-        pkg_list: list[str] = [pkg["apt"] for pkg in pkgs]
+        pkg_list: Iterable[str] = [pkg["apt"] for pkg in pkgs]
 
         self.log.info("Installing with apt: %s", " ".join(pkg_list))
         try:
