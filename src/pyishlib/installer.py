@@ -11,15 +11,18 @@ from .command_runner import CommandRunner
 from .ish_comp import IshComp
 from .cargo_installer import CargoInstaller
 from .apt_installer import AptInstaller
+from .pip_installer import PipInstaller
+from .brew_installer import BrewInstaller
 
 
-class Installer(IshComp, CargoInstaller, AptInstaller):
+class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstaller):
     """Installer class for installing packages."""
 
     INSTALLERS: list[list[str]] = [
         ["apt", "apt"],
         ["cargo", "cargo"],
-        # ["pip", "pip3"],
+        ["pip", "pip3"],
+        ["brew", "brew"],
     ]
 
     def __init__(self, runner: Optional[CommandRunner] = None, **kwargs: Any) -> None:
@@ -35,6 +38,8 @@ class Installer(IshComp, CargoInstaller, AptInstaller):
         IshComp.__init__(self, **kwargs)
         CargoInstaller.__init__(self)
         AptInstaller.__init__(self)
+        PipInstaller.__init__(self)
+        BrewInstaller.__init__(self)
 
     def installer(self, installer: str) -> Any:
         """Get an installer."""
@@ -67,6 +72,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller):
         # Then sort them by installer
         to_install: dict[str, list] = {
             "apt": [],
+            "brew": [],
             "cargo": [],
             "pip": [],
         }
