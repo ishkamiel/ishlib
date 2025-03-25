@@ -1,5 +1,8 @@
 # ishlib 2025-02-09.0042
 
+> [!WARNING]
+> This repository is intended for personal use and contains lots of broken, nonsensical and overly complex solutions for simple problems...
+
 This is a collection of various scripts and tricks collected along the years.
 
 The script is meant to be sourced elsewhere, but can be invoked as
