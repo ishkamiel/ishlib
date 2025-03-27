@@ -46,6 +46,12 @@ class InstallerConfig:
         """Get the packages from the configuration"""
         return self._config.values()
 
+    def get_pkg(self, name: str) -> dict:
+        """Get a package by name"""
+        if name not in self._config:
+            raise ValueError(f"Package {name} not found in config")
+        return self._config[name]
+
 
 class InstallerConfigJSON(InstallerConfig):
     """Class for handling installer configuration from a JSON file"""
