@@ -46,7 +46,7 @@ class CommandRunner(IshComp):
         command = ["sudo"] + command
         if not self._check_sudo(command, force_sudo):
             raise KeyboardInterrupt("User aborted sudo command")
-        self.run(command, **kwargs)
+        return self.run(command, **kwargs)
 
     def run(
         self,
