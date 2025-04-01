@@ -81,7 +81,10 @@ class CommandRunner(IshComp):
             os.chdir(work_dir)
 
         # pylint: disable=W1510
-        result = subprocess.run(command, **kwargs)
+        try:
+            result = subprocess.run(command, **kwargs)
+        except subprocess.CalledProcessError as e:
+            result = e
         if work_dir is not None:
             os.chdir(old_path)
         return result

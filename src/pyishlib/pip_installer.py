@@ -86,8 +86,8 @@ class PipInstaller:
             )
             return pkg["pip"] in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.critical("Pip error checking %s: %s", pkg["name"], e)
-            raise e
+            self.log.debug("Pip error checking %s: %s", pkg["name"], e)
+            return False
 
     def install_pip_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of pip packages"""

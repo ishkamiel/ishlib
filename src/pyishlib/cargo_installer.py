@@ -84,8 +84,8 @@ class CargoInstaller:
             )
             return pkg["cargo"] in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.critical("Cargo error checking %s: %s", pkg["name"], e)
-            raise e
+            self.log.debug("Cargo error checking %s: %s", pkg["name"], e)
+            return False
 
     def install_cargo_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of cargo packages"""

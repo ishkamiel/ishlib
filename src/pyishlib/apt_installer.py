@@ -79,8 +79,8 @@ class AptInstaller:
             )
             return "Status: install ok installed" in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.critical("apt error checking %s: %s", pkg["name"], e)
-            raise e
+            self.log.debug("dpkg non-zero exit for %s: %s", pkg["name"], e)
+            return False
 
     def install_apt_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of apt packages"""

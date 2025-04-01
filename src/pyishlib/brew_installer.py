@@ -76,8 +76,8 @@ class BrewInstaller:
             )
             return pkg["brew"] in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.critical("Homebrew error checking %s: %s", pkg["name"], e)
-            raise e
+            self.log.debug("Homebrew error checking %s: %s", pkg["name"], e)
+            return False
 
     def install_brew_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of Homebrew packages"""
