@@ -196,7 +196,7 @@ class CommandRunner(IshComp):
             self.log.info("Dry run, skipping sudo check")
             return True
 
-        choice = self.prompt_yes_no_always(f"Going to run{' '.join(command)}")
+        choice = self.prompt_yes_no_always(f"Going to run {' '.join(command)}")
         if choice.always:
             self._always_sudo = True
         return choice.yes
