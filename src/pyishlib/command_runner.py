@@ -52,7 +52,7 @@ class CommandRunner(IshComp):
         self,
         command: Iterable[str],
         work_dir: Optional[Path] = None,
-        quiet: Optional[bool] = False,
+        quiet: bool = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
         """Run command"""
@@ -176,8 +176,10 @@ class CommandRunner(IshComp):
         return shutil.which(command)
 
     def _print_cmd(self, command: Iterable[str]) -> None:
-        if not self.quiet:
-            self.print(" ".join([str(c) for c in command]))
+        cmd_str: str = " ".join([str(c) for c in command])
+        self.log.debug("_print_cmd: %s", cmd_str)
+        if self.verbose or self.dry_run:
+            self.print(cmd_str)
 
     def _print_rm(self, path: Path, recursive: Optional[bool] = False) -> None:
         if self.quiet:
