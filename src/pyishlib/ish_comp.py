@@ -130,7 +130,8 @@ class IshComp:
 
     def print(self, msg: str) -> None:
         """Print message without any decoration or prefix"""
-        self.log.log(logging.NOTSET, msg)
+        self.log.debug("print: %s", msg)
+        print(msg)
 
     def prompt_yes_no_always(self, msg: str) -> Choice:
         """Prompt for a yes/no/always choice"""

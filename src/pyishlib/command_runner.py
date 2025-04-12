@@ -153,6 +153,24 @@ class CommandRunner(IshComp):
         path.mkdir(parents=parents)
         return True
 
+    def on_ubuntu(self) -> bool:
+        """Check if running on Ubuntu"""
+        return (
+            "Ubuntu" in self.run(["uname", "-a"], capture_output=True, text=True).stdout
+        )
+
+    def on_ubuntu_desktop(self) -> bool:
+        """Check if running on Ubuntu Desktop"""
+        if not self.on_ubuntu():
+            self.log.info("Not running on Ubuntu")
+            return False
+
+        session_type = os.getenv("XDG_SESSION_TYPE")
+        if session_type not in ["x11", "wayland"]:
+            self.log.info("Not running on X11/Wayland")
+            return False
+        return True
+
     def which(self, command: str) -> Optional[str]:
         """Find the path to a command"""
         return shutil.which(command)
