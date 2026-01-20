@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Classes to manage installer configuration"""
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping, Iterable
 import cerberus
@@ -36,15 +37,43 @@ class InstallerConfig:
             pkg["name"] = name
 
         self._config: Mapping[str, Any] = config
+        self._on_gnome = None
+        self._on_ubuntu = None
 
     @property
     def config_file(self) -> Path:
         """Get the configuration file name"""
         return self._config_file
 
+    @property
+    def on_gnome(self):
+        """True if running Gnome"""
+        if self._on_gnome is None:
+            cur_desk = os.environ.get("XDG_CURRENT_DESKTOP")
+            self._on_gnome = cur_desk is not None and cur_desk.lower() == "gnome"
+        return self._on_gnome
+
+    @property
+    def on_ubuntu(self):
+        """True if on Ubuntu"""
+        if self._on_gnome is None:
+            try:
+                with open("/etc/os-release", "r", encoding="utf-8") as f:
+                    self._on_ubuntu = "ubuntu" in f.read().lower()
+            except FileNotFoundError:
+                self._on_ubuntu = False
+        return self._on_ubuntu
+
     def get_pkgs(self) -> Iterable[dict]:
         """Get the packages from the configuration"""
-        return self._config.values()
+        all_pkgs = []
+        for p in self._config.values():
+            if "ubuntu" in p and p["ubuntu"] and not self.on_ubuntu:
+                continue
+            if "gnome" in p and p["gnome"] and not self.on_gnome:
+                continue
+            all_pkgs.append(p)
+        return all_pkgs
 
     def get_pkg(self, name: str) -> dict:
         """Get a package by name"""
