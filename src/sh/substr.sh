@@ -52,14 +52,9 @@ substr() {
     return 1
   fi
 
-  if [ -n "${_ishlib_var+x}" ] && [ -z "${_ishlib_var+x}" ]; then
-    ish_warn "${_t} ${_ishlib_var} is not a bound variable"
-    return 1
-  fi
-
   _ishlib_res="$(echo "${_ishlib_str}" | cut -c"${_ishlib_start}-${_ishlib_end:-}")"
 
-  if [ -n "${_ishlib_var+x}" ]; then
+  if [ -n "${_ishlib_var}" ]; then
     eval "${_ishlib_var}=\"${_ishlib_res}\""
   else
     printf "%s" "${_ishlib_res}"

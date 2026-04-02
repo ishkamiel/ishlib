@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2026-04-02.2008
+# ishlib 2026-04-02.2012
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-02.2008"
+export ish_VERSION_NUMBER="2026-04-02.2012"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -594,14 +594,9 @@ substr() {
     return 1
   fi
 
-  if [ -n "${_ishlib_var+x}" ] && [ -z "${_ishlib_var+x}" ]; then
-    ish_warn "${_t} ${_ishlib_var} is not a bound variable"
-    return 1
-  fi
-
   _ishlib_res="$(echo "${_ishlib_str}" | cut -c"${_ishlib_start}-${_ishlib_end:-}")"
 
-  if [ -n "${_ishlib_var+x}" ]; then
+  if [ -n "${_ishlib_var}" ]; then
     eval "${_ishlib_var}=\"${_ishlib_res}\""
   else
     printf "%s" "${_ishlib_res}"
