@@ -96,7 +96,7 @@ strlen() {
     esac
   done
 
-  _ishlib_res="$#variable"
+  _ishlib_res="${#_ishlib_str}"
 
   if [ -n "${_ishlib_var}" ]; then
     eval "${_ishlib_var}=\"${_ishlib_res}\""
