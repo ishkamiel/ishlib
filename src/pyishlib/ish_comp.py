@@ -145,5 +145,7 @@ class IshComp:
         if self._conf is not None and hasattr(self._conf, opt):
             return getattr(self._conf, opt)
         if hasattr(self, f"_{opt}"):
-            return getattr(self, f"_{opt}")
+            val = getattr(self, f"_{opt}")
+            if val is not None:
+                return val
         return default

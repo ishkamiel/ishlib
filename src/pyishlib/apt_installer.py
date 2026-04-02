@@ -108,7 +108,8 @@ class AptInstaller:
     def install_apt_pkg_unless_found(self, pkg) -> bool:
         """Install an apt package unless it is already installed"""
         if not self.is_apt_pkg_installed(pkg):
-            self.install_apt_pkg(pkg)
+            return self.install_apt_pkg(pkg)
+        return True
 
     def update_apt_pkgs(self) -> bool:
         """Update all installed apt packages"""
@@ -118,6 +119,7 @@ class AptInstaller:
         try:
             self.runner.run_sudo(["apt", "update"])
             self.runner.run_sudo(["apt", "upgrade", "-y"])
+            return True
         except CalledProcessError as e:
             self.log.critical("apt error updating packages: %s", e)
             raise e

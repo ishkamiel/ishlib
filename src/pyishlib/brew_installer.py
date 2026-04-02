@@ -46,7 +46,7 @@ class BrewInstaller:
             update = self.update_brew_pkgs
             update_and_install_all = self.update_and_install_brew_pkgs
 
-        return Namespace
+        return Namespace()
 
     def can_use_brew(self, pkg: Optional[Any] = None) -> bool:
         """Check if Homebrew is available, and optionally, if pkg can use it"""
@@ -98,12 +98,13 @@ class BrewInstaller:
 
     def install_brew_pkg(self, pkg) -> bool:
         """Install a Homebrew package"""
-        self.install_brew_pkgs([pkg])
+        return self.install_brew_pkgs([pkg])
 
     def install_brew_pkg_unless_found(self, pkg) -> bool:
         """Install a Homebrew package unless it is already installed"""
         if not self.is_brew_pkg_installed(pkg):
-            self.install_brew_pkg(pkg)
+            return self.install_brew_pkg(pkg)
+        return True
 
     def update_brew_pkgs(self) -> bool:
         """Update all installed Homebrew packages"""
@@ -111,6 +112,7 @@ class BrewInstaller:
 
         self.runner.run(["brew", "update"])
         self.runner.run(["brew", "upgrade"])
+        return True
 
     def update_and_install_brew_pkgs(self, pkgs):
         """Update Homebrew and Homebrew packages, then install new Homebrew pkgs"""

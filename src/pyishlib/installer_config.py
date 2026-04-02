@@ -56,7 +56,7 @@ class InstallerConfig:
     @property
     def on_ubuntu(self):
         """True if on Ubuntu"""
-        if self._on_gnome is None:
+        if self._on_ubuntu is None:
             try:
                 with open("/etc/os-release", "r", encoding="utf-8") as f:
                     self._on_ubuntu = "ubuntu" in f.read().lower()
