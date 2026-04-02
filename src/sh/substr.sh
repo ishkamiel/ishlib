@@ -91,7 +91,7 @@ strlen() {
     *)
       [ -z "${_ishlib_str}" ] || (ish_warn "bad arguments to strlen" && return 1)
       _ishlib_str="$1"
-      sfhit
+      shift
       ;;
     esac
   done
