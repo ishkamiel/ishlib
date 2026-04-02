@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
+import inspect
+from . import *
+import pytest
+
+
+def pytest_generate_tests(metafunc):
+    metafunc.parametrize("shell", ["bash", "dash", "sh", "zsh"])
+
+
+def test_prepend_to_path_adds_new(shell, tmp_path, ishlib):
+    """ish_prepend_to_path should prepend a new directory to PATH."""
+    script_content = inspect.cleandoc(
+        f"""
+    #!/usr/bin/env {shell}
+    . "{ishlib}"
+    PATH="/usr/bin:/bin"
+    ish_prepend_to_path /my/new/path
+    echo "$PATH"
+    """
+    )
+    out = gen_script_and_check_output(shell, tmp_path, script_content)
+    assert out.strip() == "/my/new/path:/usr/bin:/bin"
+
+
+def test_prepend_to_path_no_duplicate(shell, tmp_path, ishlib):
+    """ish_prepend_to_path should not add a path that already exists."""
+    script_content = inspect.cleandoc(
+        f"""
+    #!/usr/bin/env {shell}
+    . "{ishlib}"
+    PATH="/usr/bin:/bin"
+    ish_prepend_to_path /usr/bin
+    echo "$PATH"
+    """
+    )
+    out = gen_script_and_check_output(shell, tmp_path, script_content)
+    assert out.strip() == "/usr/bin:/bin"
