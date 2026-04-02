@@ -183,7 +183,7 @@ print_docstrings() {
   IFS="${_old_IFS}"
   # Unset our "local" variables
   unset _t
-  unset _old_IFSs
+  unset _old_IFS
   unset _print
   unset _newline
   unset _filename
