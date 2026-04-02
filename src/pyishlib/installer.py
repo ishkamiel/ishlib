@@ -26,6 +26,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
     ]
 
     def __init__(self, runner: Optional[CommandRunner] = None, **kwargs: Any) -> None:
+        IshComp.__init__(self, **kwargs)
         self.runner: CommandRunner = (
             runner
             if runner is not None
@@ -35,7 +36,6 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
                 dry_run=self._dry_run,
             )
         )
-        IshComp.__init__(self, **kwargs)
         CargoInstaller.__init__(self)
         AptInstaller.__init__(self)
         PipInstaller.__init__(self)

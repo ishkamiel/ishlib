@@ -65,13 +65,13 @@ class TestCommandRunnerLogging:
         runner = CommandRunner(dry_run=True)
         command = ["echo", "Hello, World!"]
 
-        result = self.runner.run(command)
+        result = runner.run(command)
         # Expect dry-run to fake success
         assert result.returncode == 0
         # And print out the command
         mock_method.assert_called_with(command)
         # But not actually run it
-        assert not hasattr(result, "sdtout") or result.stdout == b"\n"
+        assert result.stdout == b""
 
     # @patch.object(CommandRunner, '_print_cmd')
     # def test_run_sudo(self, mock_method):

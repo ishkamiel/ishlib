@@ -54,7 +54,7 @@ class PipInstaller:
             update = self.update_pip_pkgs
             update_and_install_all = self.update_and_install_pip_pkgs
 
-        return Namespace
+        return Namespace()
 
     def can_use_pip(self, pkg: Optional[Any] = None) -> bool:
         """Check if pip is available, and optionally, if pkg can use it"""
@@ -109,13 +109,14 @@ class PipInstaller:
 
     def install_pip_pkg(self, pkg) -> bool:
         """Install a pip package"""
-        self.install_pip_pkgs([pkg])
+        return self.install_pip_pkgs([pkg])
 
     def install_pip_pkg_unless_found(self, pkg) -> bool:
         """Install a pip package unless it is already installed"""
 
         if not self.is_pip_pkg_installed(pkg):
-            self.install_pip_pkg(pkg)
+            return self.install_pip_pkg(pkg)
+        return True
 
     def update_pip_pkgs(self) -> bool:
         """Update all installed pip packages"""
@@ -124,6 +125,7 @@ class PipInstaller:
         self.install_pip_pkg_unless_found(self.PIP_UPDATE_PKG)
         self.runner.run(["pip3", "install", "--upgrade", "pip"])
         self.log.warning("pip update not implemented (only updates pip itself)")
+        return True
 
     def update_and_install_pip_pkgs(self, pkgs):
         """Update python, pip and pip packages, then install new pip pkgs"""

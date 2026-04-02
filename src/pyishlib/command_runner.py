@@ -29,7 +29,7 @@ class CommandRunner(IshComp):
     @property
     def always_sudo(self) -> bool:
         """Is always-sudo mode enabled, i.e., sudo without asking"""
-        return self._get_opt("dry_run", False)
+        return self._get_opt("always_sudo", False)
 
     @always_sudo.setter
     def always_sudo(self, always_sudo: bool) -> None:
@@ -83,10 +83,9 @@ class CommandRunner(IshComp):
         # pylint: disable=W1510
         try:
             result = subprocess.run(command, **kwargs)
-        except subprocess.CalledProcessError as e:
-            result = e
-        if work_dir is not None:
-            os.chdir(old_path)
+        finally:
+            if work_dir is not None:
+                os.chdir(old_path)
         return result
 
     def git(
@@ -114,7 +113,7 @@ class CommandRunner(IshComp):
             else:
                 self.log.error("Path %s does not exist, cannot chdir", path)
                 if not may_fail:
-                    self.die("Path %s does not exist, stopping")
+                    self.die(f"Path {path} does not exist, stopping")
                 return False
 
         self._print_cmd([f"cd {path}"])

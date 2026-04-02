@@ -6,6 +6,7 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+import re
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable, Mapping
@@ -54,7 +55,7 @@ class CargoInstaller:
             update = self.update_cargo_pkgs
             update_and_install_all = self.update_and_install_all
 
-        return Namespace
+        return Namespace()
 
     def can_use_cargo(self, pkg: Optional[Any] = None) -> bool:
         """Check if cargo is available, and optionally, if pkg can use it"""
@@ -106,12 +107,13 @@ class CargoInstaller:
 
     def install_cargo_pkg(self, pkg) -> bool:
         """Install a cargo package"""
-        self.install_cargo_pkgs([pkg])
+        return self.install_cargo_pkgs([pkg])
 
     def install_cargo_pkg_unless_found(self, pkg) -> bool:
         """Install a cargo package unless it is already installed"""
         if not self.is_cargo_pkg_installed(pkg):
-            self.install_cargo_pkg(pkg)
+            return self.install_cargo_pkg(pkg)
+        return True
 
     def update_cargo_pkgs(self) -> bool:
         """Update all installed cargo packages"""
@@ -119,6 +121,7 @@ class CargoInstaller:
 
         self.install_cargo_pkg_unless_found(self.CARGO_UPDATE_PKG)
         self.runner.run(["cargo", "install-update", "-a", "-q"])
+        return True
 
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""
@@ -129,10 +132,10 @@ class CargoInstaller:
             res: CompletedProcess = self.runner.run(
                 ["rustup", "toolchain", "list"], capture_output=True, text=True
             )
-            if res.stdout.find("stable.*(default)") == -1:
+            if not re.search(r"stable.*\(default\)", res.stdout):
                 self.runner.run(["rustup", "install", "stable"], quiet=q)
-                self.runner.run(["rustup", "install", "stable"], quiet=q)
-            self.runner.run(["rustup", "install", "stable"], quiet=q)
+            self.runner.run(["rustup", "update", "stable"], quiet=q)
+            return True
         except CalledProcessError as e:
             self.log.critical("Rustup error: %s", e)
             raise e
