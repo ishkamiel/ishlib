@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
+import inspect
+from . import *
+import pytest
+
+
+def pytest_generate_tests(metafunc):
+    metafunc.parametrize("shell", ["bash", "dash", "sh", "zsh"])
+
+
+def test_print_docstrings_does_not_leak_IFS(shell, tmp_path, ishlib):
+    """print_docstrings should not leave _old_IFS in the environment."""
+    # Create a small file with a docstring for print_docstrings to parse
+    test_file = tmp_path / "doctest.sh"
+    test_file.write_text(
+        ": <<'DOCSTRING'\ntest doc\nDOCSTRING\n"
+    )
+
+    script_content = inspect.cleandoc(
+        f"""
+    #!/usr/bin/env {shell}
+    . "{ishlib}"
+    print_docstrings --text-only "{test_file}"
+    if [ -n "${{_old_IFS+x}}" ]; then
+        echo "LEAKED"
+    else
+        echo "CLEAN"
+    fi
+    """
+    )
+    out = gen_script_and_check_output(shell, tmp_path, script_content)
+    lines = [l.strip() for l in out.strip().splitlines()]
+    assert lines[-1] == "CLEAN"
