@@ -28,8 +28,9 @@ Returns:
 
 DOCSTRING
 copy_function() {
-  test -n "$(declare -f "$1")" || return 1
-  eval "${_/$1/$2}" || return 1
+  local _body
+  _body="$(declare -f "$1")" || return 1
+  eval "${_body/$1/$2}" || return 1
 }
 
 : <<'DOCSTRING'
