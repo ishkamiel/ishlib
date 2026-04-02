@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2025-02-09.0042
+# ishlib 2026-04-02.2008
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2025-02-09.0042"
+export ish_VERSION_NUMBER="2026-04-02.2008"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -349,7 +349,7 @@ print_docstrings() {
   IFS="${_old_IFS}"
   # Unset our "local" variables
   unset _t
-  unset _old_IFSs
+  unset _old_IFS
   unset _print
   unset _newline
   unset _filename
@@ -633,12 +633,12 @@ strlen() {
     *)
       [ -z "${_ishlib_str}" ] || (ish_warn "bad arguments to strlen" && return 1)
       _ishlib_str="$1"
-      sfhit
+      shift
       ;;
     esac
   done
 
-  _ishlib_res="$#variable"
+  _ishlib_res="${#_ishlib_str}"
 
   if [ -n "${_ishlib_var}" ]; then
     eval "${_ishlib_var}=\"${_ishlib_res}\""
@@ -661,7 +661,7 @@ DOCSTRING
 ish_prepend_to_path() {
   case ":$PATH:" in
     *":$1:"*) ;;
-    *) PATH="$1:/your/new/path" ;;
+    *) PATH="$1:$PATH" ;;
   esac
 }
 
@@ -1056,28 +1056,28 @@ git_clone_or_update() {
 
     if [[ "${update_submodules}" = "1" ]]; then
       ish_debug "$t initializing submodules"
-      do_or_dry pushd "${dir}" || (ish_warn "$t failed to pusd ${dir}" && return 1)
+      do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
       do_or_dry "$bin_git" submodule update --init --recursive || (ish_warn "$t submodule update failed" && return 1)
-      do_or_dry popd || (ish_warn "$t filed to popd" && return 1)
+      do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
     fi
   else
     ish_debug "$t updating ${dir}"
 
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pusd ${dir}" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
 
     if [[ -n "$branch" ]]; then
       do_or_dry "$bin_git" checkout "$branch" || (ish_warn "$t checkout $branch failed" && return 1)
     fi
 
-    do_or_dry "$bin_git" pull || (ish_warn "$t failted to git pull ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t filed to popd" && return 1)
+    do_or_dry "$bin_git" pull || (ish_warn "$t failed to git pull ${dir}" && return 1)
+    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
   fi
 
   if [[ -n "${commit}" ]]; then
     ish_debug "${t} checking out ${commit}"
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pusd ${dir}" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
     do_or_dry "$bin_git" checkout "${commit}" || (ish_warn "$t failed to checkout ${commit} in ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t filed to popd" && return 1)
+    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
   fi
 
   return 0
@@ -1100,8 +1100,9 @@ Returns:
 
 DOCSTRING
 copy_function() {
-  test -n "$(declare -f "$1")" || return 1
-  eval "${_/$1/$2}" || return 1
+  local _body
+  _body="$(declare -f "$1")" || return 1
+  eval "${_body/$1/$2}" || return 1
 }
 
 : <<'DOCSTRING'
