@@ -88,28 +88,28 @@ git_clone_or_update() {
 
     if [[ "${update_submodules}" = "1" ]]; then
       ish_debug "$t initializing submodules"
-      do_or_dry pushd "${dir}" || (ish_warn "$t failed to pusd ${dir}" && return 1)
+      do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
       do_or_dry "$bin_git" submodule update --init --recursive || (ish_warn "$t submodule update failed" && return 1)
-      do_or_dry popd || (ish_warn "$t filed to popd" && return 1)
+      do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
     fi
   else
     ish_debug "$t updating ${dir}"
 
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pusd ${dir}" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
 
     if [[ -n "$branch" ]]; then
       do_or_dry "$bin_git" checkout "$branch" || (ish_warn "$t checkout $branch failed" && return 1)
     fi
 
-    do_or_dry "$bin_git" pull || (ish_warn "$t failted to git pull ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t filed to popd" && return 1)
+    do_or_dry "$bin_git" pull || (ish_warn "$t failed to git pull ${dir}" && return 1)
+    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
   fi
 
   if [[ -n "${commit}" ]]; then
     ish_debug "${t} checking out ${commit}"
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pusd ${dir}" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
     do_or_dry "$bin_git" checkout "${commit}" || (ish_warn "$t failed to checkout ${commit} in ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t filed to popd" && return 1)
+    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
   fi
 
   return 0
