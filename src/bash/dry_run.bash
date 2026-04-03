@@ -14,9 +14,16 @@ ish_SOURCED_dry_run_bash=1 # source guard
 . "$ISHLIB/src/sh/prints_and_prompts.sh"
 
 : <<'DOCSTRING'
-`do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
+`do_or_dry cmd [args...]`
 
-TODO: merge do_or_dry_bg here using the above cmdline args
+Execute `cmd` with `args`, or print a dry-run message if `$DRY_RUN` is 1.
+
+Globals:
+  DRY_RUN - when set to 1, prints the command instead of executing it
+
+Returns:
+  0 - on success (or dry run)
+  1 - if the command fails
 
 DOCSTRING
 do_or_dry() {
@@ -41,7 +48,19 @@ do_or_dry() {
 : <<'DOCSTRING'
 `do_or_dry_bg pid_var cmd [args...]`
 
-TODO: merge do_or_dry_bg here using the above cmdline args
+Execute `cmd` with `args` in the background, storing the PID in `pid_var`.
+If `$DRY_RUN` is 1, prints a dry-run message and sets `pid_var` to empty.
+
+Arguments:
+  pid_var - name of a variable to store the background PID
+  cmd     - command to execute
+  args    - arguments to the command
+
+Globals:
+  DRY_RUN - when set to 1, prints the command instead of executing it
+
+Returns:
+  0 - always
 
 DOCSTRING
 do_or_dry_bg() {
@@ -78,6 +97,26 @@ is_dry() {
   return 1
 }
 
+: <<'DOCSTRING'
+`ish_run [-f|--force] [-n|--dry-run] [-q|--quiet] [-s|--sudo] [--] cmd [args...]`
+
+Execute a command with optional dry-run, quiet, and sudo support.
+
+Arguments:
+  -f, --force    - force execution even if $DRY_RUN is set
+  -n, --dry-run  - skip execution (print command only)
+  -q, --quiet    - suppress command echo before execution
+  -s, --sudo     - run with sudo (prompts user for confirmation)
+  --             - stop processing options
+
+Globals:
+  DRY_RUN - when set to 1, acts as if --dry-run was passed (unless --force)
+
+Returns:
+  0 - on success or dry run
+  1 - on invalid option or command failure
+
+DOCSTRING
 ish_run() {
   local dry_run=${DRY_RUN:-0}
   local quiet=0
