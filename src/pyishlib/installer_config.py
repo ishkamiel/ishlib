@@ -15,23 +15,23 @@ from typing import Any, Mapping, Iterable
 try:
     import cerberus
 
-    _has_cerberus = True
+    HAS_CERBERUS = True
 except ImportError:
-    _has_cerberus = False
+    HAS_CERBERUS = False
 
 try:
     import jsonschema
 
-    _has_jsonschema = True
+    HAS_JSONSCHEMA = True
 except ImportError:
-    _has_jsonschema = False
+    HAS_JSONSCHEMA = False
 
 try:
     import yaml
 
-    _has_yaml = True
+    HAS_YAML = True
 except ImportError:
-    _has_yaml = False
+    HAS_YAML = False
 
 log = logging.getLogger(__name__)
 
@@ -46,11 +46,11 @@ class InstallerConfig:
     def __init__(self, config: Mapping[str, Any], config_fn: Path) -> None:
         self._config_file: Path = config_fn
 
-        if _has_cerberus:
+        if HAS_CERBERUS:
             # Load the schema file (JSON format, use yaml.safe_load if available
             # for tolerance of comments/trailing commas, otherwise json.load)
             with open(InstallerConfig.SCHEMA, "r", encoding="utf-8") as schema_fh:
-                if _has_yaml:
+                if HAS_YAML:
                     schema = yaml.safe_load(schema_fh)
                 else:
                     schema = json.load(schema_fh)
@@ -129,7 +129,7 @@ class InstallerConfigJSON(InstallerConfig):
             raise ValueError(f"Config file is not valid JSON: {e}") from e
 
         # Validate the JSON file based on the schema
-        if _has_jsonschema:
+        if HAS_JSONSCHEMA:
             try:
                 with open(
                     InstallerConfigJSON.SCHEMA, "r", encoding="utf-8"

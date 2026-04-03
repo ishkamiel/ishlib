@@ -17,15 +17,15 @@ try:
     import jsonschema
     import yaml
 
-    _has_validation_deps = True
+    HAS_VALIDATION_DEPS = True
 except ImportError:
-    _has_validation_deps = False
+    HAS_VALIDATION_DEPS = False
 
 from pyishlib.installer_config import InstallerConfig, InstallerConfigJSON
 
 
 @pytest.mark.skipif(
-    not _has_validation_deps,
+    not HAS_VALIDATION_DEPS,
     reason="cerberus/jsonschema/pyyaml not installed",
 )
 class TestInstallerConfigSimple(unittest.TestCase):
@@ -59,7 +59,7 @@ class TestInstallerConfigSimple(unittest.TestCase):
 
 
 @pytest.mark.skipif(
-    not _has_validation_deps,
+    not HAS_VALIDATION_DEPS,
     reason="cerberus/jsonschema/pyyaml not installed",
 )
 class TestInstallerConfigFull(unittest.TestCase):
