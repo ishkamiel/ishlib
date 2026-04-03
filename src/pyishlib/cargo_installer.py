@@ -41,7 +41,7 @@ class CargoInstaller:
         return self._has_cargo
 
     @property
-    def cargo(self) -> bool:
+    def cargo(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903

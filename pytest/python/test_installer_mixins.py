@@ -6,6 +6,7 @@ import sys
 import os
 import subprocess
 import logging
+from pathlib import Path
 from unittest.mock import patch, MagicMock, PropertyMock
 import pytest
 
@@ -286,7 +287,7 @@ class TestInstallerConfigIntegration:
         from pyishlib.installer_config import InstallerConfig
 
         config = {"pkg1": {"apt": "pkg1"}}
-        ic = InstallerConfig(config, config_fn="/fake/path")
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         # Manually set _on_ubuntu to test the caching logic
         ic._on_ubuntu = True
         assert ic.on_ubuntu is True
@@ -295,7 +296,7 @@ class TestInstallerConfigIntegration:
         from pyishlib.installer_config import InstallerConfig
 
         config = {"pkg1": {"apt": "pkg1"}}
-        ic = InstallerConfig(config, config_fn="/fake/path")
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         pkg = ic.get_pkg("pkg1")
         assert pkg["apt"] == "pkg1"
         assert pkg["name"] == "pkg1"
@@ -304,7 +305,7 @@ class TestInstallerConfigIntegration:
         from pyishlib.installer_config import InstallerConfig
 
         config = {"pkg1": {"apt": "pkg1"}}
-        ic = InstallerConfig(config, config_fn="/fake/path")
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         with pytest.raises(ValueError):
             ic.get_pkg("nonexistent")
 
@@ -315,7 +316,7 @@ class TestInstallerConfigIntegration:
             "pkg1": {"apt": "pkg1"},
             "pkg2": {"apt": "pkg2", "ubuntu": True},
         }
-        ic = InstallerConfig(config, config_fn="/fake/path")
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         ic._on_ubuntu = False
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1
@@ -328,7 +329,7 @@ class TestInstallerConfigIntegration:
             "pkg1": {"apt": "pkg1"},
             "pkg2": {"apt": "pkg2", "gnome": True},
         }
-        ic = InstallerConfig(config, config_fn="/fake/path")
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         ic._on_gnome = False
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1

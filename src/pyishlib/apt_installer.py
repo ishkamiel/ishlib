@@ -34,7 +34,7 @@ class AptInstaller:
         return self._has_apt
 
     @property
-    def apt(self) -> bool:
+    def apt(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903
