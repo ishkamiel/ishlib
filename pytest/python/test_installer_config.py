@@ -8,10 +8,26 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from pyishlib.installer_config import InstallerConfig, InstallerConfigJSON
 import sys
 
+import pytest
 
+try:
+    import cerberus
+    import jsonschema
+    import yaml
+
+    _has_validation_deps = True
+except ImportError:
+    _has_validation_deps = False
+
+from pyishlib.installer_config import InstallerConfig, InstallerConfigJSON
+
+
+@pytest.mark.skipif(
+    not _has_validation_deps,
+    reason="cerberus/jsonschema/pyyaml not installed",
+)
 class TestInstallerConfigSimple(unittest.TestCase):
     real_open = open
 
@@ -42,6 +58,10 @@ class TestInstallerConfigSimple(unittest.TestCase):
         )
 
 
+@pytest.mark.skipif(
+    not _has_validation_deps,
+    reason="cerberus/jsonschema/pyyaml not installed",
+)
 class TestInstallerConfigFull(unittest.TestCase):
     real_open = open
 

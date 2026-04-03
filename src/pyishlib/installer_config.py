@@ -7,12 +7,33 @@
 """Classes to manage installer configuration"""
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Mapping, Iterable
-import cerberus
-import jsonschema
-import yaml
+
+try:
+    import cerberus
+
+    _has_cerberus = True
+except ImportError:
+    _has_cerberus = False
+
+try:
+    import jsonschema
+
+    _has_jsonschema = True
+except ImportError:
+    _has_jsonschema = False
+
+try:
+    import yaml
+
+    _has_yaml = True
+except ImportError:
+    _has_yaml = False
+
+log = logging.getLogger(__name__)
 
 
 class InstallerConfig:
@@ -25,13 +46,23 @@ class InstallerConfig:
     def __init__(self, config: Mapping[str, Any], config_fn: Path) -> None:
         self._config_file: Path = config_fn
 
-        # Load the schema from a YAML file
-        with open(InstallerConfig.SCHEMA, "r", encoding="utf-8") as schema_fh:
-            schema = yaml.safe_load(schema_fh)
+        if _has_cerberus:
+            # Load the schema file (JSON format, use yaml.safe_load if available
+            # for tolerance of comments/trailing commas, otherwise json.load)
+            with open(InstallerConfig.SCHEMA, "r", encoding="utf-8") as schema_fh:
+                if _has_yaml:
+                    schema = yaml.safe_load(schema_fh)
+                else:
+                    schema = json.load(schema_fh)
 
-        validator = cerberus.Validator(schema)
-        if not validator.validate({"config": config}):
-            raise ValueError(f"Config data does not validate: {validator.errors}")
+            validator = cerberus.Validator(schema)
+            if not validator.validate({"config": config}):
+                raise ValueError(f"Config data does not validate: {validator.errors}")
+        else:
+            log.debug(
+                "cerberus not available, skipping config validation for %s",
+                config_fn,
+            )
 
         for name, pkg in config.items():
             pkg["name"] = name
@@ -97,14 +128,22 @@ class InstallerConfigJSON(InstallerConfig):
         except json.decoder.JSONDecodeError as e:
             raise ValueError(f"Config file is not valid JSON: {e}") from e
 
-        # Validate the JSON file basedon the schema
-        try:
-            with open(InstallerConfigJSON.SCHEMA, "r", encoding="utf-8") as schema_fh:
-                schema = json.load(schema_fh)
-                jsonschema.validate(config, schema)
-        except json.decoder.JSONDecodeError as e:
-            raise ValueError(f"Failed to load JSON shcema\n{e}") from e
-        except jsonschema.exceptions.ValidationError as e:
-            raise ValueError(f"Config file does not match schema: {e}") from e
+        # Validate the JSON file based on the schema
+        if _has_jsonschema:
+            try:
+                with open(
+                    InstallerConfigJSON.SCHEMA, "r", encoding="utf-8"
+                ) as schema_fh:
+                    schema = json.load(schema_fh)
+                    jsonschema.validate(config, schema)
+            except json.decoder.JSONDecodeError as e:
+                raise ValueError(f"Failed to load JSON schema\n{e}") from e
+            except jsonschema.exceptions.ValidationError as e:
+                raise ValueError(f"Config file does not match schema: {e}") from e
+        else:
+            log.debug(
+                "jsonschema not available, skipping JSON schema validation for %s",
+                config_fn,
+            )
 
         super().__init__(config=config, config_fn=config_fn, **kwargs)

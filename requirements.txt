@@ -1,4 +1,4 @@
+# Optional dependencies for config validation (pyishlib works without these)
 cerberus
 jsonschema
-toml
 pyyaml
