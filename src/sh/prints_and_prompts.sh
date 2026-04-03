@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -40,7 +40,7 @@ DOCSTRING
 ish_prompt() {
   printf >&2 "[??] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
   printf "Press any key to continue... (or Ctrl-C to abort)"
-  read -r
+  read -r _ish_prompt_input
   return 0
 }
 
