@@ -40,7 +40,7 @@ class PipInstaller:
         return self._has_pip
 
     @property
-    def pip(self) -> bool:
+    def pip(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903

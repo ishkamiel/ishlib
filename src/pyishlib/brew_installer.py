@@ -32,7 +32,7 @@ class BrewInstaller:
         return self._has_brew
 
     @property
-    def brew(self) -> bool:
+    def brew(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903
