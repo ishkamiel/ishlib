@@ -1,6 +1,6 @@
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
     -   id: check-ast
     -   id: check-case-conflict
@@ -20,11 +20,11 @@ repos:
         ]
     -   id: trailing-whitespace
 -   repo: https://github.com/psf/black
-    rev: 24.8.0
+    rev: 26.3.1
     hooks:
     -   id: black
 -   repo: https://github.com/crate-ci/typos
-    rev: v1.24.6
+    rev: v1.45.0
     hooks:
       - id: typos
 -   repo: https://github.com/markdownlint/markdownlint
@@ -37,7 +37,7 @@ repos:
         language: ruby
         files: \.(md|mdown|markdown)$
 -   repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.5.1
+    rev: v1.5.6
     hooks:
       - id: insert-license
         exclude: vim-templates/.*
