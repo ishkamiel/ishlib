@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2021-2025 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2021-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 #
@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2026-04-03.0643
+# ishlib 2026-04-03.2312
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-03.0643"
+export ish_VERSION_NUMBER="2026-04-03.2312"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -390,7 +390,7 @@ DOCSTRING
 ish_prompt() {
   printf >&2 "[??] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
   printf "Press any key to continue... (or Ctrl-C to abort)"
-  read -r
+  read -r _ish_prompt_input
   return 0
 }
 
