@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2026-04-02.2012
+# ishlib 2026-04-03.0643
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-02.2012"
+export ish_VERSION_NUMBER="2026-04-03.0643"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -567,6 +567,10 @@ substr() {
   while [ $# -gt 0 ]; do
     case "$1" in
     --var)
+      if [ -z "$2" ]; then
+        ish_warn "${_t} --var requires a non-empty variable name"
+        return 1
+      fi
       _ishlib_var="$2"
       shift 2
       ;;
@@ -622,6 +626,10 @@ strlen() {
   while [ $# -gt 0 ]; do
     case "$1" in
     --var)
+      if [ -z "$2" ]; then
+        ish_warn "strlen: --var requires a non-empty variable name"
+        return 1
+      fi
       _ishlib_var="$2"
       shift 2
       ;;
@@ -656,7 +664,7 @@ DOCSTRING
 ish_prepend_to_path() {
   case ":$PATH:" in
     *":$1:"*) ;;
-    *) PATH="$1:$PATH" ;;
+    *) PATH="$1${PATH:+:$PATH}" ;;
   esac
 }
 
@@ -861,9 +869,16 @@ dump_and_assert_dir() {
 }
 
 : <<'DOCSTRING'
-`do_or_dry [--bg [--pid=pid_var]] cmd [args...]`
+`do_or_dry cmd [args...]`
 
-TODO: merge do_or_dry_bg here using the above cmdline args
+Execute `cmd` with `args`, or print a dry-run message if `$DRY_RUN` is 1.
+
+Globals:
+  DRY_RUN - when set to 1, prints the command instead of executing it
+
+Returns:
+  0 - on success (or dry run)
+  1 - if the command fails
 
 DOCSTRING
 do_or_dry() {
@@ -887,7 +902,19 @@ do_or_dry() {
 : <<'DOCSTRING'
 `do_or_dry_bg pid_var cmd [args...]`
 
-TODO: merge do_or_dry_bg here using the above cmdline args
+Execute `cmd` with `args` in the background, storing the PID in `pid_var`.
+If `$DRY_RUN` is 1, prints a dry-run message and sets `pid_var` to empty.
+
+Arguments:
+  pid_var - name of a variable to store the background PID
+  cmd     - command to execute
+  args    - arguments to the command
+
+Globals:
+  DRY_RUN - when set to 1, prints the command instead of executing it
+
+Returns:
+  0 - always
 
 DOCSTRING
 do_or_dry_bg() {
@@ -924,6 +951,26 @@ is_dry() {
   return 1
 }
 
+: <<'DOCSTRING'
+`ish_run [-f|--force] [-n|--dry-run] [-q|--quiet] [-s|--sudo] [--] cmd [args...]`
+
+Execute a command with optional dry-run, quiet, and sudo support.
+
+Arguments:
+  -f, --force    - force execution even if $DRY_RUN is set
+  -n, --dry-run  - skip execution (print command only)
+  -q, --quiet    - suppress command echo before execution
+  -s, --sudo     - run with sudo (prompts user for confirmation)
+  --             - stop processing options
+
+Globals:
+  DRY_RUN - when set to 1, acts as if --dry-run was passed (unless --force)
+
+Returns:
+  0 - on success or dry run
+  1 - on invalid option or command failure
+
+DOCSTRING
 ish_run() {
   local dry_run=${DRY_RUN:-0}
   local quiet=0
