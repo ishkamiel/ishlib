@@ -20,6 +20,6 @@ DOCSTRING
 ish_prepend_to_path() {
   case ":$PATH:" in
     *":$1:"*) ;;
-    *) PATH="$1:$PATH" ;;
+    *) PATH="$1${PATH:+:$PATH}" ;;
   esac
 }
