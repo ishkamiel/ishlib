@@ -18,7 +18,7 @@ src/
 pytest/
   shell/      # Shell function tests (parametrized across bash, dash, sh, zsh)
   python/     # Python unit tests
-t/            # Legacy Perl/TAP tests (deprecated, do not modify)
+t/            # Legacy Perl/TAP tests, run via `prove` by pytest/shell/test_legacy_prove.py
 ```
 
 Key root files:
@@ -106,4 +106,4 @@ GitHub Actions runs two workflows on push and pull request:
 
 - **Never edit `ishlib.sh` or `README.md` directly** - they are generated. Edit sources in `src/` and run `make`.
 - Shell tests are parametrized across multiple shells (bash, dash, sh, zsh). Ensure POSIX functions work in all of them.
-- The `t/` directory contains legacy tests; do not add new tests there. Use `pytest/` instead.
+- The `t/` directory contains legacy Perl/TAP tests run via `prove` (invoked by `pytest/shell/test_legacy_prove.py`). Do not add new tests there; use `pytest/` instead.
