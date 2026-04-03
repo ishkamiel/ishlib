@@ -25,7 +25,7 @@ sub direct_run {
     chdir $dir;
     my $cmd = qq|env -C "$dir" -i $t->{env} $t->{shell} $t->{fn} $t->{args} 2>&1|;
     my $output = qx|$cmd|;
-    my $exitval = $? >> 8;    # TODO: Read up on why we need the shift?
+    my $exitval = $? >> 8;    # $? is the wait status: exit code in bits 8-15, signal in 0-7
 
     # print Dumper($_);
     # print STDERR $cmd;
