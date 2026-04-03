@@ -30,8 +30,8 @@ def test_is_dry_when_set(shell, tmp_path, ishlib):
     assert out.strip() == "dry"
 
 
-def test_is_dry_when_unset(shell, tmp_path, ishlib):
-    """is_dry should return 1 when DRY_RUN is not set."""
+def test_is_dry_when_disabled(shell, tmp_path, ishlib):
+    """is_dry should return 1 when DRY_RUN is 0."""
     script_content = inspect.cleandoc(
         f"""
     #!/usr/bin/env {shell}
