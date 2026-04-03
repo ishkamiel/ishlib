@@ -1,4 +1,5 @@
 # Optional dependencies for config validation (pyishlib works without these)
 cerberus
 jsonschema
+pytest-xdist
 pyyaml
