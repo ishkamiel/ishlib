@@ -93,7 +93,7 @@ Pytest runs in parallel by default (`--numprocesses=auto` in `pytest.ini`).
 
 ## Pre-commit Hooks
 
-The repo uses pre-commit with: shellcheck, pylint, black, markdownlint, typos, license header insertion, and pytest. All hooks run on commit.
+The repo uses pre-commit with: pylint, black, markdownlint, typos, license header insertion, and pytest. Shellcheck is exercised via the pytest shell tests rather than a dedicated pre-commit hook.
 
 ## CI
 
