@@ -25,6 +25,10 @@ substr() {
   while [ $# -gt 0 ]; do
     case "$1" in
     --var)
+      if [ -z "$2" ]; then
+        ish_warn "${_t} --var requires a non-empty variable name"
+        return 1
+      fi
       _ishlib_var="$2"
       shift 2
       ;;
@@ -80,6 +84,10 @@ strlen() {
   while [ $# -gt 0 ]; do
     case "$1" in
     --var)
+      if [ -z "$2" ]; then
+        ish_warn "strlen: --var requires a non-empty variable name"
+        return 1
+      fi
       _ishlib_var="$2"
       shift 2
       ;;
