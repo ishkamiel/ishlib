@@ -16,6 +16,8 @@ from .ish_comp import IshComp
 class PipInstaller:
     """Helper class for managing python packages via pip"""
 
+    INSTALLER_NAME: str = "pip"
+
     PIP_UPDATE_PKG: Mapping[str, str] = {
         "name": "pip",
         "pip": "pip",
@@ -29,6 +31,7 @@ class PipInstaller:
         assert isinstance(self, IshComp)
         self.log = getattr(self, "log", None)
         self.runner: CommandRunner = getattr(self, "runner", None)
+        self._register_installer(PipInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_pip(self) -> bool:

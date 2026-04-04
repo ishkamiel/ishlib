@@ -17,12 +17,15 @@ from .ish_comp import IshComp
 class AptInstaller:
     """Helper class for managing apt packages"""
 
+    INSTALLER_NAME: str = "apt"
+
     def __init__(self) -> None:
         self._apt_checked: bool = False
         self._has_apt: bool = False
         assert isinstance(self, IshComp)
         self.log = getattr(self, "log", None)
         self.runner: CommandRunner = getattr(self, "runner", None)
+        self._register_installer(AptInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_apt(self) -> bool:

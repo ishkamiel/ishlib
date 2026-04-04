@@ -16,12 +16,15 @@ from .ish_comp import IshComp
 class BrewInstaller:
     """Helper class for managing packages via Homebrew"""
 
+    INSTALLER_NAME: str = "brew"
+
     def __init__(self) -> None:
         self._brew_checked: bool = False
         self._has_brew: bool = False
         assert isinstance(self, IshComp)
         self.log = getattr(self, "log", None)
         self.runner: CommandRunner = getattr(self, "runner", None)
+        self._register_installer(BrewInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_brew(self) -> bool:

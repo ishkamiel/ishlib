@@ -17,6 +17,8 @@ from .ish_comp import IshComp
 class CargoInstaller:
     """Helper class for managing rust and cargo packages"""
 
+    INSTALLER_NAME: str = "cargo"
+
     CARGO_UPDATE_PKG: Mapping[str, str] = {
         "name": "cargo-update",
         "cargo": "cargo-update",
@@ -31,6 +33,7 @@ class CargoInstaller:
         assert isinstance(self, IshComp)
         self.log = getattr(self, "log", None)
         self.runner: CommandRunner = getattr(self, "runner", None)
+        self._register_installer(CargoInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_cargo(self) -> bool:
