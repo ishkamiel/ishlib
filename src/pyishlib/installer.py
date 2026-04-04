@@ -18,15 +18,9 @@ from .brew_installer import BrewInstaller
 class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstaller):
     """Installer class for installing packages."""
 
-    INSTALLERS: Iterable[Iterable[str]] = [
-        ["apt", "apt"],
-        ["cargo", "cargo"],
-        ["pip", "pip3"],
-        ["brew", "brew"],
-    ]
-
     def __init__(self, runner: Optional[CommandRunner] = None, **kwargs: Any) -> None:
         IshComp.__init__(self, **kwargs)
+        self._registered_installers: list = []
         self.runner: CommandRunner = (
             runner
             if runner is not None
@@ -40,6 +34,11 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
         AptInstaller.__init__(self)
         PipInstaller.__init__(self)
         BrewInstaller.__init__(self)
+
+    def _register_installer(self, name: str) -> None:
+        """Register an installer backend by name."""
+        if name not in self._registered_installers:
+            self._registered_installers.append(name)
 
     def installer(self, installer: str) -> Any:
         """Get an installer."""
@@ -57,7 +56,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
                 if self.installer(i).can_install(pkg):
                     return i
         # Otherwise use the first installer that can install the package
-        for i, _ in self.INSTALLERS:
+        for i in self._registered_installers:
             if self.installer(i).can_install(pkg):
                 return i
         self.log.debug("No installer found for %s", pkg["name"])
@@ -70,12 +69,7 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
         missing_packages: Iterable[dict] = self.get_missing_pkgs(pkgs)
 
         # Then sort them by installer
-        to_install: Mapping[str, list] = {
-            "apt": [],
-            "brew": [],
-            "cargo": [],
-            "pip": [],
-        }
+        to_install: Mapping[str, list] = {i: [] for i in self._registered_installers}
         for pkg in missing_packages:
             installer: Optional[str] = self.get_installer(pkg)
             if installer is not None:

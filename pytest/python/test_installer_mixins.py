@@ -222,6 +222,26 @@ class TestCargoInstaller:
             assert result is True
 
 
+class TestInstallerRegistration:
+
+    def test_all_installers_registered(self):
+        installer = make_installer(which_returns={})
+        assert "apt" in installer._registered_installers
+        assert "brew" in installer._registered_installers
+        assert "cargo" in installer._registered_installers
+        assert "pip" in installer._registered_installers
+
+    def test_registered_installers_count(self):
+        installer = make_installer(which_returns={})
+        assert len(installer._registered_installers) == 4
+
+    def test_no_duplicate_registration(self):
+        installer = make_installer(which_returns={})
+        assert len(installer._registered_installers) == len(
+            set(installer._registered_installers)
+        )
+
+
 class TestInstallerOrchestration:
 
     def test_have_pkg_by_cmd(self):
