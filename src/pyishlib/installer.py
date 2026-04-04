@@ -97,34 +97,14 @@ class Installer(IshComp, CargoInstaller, AptInstaller, PipInstaller, BrewInstall
                 )
                 return True
             self.log.debug("Did not find %s with which", package["cmd"])
-        if self.can_use_apt(package):
-            found_checker = True
-            if self.is_apt_pkg_installed(package):
-                self.log.debug("Package %s installed with apt", package["name"])
-                return True
-            self.log.debug("Package %s not installed with apt", package["name"])
-        if self.can_use_cargo(package):
-            found_checker = True
-            if self.is_cargo_pkg_installed(package):
-                self.log.debug("Package %s installed with cargo", package["name"])
-                return True
-            self.log.debug("Package %s not installed with cargo", package["name"])
-        # if "pip" in package and shutil.which("pip3") is not None:
-        #     self.log.debug("Checking if %s is installed with pip", package["name"])
-        #     try:
-        #         result: subprocess.CompletedProcess = self.runner.run(
-        #             ["pip3", "show", package["pip"]],
-        #             check=True,
-        #             stdout=subprocess.PIPE,
-        #             stderr=subprocess.PIPE,
-        #         )
-        #         if
-        #         return package["pip"] in result.stdout.decode("utf-8")
-        #     except subprocess.CalledProcessError as e:
-        #         self.log.error(
-        #             "Error checking if %s is installed: %s", package["name"], e
-        #         )
-        #         raise e
+        for i in self._registered_installers:
+            ns = self.installer(i)
+            if ns.can_install(package):
+                found_checker = True
+                if ns.is_installed(package):
+                    self.log.debug("Package %s installed with %s", package["name"], i)
+                    return True
+                self.log.debug("Package %s not installed with %s", package["name"], i)
 
         if not found_checker:
             self.log.error("Cannot check if %s is installed", package["name"])
