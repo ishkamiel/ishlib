@@ -6,11 +6,11 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
-from .ish_comp import IshComp
 
 
 class PipInstaller:
@@ -25,13 +25,11 @@ class PipInstaller:
 
     PIP_INSTALL_CMD: Iterable[str] = ["pip3", "install", "--user"]
 
-    def __init__(self) -> None:
+    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
+        self.log: logging.Logger = log
+        self.runner: CommandRunner = runner
         self._pip_checked: bool = False
         self._has_pip: bool = False
-        assert isinstance(self, IshComp)
-        self.log = getattr(self, "log", None)
-        self.runner: CommandRunner = getattr(self, "runner", None)
-        self._register_installer(PipInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_pip(self) -> bool:
@@ -43,7 +41,7 @@ class PipInstaller:
         return self._has_pip
 
     @property
-    def pip(self):
+    def namespace(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903
