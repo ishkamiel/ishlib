@@ -6,11 +6,11 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
-from .ish_comp import IshComp
 
 
 class BrewInstaller:
@@ -18,13 +18,11 @@ class BrewInstaller:
 
     INSTALLER_NAME: str = "brew"
 
-    def __init__(self) -> None:
+    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
+        self.log: logging.Logger = log
+        self.runner: CommandRunner = runner
         self._brew_checked: bool = False
         self._has_brew: bool = False
-        assert isinstance(self, IshComp)
-        self.log = getattr(self, "log", None)
-        self.runner: CommandRunner = getattr(self, "runner", None)
-        self._register_installer(BrewInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_brew(self) -> bool:
@@ -35,7 +33,7 @@ class BrewInstaller:
         return self._has_brew
 
     @property
-    def brew(self):
+    def namespace(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903

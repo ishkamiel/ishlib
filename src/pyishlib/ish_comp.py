@@ -139,9 +139,6 @@ class IshComp:
             if choice in ["y", "n", "a"]:
                 return Choice(choice)
 
-    def _register_installer(self, name: str) -> None:
-        """Register an installer backend by name. Overridden by Installer."""
-
     def _get_opt(self, opt: str, default: Optional[Any] = None) -> Any:
         if self._args is not None and hasattr(self._args, opt):
             return getattr(self._args, opt)

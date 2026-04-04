@@ -6,12 +6,12 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+import logging
 import re
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
-from .ish_comp import IshComp
 
 
 class CargoInstaller:
@@ -27,13 +27,11 @@ class CargoInstaller:
     # The --locked flags forces cargo to use the pkg-specific versions of deps
     CARGO_INSTALL_CMD: Iterable[str] = ["cargo", "install", "--locked"]
 
-    def __init__(self) -> None:
+    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
+        self.log: logging.Logger = log
+        self.runner: CommandRunner = runner
         self._cargo_checked: bool = False
         self._has_cargo: bool = False
-        assert isinstance(self, IshComp)
-        self.log = getattr(self, "log", None)
-        self.runner: CommandRunner = getattr(self, "runner", None)
-        self._register_installer(CargoInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_cargo(self) -> bool:
@@ -44,7 +42,7 @@ class CargoInstaller:
         return self._has_cargo
 
     @property
-    def cargo(self):
+    def namespace(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903
@@ -129,7 +127,7 @@ class CargoInstaller:
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""
         assert self.runner.which("rustup") is not None
-        q: bool = not getattr(self, "verbose", False)
+        q: bool = self.log.level > logging.INFO
 
         try:
             res: CompletedProcess = self.runner.run(

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Tests for installer mixin classes (AptInstaller, PipInstaller, etc.)
+# Tests for installer backend classes (AptInstaller, PipInstaller, etc.)
 
 import sys
 import os
@@ -14,11 +14,15 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib.installer import Installer
+from pyishlib.apt_installer import AptInstaller
+from pyishlib.brew_installer import BrewInstaller
+from pyishlib.cargo_installer import CargoInstaller
+from pyishlib.pip_installer import PipInstaller
 from pyishlib.command_runner import CommandRunner
 
 
-def make_installer(which_returns=None):
-    """Create an Installer with a mocked runner."""
+def make_runner(which_returns=None):
+    """Create a CommandRunner with a mocked which method."""
     runner = CommandRunner(dry_run=True)
 
     def mock_which(cmd):
@@ -27,6 +31,19 @@ def make_installer(which_returns=None):
         return which_returns.get(cmd, None)
 
     runner.which = mock_which
+    return runner
+
+
+def make_log():
+    """Create a logger for testing."""
+    log = logging.getLogger("test_installer")
+    log.setLevel(logging.DEBUG)
+    return log
+
+
+def make_installer(which_returns=None):
+    """Create an Installer with a mocked runner."""
+    runner = make_runner(which_returns)
     installer = Installer(runner=runner, log_level=logging.DEBUG)
     return installer
 
@@ -34,212 +51,284 @@ def make_installer(which_returns=None):
 class TestAptInstaller:
 
     def test_has_apt_true(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        assert installer.has_apt is True
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        assert apt.has_apt is True
 
     def test_has_apt_false(self):
-        installer = make_installer(which_returns={})
-        assert installer.has_apt is False
+        apt = AptInstaller(make_log(), make_runner({}))
+        assert apt.has_apt is False
 
     def test_has_apt_cached(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        _ = installer.has_apt
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = AptInstaller(make_log(), runner)
+        _ = apt.has_apt
         # Change which to return None — but result should be cached
-        installer.runner.which = lambda cmd: None
-        assert installer.has_apt is True
+        runner.which = lambda cmd: None
+        assert apt.has_apt is True
 
     def test_can_use_apt_no_apt_key(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
         pkg = {"name": "test", "pip": "test"}
-        assert installer.can_use_apt(pkg) is False
+        assert apt.can_use_apt(pkg) is False
 
     def test_can_use_apt_with_apt_key(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
         pkg = {"name": "test", "apt": "test"}
-        assert installer.can_use_apt(pkg) is True
+        assert apt.can_use_apt(pkg) is True
 
     def test_can_use_apt_no_pkg(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        assert installer.can_use_apt() is True
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        assert apt.can_use_apt() is True
 
     def test_get_apt_pkgs(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
         pkgs = [
             {"name": "a", "apt": "a"},
             {"name": "b", "pip": "b"},
             {"name": "c", "apt": "c", "pip": "c"},
         ]
-        result = installer.get_apt_pkgs(pkgs)
+        result = apt.get_apt_pkgs(pkgs)
         assert len(result) == 2
         assert result[0]["name"] == "a"
         assert result[1]["name"] == "c"
 
     def test_is_apt_pkg_installed_no_apt(self):
-        installer = make_installer(which_returns={})
+        apt = AptInstaller(make_log(), make_runner({}))
         pkg = {"name": "test", "apt": "test"}
-        assert installer.is_apt_pkg_installed(pkg) is False
+        assert apt.is_apt_pkg_installed(pkg) is False
 
     def test_apt_namespace(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        ns = installer.apt
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        ns = apt.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
         assert hasattr(ns, "is_installed")
         assert hasattr(ns, "update")
 
     def test_install_apt_pkgs_dry_run(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        with patch.object(installer.runner, "run_sudo",
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = AptInstaller(make_log(), runner)
+        with patch.object(runner, "run_sudo",
                           return_value=subprocess.CompletedProcess(args=[], returncode=0)) as mock_sudo:
             pkgs = [{"name": "test", "apt": "test-pkg"}]
-            result = installer.install_apt_pkgs(pkgs)
+            result = apt.install_apt_pkgs(pkgs)
             assert result is True
             mock_sudo.assert_called_once_with(["apt", "install", "-y", "test-pkg"])
 
     def test_install_apt_pkg_unless_found_already_installed(self):
-        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        with patch.object(installer, "is_apt_pkg_installed", return_value=True):
+        apt = AptInstaller(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        with patch.object(apt, "is_apt_pkg_installed", return_value=True):
             pkg = {"name": "test", "apt": "test-pkg"}
-            result = installer.install_apt_pkg_unless_found(pkg)
+            result = apt.install_apt_pkg_unless_found(pkg)
             assert result is True
 
 
 class TestPipInstaller:
 
     def test_has_pip_true(self):
-        installer = make_installer(which_returns={"pip3": "/usr/bin/pip3"})
-        assert installer.has_pip is True
+        pip = PipInstaller(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        assert pip.has_pip is True
 
     def test_has_pip_false(self):
-        installer = make_installer(which_returns={})
-        assert installer.has_pip is False
+        pip = PipInstaller(make_log(), make_runner({}))
+        assert pip.has_pip is False
 
     def test_can_use_pip_no_pip_key(self):
-        installer = make_installer(which_returns={"pip3": "/usr/bin/pip3"})
+        pip = PipInstaller(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
         pkg = {"name": "test", "apt": "test"}
-        assert installer.can_use_pip(pkg) is False
+        assert pip.can_use_pip(pkg) is False
 
     def test_can_use_pip_with_pip_key(self):
-        installer = make_installer(which_returns={"pip3": "/usr/bin/pip3"})
+        pip = PipInstaller(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
         pkg = {"name": "test", "pip": "test"}
-        assert installer.can_use_pip(pkg) is True
+        assert pip.can_use_pip(pkg) is True
 
     def test_get_pip_pkgs(self):
-        installer = make_installer(which_returns={"pip3": "/usr/bin/pip3"})
+        pip = PipInstaller(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
         pkgs = [
             {"name": "a", "apt": "a"},
             {"name": "b", "pip": "b"},
         ]
-        result = installer.get_pip_pkgs(pkgs)
+        result = pip.get_pip_pkgs(pkgs)
         assert len(result) == 1
         assert result[0]["name"] == "b"
 
     def test_pip_namespace(self):
-        installer = make_installer(which_returns={"pip3": "/usr/bin/pip3"})
-        ns = installer.pip
+        pip = PipInstaller(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        ns = pip.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
         assert hasattr(ns, "is_installed")
 
     def test_install_pip_pkg_returns_value(self):
-        installer = make_installer(which_returns={"pip3": "/usr/bin/pip3"})
-        with patch.object(installer.runner, "run",
+        runner = make_runner({"pip3": "/usr/bin/pip3"})
+        pip = PipInstaller(make_log(), runner)
+        with patch.object(runner, "run",
                           return_value=subprocess.CompletedProcess(args=[], returncode=0)):
             pkg = {"name": "test", "pip": "test-pkg"}
-            result = installer.install_pip_pkg(pkg)
+            result = pip.install_pip_pkg(pkg)
             assert result is True
 
 
 class TestBrewInstaller:
 
     def test_has_brew_true(self):
-        installer = make_installer(which_returns={"brew": "/usr/local/bin/brew"})
-        assert installer.has_brew is True
+        brew = BrewInstaller(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
+        assert brew.has_brew is True
 
     def test_has_brew_false(self):
-        installer = make_installer(which_returns={})
-        assert installer.has_brew is False
+        brew = BrewInstaller(make_log(), make_runner({}))
+        assert brew.has_brew is False
 
     def test_can_use_brew_no_brew_key(self):
-        installer = make_installer(which_returns={"brew": "/usr/local/bin/brew"})
+        brew = BrewInstaller(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
         pkg = {"name": "test", "apt": "test"}
-        assert installer.can_use_brew(pkg) is False
+        assert brew.can_use_brew(pkg) is False
 
     def test_can_use_brew_with_brew_key(self):
-        installer = make_installer(which_returns={"brew": "/usr/local/bin/brew"})
+        brew = BrewInstaller(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
         pkg = {"name": "test", "brew": "test"}
-        assert installer.can_use_brew(pkg) is True
+        assert brew.can_use_brew(pkg) is True
 
     def test_brew_namespace(self):
-        installer = make_installer(which_returns={"brew": "/usr/local/bin/brew"})
-        ns = installer.brew
+        brew = BrewInstaller(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
+        ns = brew.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
         assert hasattr(ns, "is_installed")
 
     def test_install_brew_pkg_returns_value(self):
-        installer = make_installer(which_returns={"brew": "/usr/local/bin/brew"})
-        with patch.object(installer.runner, "run",
+        runner = make_runner({"brew": "/usr/local/bin/brew"})
+        brew = BrewInstaller(make_log(), runner)
+        with patch.object(runner, "run",
                           return_value=subprocess.CompletedProcess(args=[], returncode=0)):
             pkg = {"name": "test", "brew": "test-pkg"}
-            result = installer.install_brew_pkg(pkg)
+            result = brew.install_brew_pkg(pkg)
             assert result is True
 
 
 class TestCargoInstaller:
 
     def test_has_cargo_true(self):
-        installer = make_installer(which_returns={"cargo": "/usr/bin/cargo"})
-        assert installer.has_cargo is True
+        cargo = CargoInstaller(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
+        assert cargo.has_cargo is True
 
     def test_has_cargo_false(self):
-        installer = make_installer(which_returns={})
-        assert installer.has_cargo is False
+        cargo = CargoInstaller(make_log(), make_runner({}))
+        assert cargo.has_cargo is False
 
     def test_can_use_cargo_no_cargo_key(self):
-        installer = make_installer(which_returns={"cargo": "/usr/bin/cargo"})
+        cargo = CargoInstaller(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
         pkg = {"name": "test", "apt": "test"}
-        assert installer.can_use_cargo(pkg) is False
+        assert cargo.can_use_cargo(pkg) is False
 
     def test_can_use_cargo_with_cargo_key(self):
-        installer = make_installer(which_returns={"cargo": "/usr/bin/cargo"})
+        cargo = CargoInstaller(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
         pkg = {"name": "test", "cargo": "test"}
-        assert installer.can_use_cargo(pkg) is True
+        assert cargo.can_use_cargo(pkg) is True
 
     def test_cargo_namespace(self):
-        installer = make_installer(which_returns={"cargo": "/usr/bin/cargo"})
-        ns = installer.cargo
+        cargo = CargoInstaller(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
+        ns = cargo.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
         assert hasattr(ns, "is_installed")
 
     def test_install_cargo_pkg_returns_value(self):
-        installer = make_installer(which_returns={"cargo": "/usr/bin/cargo"})
-        with patch.object(installer.runner, "run",
+        runner = make_runner({"cargo": "/usr/bin/cargo"})
+        cargo = CargoInstaller(make_log(), runner)
+        with patch.object(runner, "run",
                           return_value=subprocess.CompletedProcess(args=[], returncode=0)):
             pkg = {"name": "test", "cargo": "test-pkg"}
-            result = installer.install_cargo_pkg(pkg)
+            result = cargo.install_cargo_pkg(pkg)
             assert result is True
 
 
 class TestInstallerRegistration:
 
-    def test_all_installers_registered(self):
+    def test_all_default_backends_registered(self):
         installer = make_installer(which_returns={})
-        assert "apt" in installer._registered_installers
-        assert "brew" in installer._registered_installers
-        assert "cargo" in installer._registered_installers
-        assert "pip" in installer._registered_installers
+        assert "apt" in installer._backends
+        assert "brew" in installer._backends
+        assert "cargo" in installer._backends
+        assert "pip" in installer._backends
 
-    def test_registered_installers_count(self):
+    def test_registered_backends_count(self):
         installer = make_installer(which_returns={})
-        assert len(installer._registered_installers) == 4
+        assert len(installer._backends) == 4
 
-    def test_no_duplicate_registration(self):
+    def test_get_backend_returns_instance(self):
         installer = make_installer(which_returns={})
-        assert len(installer._registered_installers) == len(
-            set(installer._registered_installers)
-        )
+        assert isinstance(installer.get_backend("apt"), AptInstaller)
+        assert isinstance(installer.get_backend("brew"), BrewInstaller)
+        assert isinstance(installer.get_backend("cargo"), CargoInstaller)
+        assert isinstance(installer.get_backend("pip"), PipInstaller)
+
+    def test_get_backend_not_found(self):
+        installer = make_installer(which_returns={})
+        with pytest.raises(ValueError):
+            installer.get_backend("nonexistent")
+
+    def test_register_custom_installer(self):
+        installer = make_installer(which_returns={})
+
+        class CustomInstaller:
+            INSTALLER_NAME = "custom"
+
+            @property
+            def namespace(self):
+                class Namespace:
+                    @staticmethod
+                    def can_install(pkg=None):
+                        return False
+
+                    @staticmethod
+                    def install(pkgs):
+                        return False
+
+                    @staticmethod
+                    def is_installed(pkg):
+                        return False
+
+                    @staticmethod
+                    def update():
+                        return False
+                return Namespace()
+
+        installer.register_installer(CustomInstaller())
+        assert "custom" in installer._backends
+        assert len(installer._backends) == 5
+
+    def test_register_override_existing(self):
+        installer = make_installer(which_returns={})
+        original_apt = installer.get_backend("apt")
+
+        class CustomApt:
+            INSTALLER_NAME = "apt"
+
+            @property
+            def namespace(self):
+                class Namespace:
+                    @staticmethod
+                    def can_install(pkg=None):
+                        return False
+
+                    @staticmethod
+                    def install(pkgs):
+                        return False
+
+                    @staticmethod
+                    def is_installed(pkg):
+                        return False
+
+                    @staticmethod
+                    def update():
+                        return False
+                return Namespace()
+
+        installer.register_installer(CustomApt())
+        assert installer.get_backend("apt") is not original_apt
+        assert isinstance(installer.get_backend("apt"), CustomApt)
 
 
 class TestInstallerOrchestration:

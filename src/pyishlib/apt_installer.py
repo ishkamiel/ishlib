@@ -7,11 +7,11 @@
 """Helper library for apt package installing tasks"""
 
 # Standard imports
+import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
-from .ish_comp import IshComp
 
 
 class AptInstaller:
@@ -19,13 +19,11 @@ class AptInstaller:
 
     INSTALLER_NAME: str = "apt"
 
-    def __init__(self) -> None:
+    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
+        self.log: logging.Logger = log
+        self.runner: CommandRunner = runner
         self._apt_checked: bool = False
         self._has_apt: bool = False
-        assert isinstance(self, IshComp)
-        self.log = getattr(self, "log", None)
-        self.runner: CommandRunner = getattr(self, "runner", None)
-        self._register_installer(AptInstaller.INSTALLER_NAME)  # pylint: disable=no-member
 
     @property
     def has_apt(self) -> bool:
@@ -37,7 +35,7 @@ class AptInstaller:
         return self._has_apt
 
     @property
-    def apt(self):
+    def namespace(self):
         """Get the common Namespace for installer commands"""
 
         # pylint: disable=R0903
