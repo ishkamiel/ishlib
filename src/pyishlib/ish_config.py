@@ -10,6 +10,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+_MISSING = object()
+
 
 @dataclass
 class IshConfig:
@@ -38,8 +40,8 @@ class IshConfig:
     @classmethod
     def from_args(
         cls,
-        args: Any,
-        conf: Any = None,
+        args: Optional[Any] = None,
+        conf: Optional[Any] = None,
         defaults: Optional[dict] = None,
     ) -> "IshConfig":
         """Build an ``IshConfig`` from argparse / conf objects.
@@ -50,24 +52,30 @@ class IshConfig:
         All three objects are stored so :meth:`get_opt` and attribute
         access can resolve arbitrary names later.
 
+        Uses a temporary instance internally so that the full
+        :meth:`get_opt` resolution chain is applied consistently.
+
         Args:
             args:     An argparse namespace (or similar object).
             conf:     A configuration object (e.g. from JSON/TOML).
             defaults: Optional dict of fallback values.
         """
-        defs = defaults or {}
-        dry_run = _resolve_opt("dry_run", args, conf, defs.get("dry_run", False))
-        if _resolve_opt("debug", args, conf, defs.get("debug", False)):
+        # Build a temporary instance to leverage get_opt for resolution.
+        tmp = cls(args=args, conf=conf, defaults=defaults or {})
+
+        dry_run = tmp.get_opt("dry_run", False)
+        if tmp.get_opt("debug", False):
             log_level = logging.DEBUG
-        elif _resolve_opt("verbose", args, conf, defs.get("verbose", False)):
+        elif tmp.get_opt("verbose", False):
             log_level = logging.INFO
-        elif _resolve_opt("quiet", args, conf, defs.get("quiet", False)):
+        elif tmp.get_opt("quiet", False):
             log_level = logging.ERROR
         else:
             log_level = logging.WARNING
-        return cls(
-            dry_run=dry_run, log_level=log_level, args=args, conf=conf, defaults=defs
-        )
+
+        tmp.dry_run = dry_run
+        tmp.log_level = log_level
+        return tmp
 
     def set_default(self, name: str, value: Any) -> None:
         """Set a single default value.
@@ -104,16 +112,20 @@ class IshConfig:
             f"'{type(self).__name__}' object has no attribute '{name}'"
         )
 
-    def get_opt(self, name: str, default: Optional[Any] = None) -> Any:
+    def get_opt(self, name: str, default: Any = _MISSING) -> Any:
         """Look up *name* with args -> conf -> defaults -> *default* priority.
 
         Unlike attribute access, this returns *default* instead of raising
-        ``AttributeError`` when the name is not found.
+        ``AttributeError`` when the name is not found.  When no explicit
+        *default* is given and the name is not found, returns ``None``.
         """
-        val = _resolve_opt(name, self.args, self.conf)
-        if val is not None:
-            return val
-        return self.defaults.get(name, default)
+        if self.args is not None and hasattr(self.args, name):
+            return getattr(self.args, name)
+        if self.conf is not None and hasattr(self.conf, name):
+            return getattr(self.conf, name)
+        if name in self.defaults:
+            return self.defaults[name]
+        return None if default is _MISSING else default
 
     # -- convenience properties ------------------------------------------------
 
@@ -131,12 +143,3 @@ class IshConfig:
     def quiet(self) -> bool:
         """True when the log level is ERROR or higher."""
         return self.log_level >= logging.ERROR
-
-
-def _resolve_opt(name: str, args: Any, conf: Any, default: Optional[Any] = None) -> Any:
-    """Look up *name* in *args* then *conf*, falling back to *default*."""
-    if args is not None and hasattr(args, name):
-        return getattr(args, name)
-    if conf is not None and hasattr(conf, name):
-        return getattr(conf, name)
-    return default
