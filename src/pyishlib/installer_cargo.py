@@ -14,7 +14,7 @@ from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 
 
-class CargoInstaller:
+class InstallerCargo:
     """Helper class for managing rust and cargo packages"""
 
     INSTALLER_NAME: str = "cargo"

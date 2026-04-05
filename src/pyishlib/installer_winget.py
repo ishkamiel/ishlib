@@ -13,7 +13,7 @@ from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
 
 
-class WingetInstaller:
+class InstallerWinget:
     """Helper class for managing packages via winget (Windows Package Manager)"""
 
     INSTALLER_NAME: str = "winget"

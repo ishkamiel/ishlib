@@ -9,11 +9,11 @@
 from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 from .ish_comp import IshComp
-from .cargo_installer import CargoInstaller
-from .apt_installer import AptInstaller
-from .pip_installer import PipInstaller
-from .brew_installer import BrewInstaller
-from .winget_installer import WingetInstaller
+from .installer_cargo import InstallerCargo
+from .installer_apt import InstallerApt
+from .installer_pip import InstallerPip
+from .installer_brew import InstallerBrew
+from .installer_winget import InstallerWinget
 
 
 class Installer(IshComp):
@@ -31,11 +31,11 @@ class Installer(IshComp):
                 dry_run=self._dry_run,
             )
         )
-        self.register_installer(AptInstaller(self.log, self.runner))
-        self.register_installer(CargoInstaller(self.log, self.runner))
-        self.register_installer(PipInstaller(self.log, self.runner))
-        self.register_installer(BrewInstaller(self.log, self.runner))
-        self.register_installer(WingetInstaller(self.log, self.runner))
+        self.register_installer(InstallerApt(self.log, self.runner))
+        self.register_installer(InstallerCargo(self.log, self.runner))
+        self.register_installer(InstallerPip(self.log, self.runner))
+        self.register_installer(InstallerBrew(self.log, self.runner))
+        self.register_installer(InstallerWinget(self.log, self.runner))
 
     def register_installer(self, backend: Any) -> None:
         """Register an installer backend.

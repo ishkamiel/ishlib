@@ -35,7 +35,7 @@ class TestInstaller(unittest.TestCase):
             return "apt"
         return None
 
-    # @patch("pyishlib.installer.AptInstaller.can_use_apt", return_value=True)
+    # @patch("pyishlib.installer.InstallerApt.can_use_apt", return_value=True)
     @patch("pyishlib.installer.CommandRunner.which", side_effect=mock_which)
     @patch(
         "pyishlib.installer.CommandRunner.run_sudo",
