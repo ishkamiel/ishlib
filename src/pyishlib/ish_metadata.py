@@ -28,58 +28,65 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Set, Tuple, Union
 
-try:
-    import tomllib  # Python 3.11+
+from pyishlib.installer_config import HAS_TOML  # pylint: disable=duplicate-code
 
-    HAS_TOML = True
-except ModuleNotFoundError:
+if HAS_TOML:
     try:
-        import tomli as tomllib  # Fallback for Python < 3.11
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib  # type: ignore[no-redef]
 
-        HAS_TOML = True
-    except ImportError:
-        HAS_TOML = False
+    _TOML_LOADS = tomllib.loads
+    _TOML_DECODE_ERROR = tomllib.TOMLDecodeError
+else:
+    _TOML_LOADS = None
+    _TOML_DECODE_ERROR = None
+
+try:
+    import tomli_w
+
+    HAS_TOML_W = True
+except ImportError:
+    HAS_TOML_W = False
 
 log = logging.getLogger(__name__)
 
 # Pattern: : <<'__ISH__' ... __ISH__
 _RE_SHELL_HEREDOC = re.compile(
-    r"""^[ \t]*:[ \t]+<<\s*['"]?__ISH__['"]?\s*$""" r"""(.*?)""" r"""^__ISH__\s*$""",
+    r"^[ \t]*:[ \t]+<<\s*['\"]?__ISH__['\"]?\s*$(.*?)^__ISH__\s*$",
     re.MULTILINE | re.DOTALL,
 )
 
 # Pattern: __ish__ = """..."""  or __ish__ = '''...'''
 _RE_PYTHON_ASSIGN = re.compile(
-    r"""^__ish__\s*=\s*(?:"{3}|'{3})""" r"""(.*?)""" r"""(?:"{3}|'{3})""",
+    r"^__ish__\s*=\s*(?:\"{3}|'{3})(.*?)(?:\"{3}|'{3})",
     re.MULTILINE | re.DOTALL,
 )
 
 # Pattern: <#__ISH__ ... __ISH__#>
 _RE_POWERSHELL_BLOCK = re.compile(
-    r"""<#__ISH__\s*?\r?\n""" r"""(.*?)""" r"""^__ISH__#>""",
+    r"<#__ISH__\s*?\r?\n(.*?)^__ISH__#>",
     re.MULTILINE | re.DOTALL,
 )
 
 # Pattern: comment-prefixed block with any single-char or double-char prefix
 # e.g., # __ISH__ / // __ISH__ / -- __ISH__ / ; __ISH__ / % __ISH__
 _RE_COMMENT_BLOCK = re.compile(
-    r"""^(?P<prefix>[#;%]|//|--)[ \t]+__ISH__\s*$"""
-    r"""(?P<body>.*?)"""
-    r"""^(?P=prefix)[ \t]+__ISH__\s*$""",
+    r"^(?P<prefix>[#;%]|//|--)[ \t]+__ISH__\s*$(?P<body>.*?)^(?P=prefix)[ \t]+__ISH__\s*$",
     re.MULTILINE | re.DOTALL,
 )
 
 
 def _parse_toml(text: str) -> Dict[str, Any]:
     """Parse a TOML string and return the resulting dictionary."""
-    if not HAS_TOML:
+    if not HAS_TOML or _TOML_LOADS is None:
         raise ImportError(
             "TOML support requires Python 3.11+ (tomllib) "
-            "or the 'tomli' package for older Python versions"
+            "or the 'tomli' package for older versions"
         )
     try:
-        return tomllib.loads(text)
-    except tomllib.TOMLDecodeError as e:
+        return _TOML_LOADS(text)
+    except _TOML_DECODE_ERROR as e:
         raise ValueError(f"Invalid TOML metadata: {e}") from e
 
 
@@ -278,15 +285,11 @@ def _cli_main(argv=None):
 
 def _print_output(data: Dict[str, Any], fmt: str) -> None:
     """Print metadata in the requested format."""
-    if fmt == "toml":
-        try:
-            import tomli_w
-
-            print(tomli_w.dumps(data))
-        except ImportError:
-            print(json.dumps(data, indent=2))
-            log.warning("tomli_w not installed, falling back to JSON output")
+    if fmt == "toml" and HAS_TOML_W:
+        print(tomli_w.dumps(data))  # pylint: disable=possibly-used-before-assignment
     else:
+        if fmt == "toml":
+            log.warning("tomli_w not installed, falling back to JSON output")
         print(json.dumps(data, indent=2))
 
 
