@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2024-2025 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 
@@ -141,9 +140,7 @@ apt = "apt-file"
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_read(self, mock_open):
         config = InstallerConfigTOML(TestInstallerConfigTOMLSimple.DUMMY_CONFIG_FN)
-        mock_open.assert_any_call(
-            TestInstallerConfigTOMLSimple.DUMMY_CONFIG_FN, "rb"
-        )
+        mock_open.assert_any_call(TestInstallerConfigTOMLSimple.DUMMY_CONFIG_FN, "rb")
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_pkgs(self, mock_open):
@@ -198,9 +195,7 @@ type = "python_pkg"
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_read(self, mock_open):
         config = InstallerConfigTOML(TestInstallerConfigTOMLFull.DUMMY_CONFIG_FN)
-        mock_open.assert_any_call(
-            TestInstallerConfigTOMLFull.DUMMY_CONFIG_FN, "rb"
-        )
+        mock_open.assert_any_call(TestInstallerConfigTOMLFull.DUMMY_CONFIG_FN, "rb")
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_pkgs(self, mock_open):

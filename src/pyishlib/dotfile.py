@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2025 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2025-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Single dotfile representation and path-translation helpers.

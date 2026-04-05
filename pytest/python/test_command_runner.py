@@ -1,4 +1,9 @@
-# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
 #
 # Tests for CommandRunner class
 
@@ -110,7 +115,9 @@ class TestCommandRunnerGit:
 
     def test_git_with_work_dir_adds_C_flag(self):
         runner = CommandRunner(dry_run=True)
-        with patch.object(runner, "run", return_value=MagicMock(returncode=0)) as mock_run:
+        with patch.object(
+            runner, "run", return_value=MagicMock(returncode=0)
+        ) as mock_run:
             runner.git(["status"], work_dir=Path("/tmp"))
             args = mock_run.call_args[0][0]
             assert "-C" in args
@@ -230,6 +237,7 @@ class TestCommandRunnerSudo:
         runner = CommandRunner()
         with patch.object(runner, "prompt_yes_no_always") as mock_prompt:
             from pyishlib.ish_comp import Choice
+
             mock_prompt.return_value = Choice.NO
             with pytest.raises(KeyboardInterrupt):
                 runner.run_sudo(["echo", "test"])
@@ -250,6 +258,7 @@ class TestCommandRunnerSudo:
     def test_check_sudo_always_sets_flag(self):
         runner = CommandRunner()
         from pyishlib.ish_comp import Choice
+
         with patch.object(runner, "prompt_yes_no_always", return_value=Choice.ALWAYS):
             result = runner._check_sudo(["sudo", "echo"])
             assert result is True

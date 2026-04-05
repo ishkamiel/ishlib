@@ -1,4 +1,9 @@
-# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
 #
 # Tests for IshComp base class and related utilities
 
@@ -78,7 +83,9 @@ class TestIshLogFormatter:
 
     def test_critical_prefix(self):
         formatter = IshLogFormatter()
-        record = logging.LogRecord("test", logging.CRITICAL, "", 0, "test msg", (), None)
+        record = logging.LogRecord(
+            "test", logging.CRITICAL, "", 0, "test msg", (), None
+        )
         result = formatter.format(record)
         assert "[!!]" in result
 
