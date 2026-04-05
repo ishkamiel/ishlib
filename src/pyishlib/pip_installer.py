@@ -8,6 +8,7 @@
 
 import logging
 import subprocess
+import sys
 from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
@@ -23,20 +24,38 @@ class PipInstaller:
         "pip": "pip",
     }
 
-    PIP_INSTALL_CMD: Iterable[str] = ["pip3", "install", "--user"]
-
     def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
         self.log: logging.Logger = log
         self.runner: CommandRunner = runner
         self._pip_checked: bool = False
         self._has_pip: bool = False
+        self._pip_cmd: str = self._detect_pip_cmd()
+
+    def _detect_pip_cmd(self) -> str:
+        """Detect the pip command name for the current platform"""
+        if sys.platform == "win32":
+            return "pip"
+        return "pip3"
+
+    @property
+    def pip_install_cmd(self) -> Iterable[str]:
+        """Get the pip install command for the current platform"""
+        cmd = [self._pip_cmd, "install"]
+        if sys.platform != "win32":
+            cmd.append("--user")
+        return cmd
 
     @property
     def has_pip(self) -> bool:
         """Check if pip is available"""
 
         if not self._pip_checked:
-            self._has_pip = self.runner.which("pip3") is not None
+            self._has_pip = self.runner.which(self._pip_cmd) is not None
+            if not self._has_pip and self._pip_cmd == "pip3":
+                # Fallback: try "pip" if "pip3" is not found
+                self._has_pip = self.runner.which("pip") is not None
+                if self._has_pip:
+                    self._pip_cmd = "pip"
             self._pip_checked = True
         return self._has_pip
 
@@ -80,7 +99,7 @@ class PipInstaller:
 
         try:
             result: subprocess.CompletedProcess = self.runner.run(
-                ["pip3", "list"],
+                [self._pip_cmd, "list"],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -102,7 +121,9 @@ class PipInstaller:
 
         self.log.info("Installing with pip: %s", " ".join(pkg_list))
         try:
-            res: CompletedProcess = self.runner.run(self.PIP_INSTALL_CMD + pkg_list)
+            res: CompletedProcess = self.runner.run(
+                list(self.pip_install_cmd) + pkg_list
+            )
             return res.returncode == 0
         except CalledProcessError as e:
             self.log.critical("Pip error installing %s: %s", " ".join(pkg_list), e)
@@ -124,7 +145,7 @@ class PipInstaller:
         assert self.can_use_pip()
 
         self.install_pip_pkg_unless_found(self.PIP_UPDATE_PKG)
-        self.runner.run(["pip3", "install", "--upgrade", "pip"])
+        self.runner.run([self._pip_cmd, "install", "--upgrade", "pip"])
         self.log.warning("pip update not implemented (only updates pip itself)")
         return True
 

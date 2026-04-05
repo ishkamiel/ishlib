@@ -7,6 +7,7 @@
 """Helper commands for running commands and common shell tasks"""
 
 import subprocess
+import sys
 import os
 from pathlib import Path
 import shutil
@@ -20,6 +21,11 @@ class CommandRunner(IshComp):
     def __init__(self, always_sudo: Optional[bool] = False, **kwargs) -> None:
         self._always_sudo: Optional[bool] = always_sudo
         super().__init__(**kwargs)
+
+    @property
+    def on_windows(self) -> bool:
+        """True if running on Windows"""
+        return sys.platform == "win32"
 
     @property
     def dry_run(self) -> bool:
@@ -42,7 +48,9 @@ class CommandRunner(IshComp):
     def run_sudo(
         self, command: Iterable[str], force_sudo: Optional[bool] = False, **kwargs
     ) -> subprocess.CompletedProcess:
-        """Run command with sudo"""
+        """Run command with sudo (not available on Windows)"""
+        if self.on_windows:
+            raise OSError("sudo is not available on Windows")
         command = ["sudo"] + command
         if not self._check_sudo(command, force_sudo):
             raise KeyboardInterrupt("User aborted sudo command")
@@ -154,12 +162,22 @@ class CommandRunner(IshComp):
 
     def on_ubuntu(self) -> bool:
         """Check if running on Ubuntu"""
-        return (
-            "Ubuntu" in self.run(["uname", "-a"], capture_output=True, text=True).stdout
-        )
+        if self.on_windows:
+            return False
+        try:
+            return (
+                "Ubuntu"
+                in self.run(
+                    ["uname", "-a"], capture_output=True, text=True
+                ).stdout
+            )
+        except FileNotFoundError:
+            return False
 
     def on_ubuntu_desktop(self) -> bool:
         """Check if running on Ubuntu Desktop"""
+        if self.on_windows:
+            return False
         if not self.on_ubuntu():
             self.log.info("Not running on Ubuntu")
             return False
