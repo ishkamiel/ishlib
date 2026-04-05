@@ -18,6 +18,7 @@ from pyishlib.apt_installer import AptInstaller
 from pyishlib.brew_installer import BrewInstaller
 from pyishlib.cargo_installer import CargoInstaller
 from pyishlib.pip_installer import PipInstaller
+from pyishlib.winget_installer import WingetInstaller
 from pyishlib.command_runner import CommandRunner
 
 
@@ -244,6 +245,79 @@ class TestCargoInstaller:
             assert result is True
 
 
+class TestWingetInstaller:
+
+    def test_has_winget_true(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        assert winget.has_winget is True
+
+    def test_has_winget_false(self):
+        winget = WingetInstaller(make_log(), make_runner({}))
+        assert winget.has_winget is False
+
+    def test_has_winget_cached(self):
+        runner = make_runner({"winget": "C:\\winget.exe"})
+        winget = WingetInstaller(make_log(), runner)
+        _ = winget.has_winget
+        runner.which = lambda cmd: None
+        assert winget.has_winget is True
+
+    def test_can_use_winget_no_winget_key(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        pkg = {"name": "test", "apt": "test"}
+        assert winget.can_use_winget(pkg) is False
+
+    def test_can_use_winget_with_winget_key(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        pkg = {"name": "test", "winget": "Test.App"}
+        assert winget.can_use_winget(pkg) is True
+
+    def test_can_use_winget_no_pkg(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        assert winget.can_use_winget() is True
+
+    def test_get_winget_pkgs(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        pkgs = [
+            {"name": "a", "winget": "A.App"},
+            {"name": "b", "apt": "b"},
+            {"name": "c", "winget": "C.App", "apt": "c"},
+        ]
+        result = winget.get_winget_pkgs(pkgs)
+        assert len(result) == 2
+        assert result[0]["name"] == "a"
+        assert result[1]["name"] == "c"
+
+    def test_is_winget_pkg_installed_no_winget(self):
+        winget = WingetInstaller(make_log(), make_runner({}))
+        pkg = {"name": "test", "winget": "Test.App"}
+        assert winget.is_winget_pkg_installed(pkg) is False
+
+    def test_winget_namespace(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        ns = winget.namespace
+        assert hasattr(ns, "can_install")
+        assert hasattr(ns, "install")
+        assert hasattr(ns, "is_installed")
+        assert hasattr(ns, "update")
+
+    def test_install_winget_pkg_returns_value(self):
+        runner = make_runner({"winget": "C:\\winget.exe"})
+        winget = WingetInstaller(make_log(), runner)
+        with patch.object(runner, "run",
+                          return_value=subprocess.CompletedProcess(args=[], returncode=0)):
+            pkg = {"name": "test", "winget": "Test.App"}
+            result = winget.install_winget_pkg(pkg)
+            assert result is True
+
+    def test_install_winget_pkg_unless_found_already_installed(self):
+        winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        with patch.object(winget, "is_winget_pkg_installed", return_value=True):
+            pkg = {"name": "test", "winget": "Test.App"}
+            result = winget.install_winget_pkg_unless_found(pkg)
+            assert result is True
+
+
 class TestInstallerRegistration:
 
     def test_all_default_backends_registered(self):
@@ -252,10 +326,11 @@ class TestInstallerRegistration:
         assert "brew" in installer._backends
         assert "cargo" in installer._backends
         assert "pip" in installer._backends
+        assert "winget" in installer._backends
 
     def test_registered_backends_count(self):
         installer = make_installer(which_returns={})
-        assert len(installer._backends) == 4
+        assert len(installer._backends) == 5
 
     def test_get_backend_returns_instance(self):
         installer = make_installer(which_returns={})
@@ -263,6 +338,7 @@ class TestInstallerRegistration:
         assert isinstance(installer.get_backend("brew"), BrewInstaller)
         assert isinstance(installer.get_backend("cargo"), CargoInstaller)
         assert isinstance(installer.get_backend("pip"), PipInstaller)
+        assert isinstance(installer.get_backend("winget"), WingetInstaller)
 
     def test_get_backend_not_found(self):
         installer = make_installer(which_returns={})
@@ -297,7 +373,7 @@ class TestInstallerRegistration:
 
         installer.register_installer(CustomInstaller())
         assert "custom" in installer._backends
-        assert len(installer._backends) == 5
+        assert len(installer._backends) == 6
 
     def test_register_override_existing(self):
         installer = make_installer(which_returns={})

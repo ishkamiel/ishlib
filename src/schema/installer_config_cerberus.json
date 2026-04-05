@@ -31,6 +31,9 @@
         },
         "ubuntu": {
           "type": "boolean"
+        },
+        "winget": {
+          "type": "string"
         }
       },
       "type": "dict"

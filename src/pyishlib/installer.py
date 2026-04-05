@@ -13,6 +13,7 @@ from .cargo_installer import CargoInstaller
 from .apt_installer import AptInstaller
 from .pip_installer import PipInstaller
 from .brew_installer import BrewInstaller
+from .winget_installer import WingetInstaller
 
 
 class Installer(IshComp):
@@ -34,6 +35,7 @@ class Installer(IshComp):
         self.register_installer(CargoInstaller(self.log, self.runner))
         self.register_installer(PipInstaller(self.log, self.runner))
         self.register_installer(BrewInstaller(self.log, self.runner))
+        self.register_installer(WingetInstaller(self.log, self.runner))
 
     def register_installer(self, backend: Any) -> None:
         """Register an installer backend.
