@@ -22,7 +22,7 @@ class ChangeType(Enum):
     MODIFIED = "modified"
 
 
-class DotfileChange:
+class DotfileChange:  # pylint: disable=R0903
     """Represents a single dotfile change to be applied"""
 
     def __init__(
@@ -63,15 +63,12 @@ class DotfileApplier(IshComp):
         self._source_dir: Path = Path(source_dir)
         self._target_dir: Path = Path(target_dir)
         self._ignore: frozenset = ignore if ignore is not None else self.DEFAULT_IGNORE
-        self.runner: CommandRunner = (
-            runner
-            if runner is not None
-            else CommandRunner(
-                args=self._args,
-                conf=self._conf,
-                dry_run=self._dry_run,
+        if runner is not None:
+            self.runner: CommandRunner = runner
+        else:
+            self.runner = CommandRunner(
+                args=self._args, conf=self._conf, dry_run=self._dry_run
             )
-        )
         self.runner.dry_run = self.dry_run
 
     @property
