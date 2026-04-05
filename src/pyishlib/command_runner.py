@@ -160,6 +160,16 @@ class CommandRunner(IshComp):
         path.mkdir(parents=parents)
         return True
 
+    def copy(self, src: Path, dst: Path) -> bool:
+        """Copy a file from src to dst, creating parent directories as needed"""
+        self._print_cmd([f"cp {src} {dst}"])
+        if self.dry_run:
+            return True
+
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        return True
+
     def on_ubuntu(self) -> bool:
         """Check if running on Ubuntu"""
         if self.on_windows:
