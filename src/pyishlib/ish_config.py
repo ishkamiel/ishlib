@@ -19,13 +19,20 @@ class IshConfig:
     constructor, create a single ``IshConfig`` and pass it around.  All
     components that share a config instance will see the same state.
 
+    The optional *args* and *conf* objects are retained so that
+    downstream code can look up arbitrary attributes via :meth:`get_opt`.
+
     Attributes:
         dry_run:   When *True*, commands are printed but not executed.
         log_level: The logging level (e.g. ``logging.DEBUG``).
+        args:      Optional argparse namespace (highest priority in lookups).
+        conf:      Optional configuration object (second priority).
     """
 
     dry_run: bool = False
     log_level: int = field(default=logging.WARNING)
+    args: Any = field(default=None, repr=False, compare=False)
+    conf: Any = field(default=None, repr=False, compare=False)
 
     @classmethod
     def from_args(cls, args: Any, conf: Any = None) -> "IshConfig":
@@ -33,6 +40,9 @@ class IshConfig:
 
         The priority order mirrors the old ``IshComp._get_opt`` behaviour:
         *args* wins over *conf* which wins over the default.
+
+        Both objects are stored so :meth:`get_opt` can resolve arbitrary
+        attributes later.
         """
         dry_run = _resolve_opt("dry_run", args, conf, False)
         if _resolve_opt("debug", args, conf, False):
@@ -43,7 +53,11 @@ class IshConfig:
             log_level = logging.ERROR
         else:
             log_level = logging.WARNING
-        return cls(dry_run=dry_run, log_level=log_level)
+        return cls(dry_run=dry_run, log_level=log_level, args=args, conf=conf)
+
+    def get_opt(self, name: str, default: Optional[Any] = None) -> Any:
+        """Look up *name* with args -> conf -> default priority."""
+        return _resolve_opt(name, self.args, self.conf, default)
 
     # -- convenience properties ------------------------------------------------
 

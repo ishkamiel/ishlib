@@ -208,15 +208,73 @@ class TestIshConfig:
         # Reset
         setup_logging(logging.WARNING)
 
+    def test_from_args_retains_args_and_conf(self):
+        args = MagicMock()
+        args.dry_run = False
+        args.debug = False
+        args.verbose = False
+        args.quiet = False
+        args.custom_opt = "hello"
+        conf = MagicMock()
+        conf.another_opt = 42
+        cfg = IshConfig.from_args(args, conf)
+        assert cfg.args is args
+        assert cfg.conf is conf
+
+    def test_get_opt_from_args(self):
+        args = MagicMock()
+        args.dry_run = False
+        args.debug = False
+        args.verbose = False
+        args.quiet = False
+        args.custom_opt = "from_args"
+        cfg = IshConfig.from_args(args)
+        assert cfg.get_opt("custom_opt") == "from_args"
+
+    def test_get_opt_from_conf(self):
+        args = MagicMock(spec=[])  # no attributes
+        conf = MagicMock()
+        conf.custom_opt = "from_conf"
+        cfg = IshConfig.from_args(args, conf)
+        assert cfg.get_opt("custom_opt") == "from_conf"
+
+    def test_get_opt_args_priority_over_conf(self):
+        args = MagicMock()
+        args.custom_opt = "args_wins"
+        conf = MagicMock()
+        conf.custom_opt = "conf_loses"
+        cfg = IshConfig.from_args(args, conf)
+        assert cfg.get_opt("custom_opt") == "args_wins"
+
+    def test_get_opt_default(self):
+        cfg = IshConfig()
+        assert cfg.get_opt("nonexistent", "fallback") == "fallback"
+
+    def test_get_opt_none_without_default(self):
+        cfg = IshConfig()
+        assert cfg.get_opt("nonexistent") is None
+
     def test_dataclass_equality(self):
         cfg1 = IshConfig(dry_run=True, log_level=logging.DEBUG)
         cfg2 = IshConfig(dry_run=True, log_level=logging.DEBUG)
+        assert cfg1 == cfg2
+
+    def test_dataclass_equality_ignores_args_conf(self):
+        args = MagicMock()
+        cfg1 = IshConfig(dry_run=True, args=args)
+        cfg2 = IshConfig(dry_run=True)
         assert cfg1 == cfg2
 
     def test_dataclass_repr(self):
         cfg = IshConfig(dry_run=True)
         r = repr(cfg)
         assert "dry_run=True" in r
+
+    def test_dataclass_repr_excludes_args(self):
+        args = MagicMock()
+        cfg = IshConfig(dry_run=True, args=args)
+        r = repr(cfg)
+        assert "args" not in r
 
 
 if __name__ == "__main__":
