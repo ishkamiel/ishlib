@@ -16,11 +16,13 @@ import filecmp
 import fnmatch
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 DOT_PREFIX = "dot_"
 
 DEFAULT_IGNORE = frozenset({".git", ".github", ".gitignore", "__pycache__"})
+
+DEFAULT_IGNORE_PATTERNS = ["*.ish"]
 
 DOTFILEIGNORE = ".dotfileignore"
 
@@ -110,6 +112,7 @@ class DotFile:
         self._target_dir: Path = target_dir
         self._translated: Path = translate_path(rel_path)
         self._staged: Optional[Path] = None
+        self._metadata: Optional[Dict[str, Any]] = None
 
     @property
     def source(self) -> Path:
@@ -139,6 +142,15 @@ class DotFile:
     @staged.setter
     def staged(self, path: Optional[Path]) -> None:
         self._staged = path
+
+    @property
+    def metadata(self) -> Optional[Dict[str, Any]]:
+        """Extracted __ISH__ metadata, populated during preprocessing."""
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, value: Optional[Dict[str, Any]]) -> None:
+        self._metadata = value
 
     @property
     def effective_source(self) -> Path:

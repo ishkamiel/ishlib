@@ -29,12 +29,14 @@ from typing import List, Optional, Sequence
 from .command_runner import CommandRunner
 from .dotfile import (
     DEFAULT_IGNORE,
+    DEFAULT_IGNORE_PATTERNS,
     DOTFILEIGNORE,
     ChangeType,
     DotFile,
     is_ignored,
     load_ignore_file,
 )
+from .dotfile_preprocessor import preprocess
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
 
@@ -50,8 +52,8 @@ class DotfileApplier:
 
     1. :meth:`discover` -- find dotfiles in *source_dir* or from an
        explicit list.
-    2. :meth:`prepare` -- stage files into a temporary directory (a
-       no-op copy for now; future preprocessing goes here).
+    2. :meth:`prepare` -- stage files into a temporary directory with
+       preprocessing (metadata extraction, variable substitution, etc.).
     3. :meth:`apply` -- compare staged files with *target_dir*, prompt
        the user, and install changed files.
 
@@ -62,6 +64,8 @@ class DotfileApplier:
         runner: Optional :class:`CommandRunner` (created automatically
                 if *None*).
         ignore: Extra names to ignore on top of :data:`DEFAULT_IGNORE`.
+        variables: Optional dictionary of preprocessing variables
+                   available for ``${__ish_<name>}`` substitution.
     """
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -71,6 +75,7 @@ class DotfileApplier:
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
         ignore: Optional[frozenset] = None,
+        variables: Optional[dict] = None,
     ) -> None:
         if runner is not None:
             self.cfg: IshConfig = cfg if cfg is not None else runner.cfg
@@ -83,10 +88,11 @@ class DotfileApplier:
             Path(target_dir) if target_dir is not None else Path.home()
         )
         self._ignore: frozenset = ignore if ignore is not None else DEFAULT_IGNORE
-        self._ignore_patterns: List[str] = load_ignore_file(
-            self._source_dir / DOTFILEIGNORE
-        )
+        self._ignore_patterns: List[str] = list(
+            DEFAULT_IGNORE_PATTERNS
+        ) + load_ignore_file(self._source_dir / DOTFILEIGNORE)
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
+        self._variables: dict = dict(variables) if variables else {}
 
     @property
     def source_dir(self) -> Path:
@@ -161,8 +167,11 @@ class DotfileApplier:
         """Stage discovered dotfiles for installation.
 
         Copies each file into a temporary staging directory, preserving
-        the translated relative path.  Future preprocessing (template
-        expansion, variable substitution, etc.) would be added here.
+        the translated relative path.  Each text file is preprocessed:
+        ``__ISH__`` metadata is extracted and stored, metadata blocks and
+        ``@ish`` directive lines are stripped, and ``${__ish_<name>}``
+        variable references are substituted.  Binary files that cannot
+        be decoded as UTF-8 are copied verbatim.
 
         Args:
             dotfiles: Files from :meth:`discover`.
@@ -176,7 +185,14 @@ class DotfileApplier:
         for dotfile in dotfiles:
             staged_path = staging_root / dotfile.translated
             staged_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(dotfile.source, staged_path)
+
+            try:
+                processed = preprocess(dotfile, variables=self._variables)
+                staged_path.write_text(processed, encoding="utf-8")
+            except UnicodeDecodeError:
+                log.debug("Binary file, copying verbatim: %s", dotfile.source)
+                shutil.copy2(dotfile.source, staged_path)
+
             dotfile.staged = staged_path
             log.debug("Staged %s -> %s", dotfile.source, staged_path)
 
