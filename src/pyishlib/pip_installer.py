@@ -29,33 +29,44 @@ class PipInstaller:
         self.runner: CommandRunner = runner
         self._pip_checked: bool = False
         self._has_pip: bool = False
-        self._pip_cmd: str = self._detect_pip_cmd()
+        self._pip_cmd: Iterable[str] = self._detect_pip_cmd()
 
-    def _detect_pip_cmd(self) -> str:
-        """Detect the pip command name for the current platform"""
+    def _detect_pip_cmd(self) -> Iterable[str]:
+        """Detect the pip invocation for the current platform.
+
+        On Windows, pip is often only available as ``python -m pip``
+        rather than a standalone ``pip`` or ``pip3`` executable.  The
+        detection order is: pip3, pip, then ``sys.executable -m pip``
+        (the last one is only tried on Windows).
+        """
         if sys.platform == "win32":
-            return "pip"
-        return "pip3"
+            return ["pip"]
+        return ["pip3"]
 
     @property
     def pip_install_cmd(self) -> Iterable[str]:
         """Get the pip install command for the current platform"""
-        cmd = [self._pip_cmd, "install"]
-        if sys.platform != "win32":
-            cmd.append("--user")
-        return cmd
+        return list(self._pip_cmd) + ["install", "--user"]
 
     @property
     def has_pip(self) -> bool:
         """Check if pip is available"""
 
         if not self._pip_checked:
-            self._has_pip = self.runner.which(self._pip_cmd) is not None
-            if not self._has_pip and self._pip_cmd == "pip3":
-                # Fallback: try "pip" if "pip3" is not found
-                self._has_pip = self.runner.which("pip") is not None
-                if self._has_pip:
-                    self._pip_cmd = "pip"
+            if len(self._pip_cmd) == 1:
+                self._has_pip = self.runner.which(self._pip_cmd[0]) is not None
+                if not self._has_pip and self._pip_cmd == ["pip3"]:
+                    # Fallback: try "pip" if "pip3" is not found
+                    self._has_pip = self.runner.which("pip") is not None
+                    if self._has_pip:
+                        self._pip_cmd = ["pip"]
+                if not self._has_pip and sys.platform == "win32":
+                    # Fallback: try "python -m pip" on Windows
+                    self._pip_cmd = [sys.executable, "-m", "pip"]
+                    self._has_pip = True
+            else:
+                # Already set to a multi-element command (e.g. python -m pip)
+                self._has_pip = True
             self._pip_checked = True
         return self._has_pip
 
@@ -99,7 +110,7 @@ class PipInstaller:
 
         try:
             result: subprocess.CompletedProcess = self.runner.run(
-                [self._pip_cmd, "list"],
+                list(self._pip_cmd) + ["list"],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -145,7 +156,7 @@ class PipInstaller:
         assert self.can_use_pip()
 
         self.install_pip_pkg_unless_found(self.PIP_UPDATE_PKG)
-        self.runner.run([self._pip_cmd, "install", "--upgrade", "pip"])
+        self.runner.run(list(self._pip_cmd) + ["install", "--upgrade", "pip"])
         self.log.warning("pip update not implemented (only updates pip itself)")
         return True
 

@@ -489,6 +489,73 @@ class TestInstallerOrchestration:
             mock.assert_called_once_with([pkg])
 
 
+class TestPipInstallerWindowsSupport:
+
+    def test_has_pip_fallback_to_pip(self):
+        """When pip3 is not found, falls back to pip."""
+        pip = PipInstaller(make_log(), make_runner({"pip": "/usr/bin/pip"}))
+        assert pip.has_pip is True
+        assert pip._pip_cmd == ["pip"]
+
+    @patch("pyishlib.pip_installer.sys")
+    def test_has_pip_windows_fallback_to_python_m_pip(self, mock_sys):
+        """On Windows, falls back to python -m pip when pip is not on PATH."""
+        mock_sys.platform = "win32"
+        mock_sys.executable = "C:\\Python39\\python.exe"
+        pip = PipInstaller(make_log(), make_runner({}))
+        assert pip.has_pip is True
+        assert pip._pip_cmd == ["C:\\Python39\\python.exe", "-m", "pip"]
+
+    def test_pip_install_cmd_includes_user_flag(self):
+        """pip install command always includes --user."""
+        pip = PipInstaller(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        cmd = pip.pip_install_cmd
+        assert "--user" in cmd
+
+    def test_has_pip_fallback_cached(self):
+        """After fallback from pip3 to pip, result is cached."""
+        runner = make_runner({"pip": "/usr/bin/pip"})
+        pip = PipInstaller(make_log(), runner)
+        _ = pip.has_pip
+        # Change which to return None — but result should be cached
+        runner.which = lambda cmd: None
+        assert pip.has_pip is True
+        assert pip._pip_cmd == ["pip"]
+
+
+class TestCommandRunnerWindowsSupport:
+
+    @patch("pyishlib.command_runner.sys")
+    def test_run_sudo_raises_on_windows(self, mock_sys):
+        """run_sudo raises OSError on Windows."""
+        mock_sys.platform = "win32"
+        runner = CommandRunner(dry_run=True)
+        with pytest.raises(OSError, match="sudo is not available on Windows"):
+            runner.run_sudo(["apt", "update"])
+
+    @patch("pyishlib.command_runner.sys")
+    def test_on_ubuntu_false_on_windows(self, mock_sys):
+        """on_ubuntu() returns False on Windows without calling uname."""
+        mock_sys.platform = "win32"
+        runner = CommandRunner(dry_run=True)
+        assert runner.on_ubuntu() is False
+
+    @patch("pyishlib.command_runner.sys")
+    def test_on_ubuntu_desktop_false_on_windows(self, mock_sys):
+        """on_ubuntu_desktop() returns False on Windows."""
+        mock_sys.platform = "win32"
+        runner = CommandRunner(dry_run=True)
+        assert runner.on_ubuntu_desktop() is False
+
+    def test_on_ubuntu_dry_run_no_type_error(self):
+        """on_ubuntu() handles dry-run mode without TypeError from bytes/str mismatch."""
+        runner = CommandRunner(dry_run=True)
+        # In dry-run mode, run() returns stdout=b"", which must not cause
+        # a TypeError when checking 'in' against a string.
+        result = runner.on_ubuntu()
+        assert result is False
+
+
 class TestInstallerConfigIntegration:
 
     def test_installer_config_on_ubuntu_check(self):
@@ -530,6 +597,29 @@ class TestInstallerConfigIntegration:
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1
         assert pkgs[0]["name"] == "pkg1"
+
+    @patch("pyishlib.installer_config.sys")
+    def test_installer_config_on_windows(self, mock_sys):
+        """Test that on_windows is detected and cached correctly."""
+        from pyishlib.installer_config import InstallerConfig
+
+        mock_sys.platform = "win32"
+        config = {"pkg1": {"apt": "pkg1"}}
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
+        assert ic.on_windows is True
+        # Verify caching: change platform, should still return cached value
+        mock_sys.platform = "linux"
+        assert ic.on_windows is True
+
+    @patch("pyishlib.installer_config.sys")
+    def test_installer_config_not_on_windows(self, mock_sys):
+        """Test that on_windows is False on Linux."""
+        from pyishlib.installer_config import InstallerConfig
+
+        mock_sys.platform = "linux"
+        config = {"pkg1": {"apt": "pkg1"}}
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
+        assert ic.on_windows is False
 
     def test_installer_config_get_pkgs_filters_gnome(self):
         from pyishlib.installer_config import InstallerConfig

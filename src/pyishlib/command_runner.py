@@ -165,12 +165,11 @@ class CommandRunner(IshComp):
         if self.on_windows:
             return False
         try:
-            return (
-                "Ubuntu"
-                in self.run(
-                    ["uname", "-a"], capture_output=True, text=True
-                ).stdout
-            )
+            result = self.run(["uname", "-a"], capture_output=True)
+            stdout = result.stdout
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode(errors="replace")
+            return "Ubuntu" in stdout
         except FileNotFoundError:
             return False
 
