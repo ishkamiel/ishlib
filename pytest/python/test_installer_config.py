@@ -118,10 +118,6 @@ class TestInstallerConfigFull(unittest.TestCase):
 
 
 @pytest.mark.skipif(
-    not HAS_VALIDATION_DEPS,
-    reason="cerberus/jsonschema/pyyaml not installed",
-)
-@pytest.mark.skipif(
     not HAS_TOML,
     reason="toml support not available (needs Python 3.11+ or tomli)",
 )
@@ -158,10 +154,6 @@ apt = "apt-file"
         assert pkgs[0]["apt"] == "apt-file"
 
 
-@pytest.mark.skipif(
-    not HAS_VALIDATION_DEPS,
-    reason="cerberus/jsonschema/pyyaml not installed",
-)
 @pytest.mark.skipif(
     not HAS_TOML,
     reason="toml support not available (needs Python 3.11+ or tomli)",
