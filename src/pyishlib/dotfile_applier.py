@@ -36,7 +36,7 @@ from .dotfile import (
     is_ignored,
     load_ignore_file,
 )
-from .dotfile_preprocessor import preprocess
+from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
 
@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class DotfileApplier:
+class DotfileApplier:  # pylint: disable=too-many-instance-attributes
     """Three-stage dotfile applier.
 
     1. :meth:`discover` -- find dotfiles in *source_dir* or from an
@@ -181,13 +181,14 @@ class DotfileApplier:
         """
         self._staging_dir = tempfile.TemporaryDirectory()  # pylint: disable=R1732
         staging_root = Path(self._staging_dir.name)
+        preprocessor = DotFilePreprocessor(variables=self._variables)
 
         for dotfile in dotfiles:
             staged_path = staging_root / dotfile.translated
             staged_path.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                processed = preprocess(dotfile, variables=self._variables)
+                processed = preprocessor.preprocess(dotfile)
                 staged_path.write_text(processed, encoding="utf-8")
             except UnicodeDecodeError:
                 log.debug("Binary file, copying verbatim: %s", dotfile.source)

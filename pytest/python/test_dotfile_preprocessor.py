@@ -1,4 +1,9 @@
-# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
 #
 # Tests for dotfile preprocessing directives and variable substitution
 
@@ -12,18 +17,17 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.ish_metadata import HAS_TOML
+from pyishlib.ish_metadata import HAS_TOML, remove_metadata_blocks
 from pyishlib.dotfile import DotFile
+from pyishlib.dotfile_context import DotfileContext
 from pyishlib.dotfile_preprocessor import (
+    DotFilePreprocessor,
     _RE_DIRECTIVE,
     _RE_VAR_REF,
     _parse_set_directive,
-    _remove_metadata_blocks,
     _substitute_variables,
-    preprocess,
 )
 from pyishlib.dotfile_applier import DotfileApplier
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,6 +51,75 @@ def _make_dotfile(content: str) -> tuple:
     src_file.write_text(content, encoding="utf-8")
     df = DotFile(src_file, Path("dot_bashrc"), tgt_dir)
     return df, tmpdir
+
+
+def _preprocess(content, variables=None):
+    """Shorthand: create a DotFile and preprocess it."""
+    df, _ = _make_dotfile(content)
+    pp = DotFilePreprocessor(variables=variables)
+    return pp.preprocess(df), df
+
+
+# ---------------------------------------------------------------------------
+# DotfileContext
+# ---------------------------------------------------------------------------
+
+
+class TestDotfileContext:
+
+    def test_dict_style_access(self):
+        ctx = DotfileContext({"foo": "bar"})
+        assert ctx["foo"] == "bar"
+
+    def test_dict_style_set(self):
+        ctx = DotfileContext()
+        ctx["key"] = "val"
+        assert ctx["key"] == "val"
+
+    def test_contains(self):
+        ctx = DotfileContext({"x": "1"})
+        assert "x" in ctx
+        assert "y" not in ctx
+
+    def test_attr_access(self):
+        ctx = DotfileContext({"hostname": "mybox"})
+        assert ctx.hostname == "mybox"
+
+    def test_attr_access_missing_returns_empty(self):
+        ctx = DotfileContext()
+        assert ctx.missing == ""
+
+    def test_attr_set(self):
+        ctx = DotfileContext()
+        ctx.editor = "vim"
+        assert ctx["editor"] == "vim"
+
+    def test_get_default(self):
+        ctx = DotfileContext()
+        assert ctx.get("missing", "fallback") == "fallback"
+
+    def test_update(self):
+        ctx = DotfileContext({"a": "1"})
+        ctx.update({"b": 2, "c": True})
+        assert ctx["b"] == "2"
+        assert ctx["c"] == "True"
+
+    def test_update_defaults(self):
+        ctx = DotfileContext({"a": "1"})
+        ctx.update_defaults({"a": "overridden", "b": "2"})
+        assert ctx["a"] == "1"  # not overridden
+        assert ctx["b"] == "2"
+
+    def test_as_dict(self):
+        ctx = DotfileContext({"x": "1"})
+        d = ctx.as_dict()
+        assert d == {"x": "1"}
+        assert isinstance(d, dict)
+
+    def test_repr(self):
+        ctx = DotfileContext({"a": "1"})
+        assert "DotfileContext" in repr(ctx)
+        assert "'a'" in repr(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +169,17 @@ class TestDirectivePattern:
         assert _RE_DIRECTIVE.match("#@ ish set foo=bar") is None
 
     def test_no_space_before_command(self):
-        # At least one space required after @ish
         assert _RE_DIRECTIVE.match("#@ish") is None
+
+    def test_if_directive(self):
+        m = _RE_DIRECTIVE.match("#@ish if ish.hostname == 'mybox'")
+        assert m is not None
+        assert m.group("command") == "if ish.hostname == 'mybox'"
+
+    def test_fi_directive(self):
+        m = _RE_DIRECTIVE.match("#@ish fi")
+        assert m is not None
+        assert m.group("command") == "fi"
 
 
 class TestVarRefPattern:
@@ -113,7 +195,9 @@ class TestVarRefPattern:
         assert m.group("name") == "my_var_1"
 
     def test_in_context(self):
-        matches = list(_RE_VAR_REF.finditer("export HOST=${__ish_host} PORT=${__ish_port}"))
+        matches = list(
+            _RE_VAR_REF.finditer("export HOST=${__ish_host} PORT=${__ish_port}")
+        )
         assert len(matches) == 2
         assert matches[0].group("name") == "host"
         assert matches[1].group("name") == "port"
@@ -178,7 +262,7 @@ class TestSubstituteVariables:
 
 
 # ---------------------------------------------------------------------------
-# Metadata block removal
+# Metadata block removal (now in ish_metadata)
 # ---------------------------------------------------------------------------
 
 
@@ -194,7 +278,7 @@ __ISH__
 
 echo "hello"
 """
-        result = _remove_metadata_blocks(text)
+        result = remove_metadata_blocks(text)
         assert "__ISH__" not in result
         assert 'echo "hello"' in result
         assert "#!/usr/bin/env bash" in result
@@ -209,7 +293,7 @@ echo "hello"
 server:
   port: 8080
 """
-        result = _remove_metadata_blocks(text)
+        result = remove_metadata_blocks(text)
         assert "__ISH__" not in result
         assert "server:" in result
 
@@ -222,7 +306,7 @@ server:
 
 const x = 1;
 """
-        result = _remove_metadata_blocks(text)
+        result = remove_metadata_blocks(text)
         assert "__ISH__" not in result
         assert "const x = 1;" in result
 
@@ -236,13 +320,13 @@ name = "test"
 def main():
     pass
 '''
-        result = _remove_metadata_blocks(text)
+        result = remove_metadata_blocks(text)
         assert "__ish__" not in result
         assert "def main():" in result
 
     def test_no_metadata(self):
         text = "just a plain file\n"
-        assert _remove_metadata_blocks(text) == text
+        assert remove_metadata_blocks(text) == text
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +341,7 @@ def main():
 class TestPreprocess:
 
     def test_strip_metadata_from_output(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 #!/usr/bin/env bash
 : <<'__ISH__'
 [script]
@@ -266,12 +350,11 @@ __ISH__
 
 echo "hello"
 """)
-        result = preprocess(df)
         assert "__ISH__" not in result
         assert 'echo "hello"' in result
 
     def test_metadata_stored_on_dotfile(self):
-        df, _ = _make_dotfile("""\
+        _, df = _preprocess("""\
 #!/usr/bin/env bash
 : <<'__ISH__'
 [script]
@@ -280,29 +363,27 @@ __ISH__
 
 echo "hello"
 """)
-        preprocess(df)
         assert df.metadata is not None
         assert df.metadata["script"]["name"] == "mybash"
 
     def test_set_directive_and_substitution(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 #!/usr/bin/env bash
 #@ish set hostname=mybox
 export HOSTNAME=${__ish_hostname}
 """)
-        result = preprocess(df)
         assert "#@ish" not in result
         assert "export HOSTNAME=mybox" in result
 
     def test_passed_variables(self):
-        df, _ = _make_dotfile("""\
-export EDITOR=${__ish_editor}
-""")
-        result = preprocess(df, variables={"editor": "vim"})
+        result, _ = _preprocess(
+            "export EDITOR=${__ish_editor}\n",
+            variables={"editor": "vim"},
+        )
         assert "export EDITOR=vim" in result
 
     def test_metadata_vars_section(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 #!/usr/bin/env bash
 : <<'__ISH__'
 [vars]
@@ -311,12 +392,11 @@ __ISH__
 
 THEME=${__ish_theme}
 """)
-        result = preprocess(df)
         assert "THEME=dark" in result
         assert "__ISH__" not in result
 
     def test_directive_overrides_metadata_vars(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 #!/usr/bin/env bash
 : <<'__ISH__'
 [vars]
@@ -326,11 +406,11 @@ __ISH__
 #@ish set theme=light
 THEME=${__ish_theme}
 """)
-        result = preprocess(df)
         assert "THEME=light" in result
 
     def test_passed_vars_override_metadata_vars(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess(
+            """\
 #!/usr/bin/env bash
 : <<'__ISH__'
 [vars]
@@ -338,72 +418,322 @@ theme = "dark"
 __ISH__
 
 THEME=${__ish_theme}
-""")
-        result = preprocess(df, variables={"theme": "solarized"})
+""",
+            variables={"theme": "solarized"},
+        )
         assert "THEME=solarized" in result
 
     def test_directive_overrides_passed_vars(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess(
+            """\
 #@ish set editor=emacs
 EDITOR=${__ish_editor}
-""")
-        result = preprocess(df, variables={"editor": "vim"})
+""",
+            variables={"editor": "vim"},
+        )
         assert "EDITOR=emacs" in result
 
     def test_undefined_var_left_intact(self):
-        df, _ = _make_dotfile("""\
-VAL=${__ish_undefined}
-""")
-        result = preprocess(df)
+        result, _ = _preprocess("VAL=${__ish_undefined}\n")
         assert "VAL=${__ish_undefined}" in result
 
     def test_multiple_directives(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 #@ish set user=alice
 #@ish set host=srv
 CONN=${__ish_user}@${__ish_host}
 """)
-        result = preprocess(df)
         assert "CONN=alice@srv" in result
         assert "#@ish" not in result
 
     def test_slash_comment_directive(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 //@ish set port=8080
 const PORT = "${__ish_port}";
 """)
-        result = preprocess(df)
-        assert '//@ish' not in result
+        assert "//@ish" not in result
         assert 'const PORT = "8080";' in result
 
     def test_dash_comment_directive(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 --@ish set schema=public
 SELECT * FROM ${__ish_schema}.users;
 """)
-        result = preprocess(df)
         assert "--@ish" not in result
         assert "SELECT * FROM public.users;" in result
 
     def test_no_directives_no_vars_passthrough(self):
         original = "#!/usr/bin/env bash\necho hello\n"
-        df, _ = _make_dotfile(original)
-        result = preprocess(df)
+        result, _ = _preprocess(original)
         assert result == original
 
     def test_preserves_non_directive_comments(self):
-        df, _ = _make_dotfile("""\
+        result, _ = _preprocess("""\
 #!/usr/bin/env bash
 # This is a regular comment
 #@ish set foo=bar
 # Another regular comment
 echo ${__ish_foo}
 """)
-        result = preprocess(df)
         assert "# This is a regular comment" in result
         assert "# Another regular comment" in result
         assert "#@ish" not in result
         assert "echo bar" in result
+
+
+# ---------------------------------------------------------------------------
+# Conditional directives (if / elif / else / fi)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not HAS_TOML,
+    reason="toml support not available (needs Python 3.11+ or tomli)",
+)
+class TestConditionals:
+
+    def test_if_true(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'linux'
+echo linux
+#@ish fi
+""",
+            variables={"platform": "linux"},
+        )
+        assert "echo linux" in result
+        assert "#@ish" not in result
+
+    def test_if_false(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+echo mac
+#@ish fi
+""",
+            variables={"platform": "linux"},
+        )
+        assert "echo mac" not in result
+
+    def test_if_else(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+echo mac
+#@ish else
+echo other
+#@ish fi
+""",
+            variables={"platform": "linux"},
+        )
+        assert "echo mac" not in result
+        assert "echo other" in result
+
+    def test_if_elif_else(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+echo mac
+#@ish elif ish.platform == 'linux'
+echo linux
+#@ish else
+echo other
+#@ish fi
+""",
+            variables={"platform": "linux"},
+        )
+        assert "echo mac" not in result
+        assert "echo linux" in result
+        assert "echo other" not in result
+
+    def test_elif_first_true(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+echo mac
+#@ish elif ish.platform == 'linux'
+echo linux
+#@ish fi
+""",
+            variables={"platform": "darwin"},
+        )
+        assert "echo mac" in result
+        assert "echo linux" not in result
+
+    def test_elif_no_match_falls_to_else(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+echo mac
+#@ish elif ish.platform == 'linux'
+echo linux
+#@ish else
+echo unknown
+#@ish fi
+""",
+            variables={"platform": "windows"},
+        )
+        assert "echo mac" not in result
+        assert "echo linux" not in result
+        assert "echo unknown" in result
+
+    def test_nested_if(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'linux'
+#@ish if ish.desktop == 'gnome'
+echo gnome linux
+#@ish fi
+#@ish fi
+""",
+            variables={"platform": "linux", "desktop": "gnome"},
+        )
+        assert "echo gnome linux" in result
+
+    def test_nested_if_outer_false(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+#@ish if ish.desktop == 'gnome'
+echo gnome mac
+#@ish fi
+#@ish fi
+""",
+            variables={"platform": "linux", "desktop": "gnome"},
+        )
+        assert "echo gnome mac" not in result
+
+    def test_missing_var_in_expression(self):
+        # Missing var returns "" which is falsy
+        result, _ = _preprocess("""\
+#@ish if ish.nonexistent
+echo should not appear
+#@ish fi
+echo always
+""")
+        assert "echo should not appear" not in result
+        assert "echo always" in result
+
+    def test_truthiness_of_nonempty_string(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.editor
+echo has editor
+#@ish fi
+""",
+            variables={"editor": "vim"},
+        )
+        assert "echo has editor" in result
+
+    def test_complex_expression(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'linux' and ish.shell == 'zsh'
+echo linux zsh
+#@ish fi
+""",
+            variables={"platform": "linux", "shell": "zsh"},
+        )
+        assert "echo linux zsh" in result
+
+    def test_set_inside_true_branch(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'linux'
+#@ish set pkg_mgr=apt
+#@ish fi
+PKG=${__ish_pkg_mgr}
+""",
+            variables={"platform": "linux"},
+        )
+        assert "PKG=apt" in result
+
+    def test_set_inside_false_branch_ignored(self):
+        result, _ = _preprocess(
+            """\
+#@ish if ish.platform == 'darwin'
+#@ish set pkg_mgr=brew
+#@ish fi
+PKG=${__ish_pkg_mgr}
+""",
+            variables={"platform": "linux"},
+        )
+        # pkg_mgr never set, so reference left intact
+        assert "PKG=${__ish_pkg_mgr}" in result
+
+    def test_slash_comment_conditionals(self):
+        result, _ = _preprocess(
+            """\
+//@ish if ish.env == 'prod'
+const DEBUG = false;
+//@ish else
+const DEBUG = true;
+//@ish fi
+""",
+            variables={"env": "dev"},
+        )
+        assert "const DEBUG = true;" in result
+        assert "const DEBUG = false;" not in result
+
+    def test_surrounding_lines_preserved(self):
+        result, _ = _preprocess(
+            """\
+before
+#@ish if ish.x == 'y'
+inside
+#@ish fi
+after
+""",
+            variables={"x": "n"},
+        )
+        assert "before" in result
+        assert "inside" not in result
+        assert "after" in result
+
+    def test_invalid_expression_treated_as_false(self):
+        result, _ = _preprocess("""\
+#@ish if this is not valid python !!!
+echo should not appear
+#@ish fi
+echo always
+""")
+        assert "echo should not appear" not in result
+        assert "echo always" in result
+
+
+# ---------------------------------------------------------------------------
+# Preprocessor state sharing across files
+# ---------------------------------------------------------------------------
+
+
+class TestPreprocessorState:
+
+    def test_context_shared_across_files(self):
+        """Variables set in one file are visible in the next."""
+        pp = DotFilePreprocessor()
+
+        tmpdir = tempfile.mkdtemp()
+        src = Path(tmpdir) / "src"
+        tgt = Path(tmpdir) / "tgt"
+        src.mkdir()
+        tgt.mkdir()
+
+        f1 = src / "dot_first"
+        f1.write_text("#@ish set shared_var=hello\nFIRST\n", encoding="utf-8")
+        df1 = DotFile(f1, Path("dot_first"), tgt)
+
+        f2 = src / "dot_second"
+        f2.write_text("VAL=${__ish_shared_var}\n", encoding="utf-8")
+        df2 = DotFile(f2, Path("dot_second"), tgt)
+
+        pp.preprocess(df1)
+        result = pp.preprocess(df2)
+        assert "VAL=hello" in result
+
+    def test_context_property(self):
+        pp = DotFilePreprocessor(variables={"x": "1"})
+        assert isinstance(pp.context, DotfileContext)
+        assert pp.context["x"] == "1"
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +847,30 @@ export HOST=${__ish_hostname}
             names = [df.source.name for df in dotfiles]
             assert "dot_bashrc" in names
             assert "dot_bashrc.ish" not in names
+
+    def test_prepare_conditionals(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "dot_bashrc",
+                """\
+#@ish if ish.platform == 'linux'
+export BROWSER=firefox
+#@ish else
+export BROWSER=safari
+#@ish fi
+""",
+            )
+            applier = DotfileApplier(
+                source_dir=Path(src),
+                target_dir=Path(tgt),
+                variables={"platform": "linux"},
+            )
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+
+            staged_content = dotfiles[0].staged.read_text()
+            assert "export BROWSER=firefox" in staged_content
+            assert "export BROWSER=safari" not in staged_content
 
 
 if __name__ == "__main__":
