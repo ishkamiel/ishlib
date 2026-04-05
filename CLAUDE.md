@@ -102,6 +102,10 @@ GitHub Actions runs two workflows on push and pull request:
 - **Pylint** (`.github/workflows/pylint.yml`): Runs pylint across Python 3.8-3.12 (on push)
 - **Pytest** (`.github/workflows/pytest.yml`): Runs the full test suite across Python 3.8-3.12 with shellcheck/dash/zsh for cross-shell testing (on push and pull request)
 
+## Config File Support
+
+The `pyishlib` installer framework supports loading package configuration from **JSON** (`InstallerConfigJSON`) and **TOML** (`InstallerConfigTOML`) files. Both formats use the same Cerberus schema validation. TOML support uses `tomllib` (Python 3.11+ stdlib) with automatic fallback to the `tomli` package for older Python versions.
+
 ## Important Warnings
 
 - **Never edit `ishlib.sh` or `README.md` directly** - they are generated. Edit sources in `src/` and run `make`.
