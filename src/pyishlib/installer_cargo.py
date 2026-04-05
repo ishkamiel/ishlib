@@ -127,7 +127,7 @@ class InstallerCargo:
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""
         assert self.runner.which("rustup") is not None
-        q: bool = log.level > logging.INFO
+        q: bool = log.getEffectiveLevel() > logging.INFO
 
         try:
             res: CompletedProcess = self.runner.run(

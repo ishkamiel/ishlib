@@ -69,7 +69,7 @@ def setup_logging(log_level: int = logging.WARNING) -> None:
 def prompt_yes_no_always(msg: str) -> Choice:
     """Prompt for a yes/no/always choice on *stdin*."""
     while True:
-        choice: str = input(f"{msg} [y/n/A] (Ctr-C to abort): ").strip().lower()
+        choice: str = input(f"{msg} [y/n/A] (Ctrl-C to abort): ").strip().lower()
         if choice in ["y", "n", "a"]:
             return Choice(choice)
 

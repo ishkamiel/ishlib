@@ -72,7 +72,12 @@ class DotfileApplier:
         runner: Optional[CommandRunner] = None,
         ignore: Optional[frozenset] = None,
     ) -> None:
-        self.cfg: IshConfig = cfg if cfg is not None else IshConfig()
+        if runner is not None:
+            self.cfg: IshConfig = cfg if cfg is not None else runner.cfg
+            self.runner: CommandRunner = runner
+        else:
+            self.cfg = cfg if cfg is not None else IshConfig()
+            self.runner = CommandRunner(cfg=self.cfg)
         self._source_dir: Path = Path(source_dir)
         self._target_dir: Path = (
             Path(target_dir) if target_dir is not None else Path.home()
@@ -82,9 +87,6 @@ class DotfileApplier:
             self._source_dir / DOTFILEIGNORE
         )
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
-        self.runner: CommandRunner = (
-            runner if runner is not None else CommandRunner(cfg=self.cfg)
-        )
 
     @property
     def source_dir(self) -> Path:

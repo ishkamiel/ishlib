@@ -6,15 +6,15 @@
 """Helper commands for running commands and common shell tasks"""
 
 import logging
+import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 import shutil
 from typing import Optional, Iterable
 
 from .ish_config import IshConfig
-from .ish_comp import prompt_yes_no_always
+from .ish_comp import die, prompt_yes_no_always
 
 log = logging.getLogger(__name__)
 
@@ -248,7 +248,8 @@ class CommandRunner:
     ) -> None:
         if is_fatal:
             die(msg, exit_code)
-        log.error(msg)
+        else:
+            log.error(msg)
 
     def _check_sudo(
         self, command: Iterable[str], force_sudo: Optional[bool] = False
@@ -264,9 +265,3 @@ class CommandRunner:
         if choice.always:
             self._always_sudo = True
         return choice.yes
-
-
-def die(msg: str, exit_code: int = 1):
-    """Log a critical message and exit"""
-    log.critical(msg)
-    sys.exit(exit_code)
