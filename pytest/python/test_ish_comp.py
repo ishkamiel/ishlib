@@ -287,6 +287,65 @@ class TestIshConfig:
         # dataclass field wins, __getattr__ is not called
         assert cfg.dry_run is False
 
+    # -- defaults / set_default ------------------------------------------------
+
+    def test_from_args_with_defaults(self):
+        args = MagicMock(spec=[])  # no attributes
+        cfg = IshConfig.from_args(args, defaults={"custom": "default_val"})
+        assert cfg.get_opt("custom") == "default_val"
+        assert cfg.custom == "default_val"
+
+    def test_from_args_defaults_lowest_priority(self):
+        args = MagicMock()
+        args.custom = "from_args"
+        cfg = IshConfig.from_args(args, defaults={"custom": "default_val"})
+        assert cfg.custom == "from_args"
+
+    def test_from_args_defaults_below_conf(self):
+        args = MagicMock(spec=[])
+        conf = MagicMock()
+        conf.custom = "from_conf"
+        cfg = IshConfig.from_args(args, conf, defaults={"custom": "default_val"})
+        assert cfg.custom == "from_conf"
+
+    def test_from_args_defaults_dry_run(self):
+        args = MagicMock(spec=[])
+        cfg = IshConfig.from_args(args, defaults={"dry_run": True})
+        assert cfg.dry_run is True
+
+    def test_from_args_defaults_debug(self):
+        args = MagicMock(spec=[])
+        cfg = IshConfig.from_args(args, defaults={"debug": True})
+        assert cfg.log_level == logging.DEBUG
+
+    def test_set_default(self):
+        cfg = IshConfig()
+        cfg.set_default("my_opt", 42)
+        assert cfg.get_opt("my_opt") == 42
+        assert cfg.my_opt == 42
+
+    def test_set_default_does_not_override_args(self):
+        args = MagicMock()
+        args.my_opt = "from_args"
+        cfg = IshConfig.from_args(args)
+        cfg.set_default("my_opt", "default")
+        assert cfg.my_opt == "from_args"
+
+    def test_set_default_missing_raises_without(self):
+        cfg = IshConfig()
+        with pytest.raises(AttributeError):
+            _ = cfg.my_opt
+        cfg.set_default("my_opt", "now_exists")
+        assert cfg.my_opt == "now_exists"
+
+    def test_get_opt_uses_defaults(self):
+        cfg = IshConfig(defaults={"color": "blue"})
+        assert cfg.get_opt("color") == "blue"
+
+    def test_get_opt_explicit_default_over_defaults(self):
+        cfg = IshConfig(defaults={"color": "blue"})
+        assert cfg.get_opt("missing", "red") == "red"
+
     def test_dataclass_equality(self):
         cfg1 = IshConfig(dry_run=True, log_level=logging.DEBUG)
         cfg2 = IshConfig(dry_run=True, log_level=logging.DEBUG)
