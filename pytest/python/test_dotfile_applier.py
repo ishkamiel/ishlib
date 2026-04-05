@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Tests for DotfileApplier class
+# Tests for DotfileApplier and DotFile classes
 
 import sys
 import os
@@ -14,10 +14,15 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib.dotfile_applier import (
-    DotfileApplier,
-    DotfileChange,
     ChangeType,
+    DotFile,
+    DotfileApplier,
+    translate_name,
+    translate_path,
     _cli_main,
+    _load_ignore_file,
+    _is_ignored,
+    DEFAULT_IGNORE,
 )
 from pyishlib.command_runner import CommandRunner
 
@@ -34,92 +39,187 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 
 
 # ---------------------------------------------------------------------------
-# translate_name / translate_path
+# translate_name / translate_path (module-level functions)
 # ---------------------------------------------------------------------------
 
 
 class TestTranslateName:
 
     def test_dot_prefix(self):
-        assert DotfileApplier.translate_name("dot_bashrc") == ".bashrc"
+        assert translate_name("dot_bashrc") == ".bashrc"
 
     def test_no_prefix(self):
-        assert DotfileApplier.translate_name("README") == "README"
+        assert translate_name("README") == "README"
 
     def test_dot_prefix_nested(self):
-        assert DotfileApplier.translate_name("dot_config") == ".config"
+        assert translate_name("dot_config") == ".config"
 
     def test_dot_only(self):
-        assert DotfileApplier.translate_name("dot_") == "."
+        assert translate_name("dot_") == "."
 
     def test_contains_dot_not_prefix(self):
-        assert DotfileApplier.translate_name("my_dot_file") == "my_dot_file"
+        assert translate_name("my_dot_file") == "my_dot_file"
 
 
 class TestTranslatePath:
 
     def test_single_component(self):
-        assert DotfileApplier.translate_path(Path("dot_bashrc")) == Path(".bashrc")
+        assert translate_path(Path("dot_bashrc")) == Path(".bashrc")
 
     def test_multi_component(self):
-        result = DotfileApplier.translate_path(Path("dot_config/dot_git/config"))
+        result = translate_path(Path("dot_config/dot_git/config"))
         assert result == Path(".config/.git/config")
 
     def test_no_translation_needed(self):
-        assert DotfileApplier.translate_path(Path("bin/script")) == Path("bin/script")
+        assert translate_path(Path("bin/script")) == Path("bin/script")
 
     def test_mixed(self):
-        result = DotfileApplier.translate_path(Path("dot_config/nvim/init.vim"))
+        result = translate_path(Path("dot_config/nvim/init.vim"))
         assert result == Path(".config/nvim/init.vim")
 
 
 # ---------------------------------------------------------------------------
-# scan_source
+# DotFile
 # ---------------------------------------------------------------------------
 
 
-class TestScanSource:
+class TestDotFile:
 
-    def test_scan_simple(self):
+    def test_properties(self):
+        with tempfile.TemporaryDirectory() as tgt:
+            src = Path("/repo/dot_bashrc")
+            df = DotFile(src, Path("dot_bashrc"), Path(tgt))
+
+            assert df.source == src
+            assert df.rel_path == Path("dot_bashrc")
+            assert df.translated == Path(".bashrc")
+            assert df.target == Path(tgt) / ".bashrc"
+
+    def test_nested_path(self):
+        with tempfile.TemporaryDirectory() as tgt:
+            df = DotFile(
+                Path("/repo/dot_config/nvim/init.vim"),
+                Path("dot_config/nvim/init.vim"),
+                Path(tgt),
+            )
+            assert df.translated == Path(".config/nvim/init.vim")
+            assert df.target == Path(tgt) / ".config" / "nvim" / "init.vim"
+
+    def test_staged_default_none(self):
+        df = DotFile(Path("/a"), Path("a"), Path("/home"))
+        assert df.staged is None
+
+    def test_staged_setter(self):
+        df = DotFile(Path("/a"), Path("a"), Path("/home"))
+        df.staged = Path("/tmp/staged/a")
+        assert df.staged == Path("/tmp/staged/a")
+
+    def test_effective_source_without_staging(self):
+        df = DotFile(Path("/repo/file"), Path("file"), Path("/home"))
+        assert df.effective_source == Path("/repo/file")
+
+    def test_effective_source_with_staging(self):
+        df = DotFile(Path("/repo/file"), Path("file"), Path("/home"))
+        df.staged = Path("/tmp/staged/file")
+        assert df.effective_source == Path("/tmp/staged/file")
+
+    def test_change_type_new(self):
+        with tempfile.TemporaryDirectory() as tgt:
+            with tempfile.TemporaryDirectory() as src_dir:
+                src = _make_file(Path(src_dir) / "dot_bashrc", "content\n")
+                df = DotFile(src, Path("dot_bashrc"), Path(tgt))
+                assert df.get_change_type() == ChangeType.NEW
+
+    def test_change_type_modified(self):
+        with tempfile.TemporaryDirectory() as tgt:
+            with tempfile.TemporaryDirectory() as src_dir:
+                src = _make_file(Path(src_dir) / "dot_bashrc", "new\n")
+                _make_file(Path(tgt) / ".bashrc", "old\n")
+                df = DotFile(src, Path("dot_bashrc"), Path(tgt))
+                assert df.get_change_type() == ChangeType.MODIFIED
+
+    def test_change_type_unchanged(self):
+        with tempfile.TemporaryDirectory() as tgt:
+            with tempfile.TemporaryDirectory() as src_dir:
+                src = _make_file(Path(src_dir) / "dot_bashrc", "same\n")
+                _make_file(Path(tgt) / ".bashrc", "same\n")
+                df = DotFile(src, Path("dot_bashrc"), Path(tgt))
+                assert df.get_change_type() is None
+
+    def test_repr(self):
+        df = DotFile(Path("/repo/dot_bashrc"), Path("dot_bashrc"), Path("/home"))
+        r = repr(df)
+        assert "dot_bashrc" in r
+        assert ".bashrc" in r
+
+
+# ---------------------------------------------------------------------------
+# Ignore handling
+# ---------------------------------------------------------------------------
+
+
+class TestIgnore:
+
+    def test_load_ignore_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / ".dotfileignore"
+            p.write_text("# comment\n*.bak\ntemp_*\n\n")
+            patterns = _load_ignore_file(p)
+            assert patterns == ["*.bak", "temp_*"]
+
+    def test_load_ignore_file_missing(self):
+        assert _load_ignore_file(Path("/nonexistent/.dotfileignore")) == []
+
+    def test_is_ignored_by_set(self):
+        assert _is_ignored(".git", frozenset({".git"}), [])
+
+    def test_is_ignored_by_pattern(self):
+        assert _is_ignored("file.bak", frozenset(), ["*.bak"])
+
+    def test_not_ignored(self):
+        assert not _is_ignored("dot_bashrc", frozenset({".git"}), ["*.bak"])
+
+
+# ---------------------------------------------------------------------------
+# DotfileApplier.discover (Stage 1)
+# ---------------------------------------------------------------------------
+
+
+class TestDiscover:
+
+    def test_discover_scan(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc")
             _make_file(Path(src) / "dot_profile")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            pairs = applier.scan_source()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
 
-            targets = [str(t.relative_to(tgt)) for _, t in pairs]
-            assert ".bashrc" in targets
-            assert ".profile" in targets
+            names = [df.translated.name for df in dotfiles]
+            assert ".bashrc" in names
+            assert ".profile" in names
 
-    def test_scan_nested(self):
+    def test_discover_nested(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_config" / "nvim" / "init.vim")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            pairs = applier.scan_source()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
 
-            assert len(pairs) == 1
-            _, target = pairs[0]
-            assert target == Path(tgt) / ".config" / "nvim" / "init.vim"
+            assert len(dotfiles) == 1
+            assert dotfiles[0].target == Path(tgt) / ".config" / "nvim" / "init.vim"
 
-    def test_scan_ignores_git(self):
+    def test_discover_ignores_defaults(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / ".git" / "config")
             _make_file(Path(src) / "dot_bashrc")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            pairs = applier.scan_source()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
 
-            assert len(pairs) == 1
+            assert len(dotfiles) == 1
 
-    def test_scan_custom_ignore(self):
+    def test_discover_custom_ignore(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc")
             _make_file(Path(src) / "SKIPME")
@@ -129,22 +229,93 @@ class TestScanSource:
                 target_dir=Path(tgt),
                 ignore=frozenset({"SKIPME"}),
             )
-            pairs = applier.scan_source()
+            dotfiles = applier.discover()
 
-            targets = [t.name for _, t in pairs]
-            assert "SKIPME" not in targets
+            names = [df.source.name for df in dotfiles]
+            assert "SKIPME" not in names
 
-    def test_scan_empty_dir(self):
+    def test_discover_dotfileignore(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            pairs = applier.scan_source()
-            assert pairs == []
+            _make_file(Path(src) / "dot_bashrc")
+            _make_file(Path(src) / "notes.bak")
+            _make_file(Path(src) / ".dotfileignore", "*.bak\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+
+            names = [df.source.name for df in dotfiles]
+            assert "notes.bak" not in names
+            assert "dot_bashrc" in names
+
+    def test_discover_empty_dir(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            assert applier.discover() == []
+
+    def test_discover_explicit_files(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc")
+            _make_file(Path(src) / "dot_profile")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover(files=[Path("dot_bashrc")])
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].translated == Path(".bashrc")
+
+    def test_discover_explicit_missing_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover(files=[Path("nonexistent")])
+
+            assert dotfiles == []
 
 
 # ---------------------------------------------------------------------------
-# get_changes
+# DotfileApplier.prepare (Stage 2)
+# ---------------------------------------------------------------------------
+
+
+class TestPrepare:
+
+    def test_prepare_stages_files(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].staged is not None
+            assert dotfiles[0].staged.is_file()
+            assert dotfiles[0].staged.read_text() == "content\n"
+
+    def test_prepare_preserves_translated_path(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_config" / "nvim" / "init.vim", "set nu\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+
+            staged = dotfiles[0].staged
+            assert staged.name == "init.vim"
+            assert ".config" in str(staged)
+
+    def test_prepare_effective_source_is_staged(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+
+            assert dotfiles[0].effective_source == dotfiles[0].staged
+
+
+# ---------------------------------------------------------------------------
+# DotfileApplier.get_changes + apply_changes (Stage 3)
 # ---------------------------------------------------------------------------
 
 
@@ -152,38 +323,38 @@ class TestGetChanges:
 
     def test_new_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "export FOO=bar\n")
+            _make_file(Path(src) / "dot_bashrc", "content\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
 
             assert len(changes) == 1
-            assert changes[0].change_type == ChangeType.NEW
+            assert changes[0].get_change_type() == ChangeType.NEW
 
     def test_modified_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "new content\n")
-            _make_file(Path(tgt) / ".bashrc", "old content\n")
+            _make_file(Path(src) / "dot_bashrc", "new\n")
+            _make_file(Path(tgt) / ".bashrc", "old\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
 
             assert len(changes) == 1
-            assert changes[0].change_type == ChangeType.MODIFIED
+            assert changes[0].get_change_type() == ChangeType.MODIFIED
 
     def test_unchanged_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "same\n")
             _make_file(Path(tgt) / ".bashrc", "same\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
 
             assert len(changes) == 0
 
@@ -195,20 +366,15 @@ class TestGetChanges:
             _make_file(Path(tgt) / ".profile", "old\n")
             _make_file(Path(tgt) / ".vimrc", "same\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
 
-            types = {c.change_type for c in changes}
+            types = {c.get_change_type() for c in changes}
             assert ChangeType.NEW in types
             assert ChangeType.MODIFIED in types
             assert len(changes) == 2
-
-
-# ---------------------------------------------------------------------------
-# apply_changes
-# ---------------------------------------------------------------------------
 
 
 class TestApplyChanges:
@@ -217,10 +383,10 @@ class TestApplyChanges:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "export FOO=bar\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
             applied = applier.apply_changes(changes)
 
             assert applied == 1
@@ -231,10 +397,10 @@ class TestApplyChanges:
             _make_file(Path(src) / "dot_bashrc", "new content\n")
             _make_file(Path(tgt) / ".bashrc", "old content\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
             applied = applier.apply_changes(changes)
 
             assert applied == 1
@@ -244,15 +410,14 @@ class TestApplyChanges:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_config" / "nvim" / "init.vim", "set nu\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
-            changes = applier.get_changes()
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
             applied = applier.apply_changes(changes)
 
             assert applied == 1
-            target = Path(tgt) / ".config" / "nvim" / "init.vim"
-            assert target.read_text() == "set nu\n"
+            assert (Path(tgt) / ".config" / "nvim" / "init.vim").read_text() == "set nu\n"
 
     def test_apply_dry_run(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -261,7 +426,9 @@ class TestApplyChanges:
             applier = DotfileApplier(
                 source_dir=Path(src), target_dir=Path(tgt), dry_run=True
             )
-            changes = applier.get_changes()
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
             applied = applier.apply_changes(changes)
 
             assert applied == 1
@@ -269,7 +436,7 @@ class TestApplyChanges:
 
 
 # ---------------------------------------------------------------------------
-# apply (full workflow)
+# apply (full pipeline)
 # ---------------------------------------------------------------------------
 
 
@@ -277,9 +444,7 @@ class TestApply:
 
     def test_apply_no_changes(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             result = applier.apply()
             assert result == 0
 
@@ -287,9 +452,7 @@ class TestApply:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
 
             from pyishlib.ish_comp import Choice
 
@@ -303,9 +466,7 @@ class TestApply:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
 
-            applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt)
-            )
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
 
             from pyishlib.ish_comp import Choice
 
@@ -323,7 +484,6 @@ class TestApply:
                 source_dir=Path(src), target_dir=Path(tgt), dry_run=True
             )
 
-            # Should not prompt at all in dry-run
             with patch.object(applier, "prompt_yes_no_always") as mock_prompt:
                 result = applier.apply()
                 mock_prompt.assert_not_called()
@@ -331,26 +491,17 @@ class TestApply:
             assert result == 1
             assert not (Path(tgt) / ".bashrc").exists()
 
+    def test_apply_explicit_files(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_profile", "profile\n")
 
-# ---------------------------------------------------------------------------
-# DotfileChange
-# ---------------------------------------------------------------------------
+            applier = DotfileApplier(
+                source_dir=Path(src), target_dir=Path(tgt), dry_run=True
+            )
+            result = applier.apply(files=[Path("dot_bashrc")])
 
-
-class TestDotfileChange:
-
-    def test_repr(self):
-        change = DotfileChange(
-            Path("/src/dot_bashrc"), Path("/home/.bashrc"), ChangeType.NEW
-        )
-        assert "new" in repr(change)
-        assert "dot_bashrc" in repr(change)
-
-    def test_modified_repr(self):
-        change = DotfileChange(
-            Path("/src/dot_bashrc"), Path("/home/.bashrc"), ChangeType.MODIFIED
-        )
-        assert "modified" in repr(change)
+            assert result == 1
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +558,6 @@ class TestCliApply:
             ret = _cli_main(["dotfile-apply", src, "-t", tgt, "-n"])
 
             assert ret == 0
-            # dry-run should not create the file
             assert not (Path(tgt) / ".bashrc").exists()
 
     def test_cli_apply_with_ignore(self):
@@ -429,6 +579,17 @@ class TestCliApply:
 
             assert ret == 0
 
+    def test_cli_apply_explicit_files(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_profile", "profile\n")
+
+            ret = _cli_main(
+                ["dotfile-apply", src, "-t", tgt, "-n", "-f", "dot_bashrc"]
+            )
+
+            assert ret == 0
+
 
 class TestCliStatus:
 
@@ -438,7 +599,7 @@ class TestCliStatus:
 
             ret = _cli_main(["dotfile-status", src, "-t", tgt])
 
-            assert ret == 1  # pending changes -> non-zero
+            assert ret == 1
 
     def test_cli_status_no_changes(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
