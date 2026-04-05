@@ -9,6 +9,7 @@
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Mapping, Iterable
 
@@ -82,11 +83,19 @@ class InstallerConfig:
         self._config: Mapping[str, Any] = config
         self._on_gnome = None
         self._on_ubuntu = None
+        self._on_windows = None
 
     @property
     def config_file(self) -> Path:
         """Get the configuration file name"""
         return self._config_file
+
+    @property
+    def on_windows(self):
+        """True if running on Windows"""
+        if self._on_windows is None:
+            self._on_windows = sys.platform == "win32"
+        return self._on_windows
 
     @property
     def on_gnome(self):
