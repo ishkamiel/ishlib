@@ -14,7 +14,7 @@ from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
 
 
-class AptInstaller:
+class InstallerApt:
     """Helper class for managing apt packages"""
 
     INSTALLER_NAME: str = "apt"

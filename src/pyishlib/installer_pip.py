@@ -14,7 +14,7 @@ from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 
 
-class PipInstaller:
+class InstallerPip:
     """Helper class for managing python packages via pip"""
 
     INSTALLER_NAME: str = "pip"

@@ -13,7 +13,7 @@ from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
 
 
-class BrewInstaller:
+class InstallerBrew:
     """Helper class for managing packages via Homebrew"""
 
     INSTALLER_NAME: str = "brew"
