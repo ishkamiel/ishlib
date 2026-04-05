@@ -9,7 +9,7 @@
 
 ## Repository Structure
 
-```
+```text
 src/
   sh/         # POSIX-compliant shell functions (sourced into ishlib.sh)
   bash/       # Bash-only extensions (sourced into ishlib.sh)
@@ -54,11 +54,14 @@ Pytest runs in parallel by default (`--numprocesses=auto` in `pytest.ini`).
 
 - **POSIX functions** go in `src/sh/*.sh`; **Bash-only functions** go in `src/bash/*.bash`
 - Every source file must have a **source guard**:
+
   ```sh
   [ -n "${ish_SOURCED_module:-}" ] && return 0
   ish_SOURCED_module=1
   ```
+
 - Document functions with **DOCSTRING heredocs**:
+
   ```sh
   : <<'DOCSTRING'
   `function_name args...`
@@ -72,6 +75,7 @@ Pytest runs in parallel by default (`--numprocesses=auto` in `pytest.ini`).
   0 - on success
   DOCSTRING
   ```
+
 - Variable naming: globals use `ish_` prefix (e.g., `ish_VERSION`), locals use `_` prefix (e.g., `_target`), constants are UPPERCASE
 - Output goes to stderr via `ish_say`, `ish_warn`, `ish_fail`
 - Many functions respect the `DRY_RUN` flag
@@ -83,7 +87,6 @@ Pytest runs in parallel by default (`--numprocesses=auto` in `pytest.ini`).
 - Linted with **Pylint** (pytest/ directory is excluded from pylint)
 - 4-space indentation
 - Files must include the MIT license header (auto-inserted by pre-commit)
-- `# -*- coding: utf-8 -*-` at top of files
 
 ### General
 
@@ -97,8 +100,9 @@ The repo uses pre-commit with: pylint, black, markdownlint, typos, license heade
 
 ## CI
 
-GitHub Actions runs two workflows on push and pull request:
+GitHub Actions runs three workflows on push and pull request:
 
+- **Pre-commit** (`.github/workflows/pre-commit.yml`): Runs all pre-commit hooks (on push and pull request)
 - **Pylint** (`.github/workflows/pylint.yml`): Runs pylint across Python 3.8-3.12 (on push)
 - **Pytest** (`.github/workflows/pytest.yml`): Runs the full test suite across Python 3.8-3.12 with shellcheck/dash/zsh for cross-shell testing (on push and pull request)
 

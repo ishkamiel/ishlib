@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
 # Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>

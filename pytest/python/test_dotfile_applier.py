@@ -1,4 +1,9 @@
-# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
 #
 # Tests for DotfileApplier and DotFile classes
 
@@ -27,7 +32,6 @@ from pyishlib.dotfile import (
     DEFAULT_IGNORE,
 )
 from pyishlib.command_runner import CommandRunner
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -419,7 +423,9 @@ class TestApplyChanges:
             applied = applier.apply_changes(changes)
 
             assert applied == 1
-            assert (Path(tgt) / ".config" / "nvim" / "init.vim").read_text() == "set nu\n"
+            assert (
+                Path(tgt) / ".config" / "nvim" / "init.vim"
+            ).read_text() == "set nu\n"
 
     def test_apply_dry_run(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -586,9 +592,7 @@ class TestCliApply:
             _make_file(Path(src) / "dot_bashrc", "bash\n")
             _make_file(Path(src) / "dot_profile", "profile\n")
 
-            ret = _cli_main(
-                ["dotfile-apply", src, "-t", tgt, "-n", "-f", "dot_bashrc"]
-            )
+            ret = _cli_main(["dotfile-apply", src, "-t", tgt, "-n", "-f", "dot_bashrc"])
 
             assert ret == 0
 

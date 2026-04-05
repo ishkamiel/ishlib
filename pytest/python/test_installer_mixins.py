@@ -1,4 +1,9 @@
-# -*- coding: utf-8 -*-
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+
 #
 # Tests for installer backend classes (InstallerApt, InstallerPip, etc.)
 
@@ -109,8 +114,11 @@ class TestInstallerApt:
     def test_install_apt_pkgs_dry_run(self):
         runner = make_runner({"apt": "/usr/bin/apt"})
         apt = InstallerApt(make_log(), runner)
-        with patch.object(runner, "run_sudo",
-                          return_value=subprocess.CompletedProcess(args=[], returncode=0)) as mock_sudo:
+        with patch.object(
+            runner,
+            "run_sudo",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        ) as mock_sudo:
             pkgs = [{"name": "test", "apt": "test-pkg"}]
             result = apt.install_apt_pkgs(pkgs)
             assert result is True
@@ -164,8 +172,11 @@ class TestInstallerPip:
     def test_install_pip_pkg_returns_value(self):
         runner = make_runner({"pip3": "/usr/bin/pip3"})
         pip = InstallerPip(make_log(), runner)
-        with patch.object(runner, "run",
-                          return_value=subprocess.CompletedProcess(args=[], returncode=0)):
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        ):
             pkg = {"name": "test", "pip": "test-pkg"}
             result = pip.install_pip_pkg(pkg)
             assert result is True
@@ -201,8 +212,11 @@ class TestInstallerBrew:
     def test_install_brew_pkg_returns_value(self):
         runner = make_runner({"brew": "/usr/local/bin/brew"})
         brew = InstallerBrew(make_log(), runner)
-        with patch.object(runner, "run",
-                          return_value=subprocess.CompletedProcess(args=[], returncode=0)):
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        ):
             pkg = {"name": "test", "brew": "test-pkg"}
             result = brew.install_brew_pkg(pkg)
             assert result is True
@@ -238,8 +252,11 @@ class TestInstallerCargo:
     def test_install_cargo_pkg_returns_value(self):
         runner = make_runner({"cargo": "/usr/bin/cargo"})
         cargo = InstallerCargo(make_log(), runner)
-        with patch.object(runner, "run",
-                          return_value=subprocess.CompletedProcess(args=[], returncode=0)):
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        ):
             pkg = {"name": "test", "cargo": "test-pkg"}
             result = cargo.install_cargo_pkg(pkg)
             assert result is True
@@ -297,24 +314,34 @@ class TestInstallerWinget:
         runner = make_runner({"winget": "C:\\winget.exe"})
         winget = InstallerWinget(make_log(), runner)
         pkg = {"name": "test", "winget": "Test.App"}
-        with patch.object(runner, "run",
-                          return_value=subprocess.CompletedProcess(
-                              args=[], returncode=0,
-                              stdout=b"Name   Id        Version\n"
-                                     b"----------------------------\n"
-                                     b"Test   Test.App  1.2.3\n",
-                              stderr=b"")):
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=b"Name   Id        Version\n"
+                b"----------------------------\n"
+                b"Test   Test.App  1.2.3\n",
+                stderr=b"",
+            ),
+        ):
             assert winget.is_winget_pkg_installed(pkg) is True
 
     def test_is_winget_pkg_installed_not_found(self):
         runner = make_runner({"winget": "C:\\winget.exe"})
         winget = InstallerWinget(make_log(), runner)
         pkg = {"name": "test", "winget": "Test.App"}
-        with patch.object(runner, "run",
-                          return_value=subprocess.CompletedProcess(
-                              args=[], returncode=0,
-                              stdout=b"No installed package found matching input criteria.\n",
-                              stderr=b"")):
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=b"No installed package found matching input criteria.\n",
+                stderr=b"",
+            ),
+        ):
             assert winget.is_winget_pkg_installed(pkg) is False
 
     def test_winget_namespace(self):
@@ -328,8 +355,11 @@ class TestInstallerWinget:
     def test_install_winget_pkg_returns_value(self):
         runner = make_runner({"winget": "C:\\winget.exe"})
         winget = InstallerWinget(make_log(), runner)
-        with patch.object(runner, "run",
-                          return_value=subprocess.CompletedProcess(args=[], returncode=0)):
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        ):
             pkg = {"name": "test", "winget": "Test.App"}
             result = winget.install_winget_pkg(pkg)
             assert result is True
@@ -393,6 +423,7 @@ class TestInstallerRegistration:
                     @staticmethod
                     def update():
                         return False
+
                 return Namespace()
 
         installer.register_installer(CustomInstaller())
@@ -424,6 +455,7 @@ class TestInstallerRegistration:
                     @staticmethod
                     def update():
                         return False
+
                 return Namespace()
 
         installer.register_installer(CustomApt())
@@ -475,8 +507,11 @@ class TestInstallerOrchestration:
 
     def test_install_pkgs_routes_correctly(self):
         installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
-        with patch.object(installer.runner, "run_sudo",
-                          return_value=subprocess.CompletedProcess(args=[], returncode=0)):
+        with patch.object(
+            installer.runner,
+            "run_sudo",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        ):
             pkgs = [{"name": "test", "apt": "test-pkg", "cmd": "notfound"}]
             result = installer.install_pkgs(pkgs)
             assert result is True

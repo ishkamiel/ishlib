@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2025 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2025-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Dotfile applier for managing dotfile repositories.
@@ -38,7 +37,6 @@ from .dotfile import (
 )
 from .ish_comp import IshComp
 
-
 # ---------------------------------------------------------------------------
 # DotfileApplier
 # ---------------------------------------------------------------------------
@@ -73,7 +71,9 @@ class DotfileApplier(IshComp):
     ) -> None:
         super().__init__(**kwargs)
         self._source_dir: Path = Path(source_dir)
-        self._target_dir: Path = Path(target_dir) if target_dir is not None else Path.home()
+        self._target_dir: Path = (
+            Path(target_dir) if target_dir is not None else Path.home()
+        )
         self._ignore: frozenset = ignore if ignore is not None else DEFAULT_IGNORE
         self._ignore_patterns: List[str] = load_ignore_file(
             self._source_dir / DOTFILEIGNORE
@@ -100,9 +100,7 @@ class DotfileApplier(IshComp):
 
     # -- Stage 1: Discover ---------------------------------------------------
 
-    def discover(
-        self, files: Optional[Sequence[Path]] = None
-    ) -> List[DotFile]:
+    def discover(self, files: Optional[Sequence[Path]] = None) -> List[DotFile]:
         """Discover dotfiles to process.
 
         When *files* is given, each path is treated as relative to the
@@ -186,9 +184,7 @@ class DotfileApplier(IshComp):
 
     # -- Stage 3: Apply ------------------------------------------------------
 
-    def get_changes(
-        self, dotfiles: List[DotFile]
-    ) -> List[DotFile]:
+    def get_changes(self, dotfiles: List[DotFile]) -> List[DotFile]:
         """Filter dotfiles to only those that would change the target.
 
         Args:
@@ -232,14 +228,14 @@ class DotfileApplier(IshComp):
         for dotfile in changes:
             if self.runner.copy(dotfile.effective_source, dotfile.target):
                 applied += 1
-                self.log.info("Applied %s -> %s", dotfile.effective_source, dotfile.target)
+                self.log.info(
+                    "Applied %s -> %s", dotfile.effective_source, dotfile.target
+                )
         return applied
 
     # -- Full pipeline -------------------------------------------------------
 
-    def apply(
-        self, files: Optional[Sequence[Path]] = None
-    ) -> int:
+    def apply(self, files: Optional[Sequence[Path]] = None) -> int:
         """Run the full discover / prepare / apply pipeline.
 
         Args:
@@ -259,9 +255,7 @@ class DotfileApplier(IshComp):
             return 0
 
         if not self.dry_run:
-            choice = self.prompt_yes_no_always(
-                f"Apply {len(changes)} change(s)?"
-            )
+            choice = self.prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
             if choice.no:
                 self.print("Aborted.")
                 return 0
