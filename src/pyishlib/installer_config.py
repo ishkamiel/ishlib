@@ -33,6 +33,18 @@ try:
 except ImportError:
     HAS_YAML = False
 
+try:
+    import tomllib  # Python 3.11+
+
+    HAS_TOML = True
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib  # Fallback for Python < 3.11
+
+        HAS_TOML = True
+    except ImportError:
+        HAS_TOML = False
+
 log = logging.getLogger(__name__)
 
 
@@ -146,4 +158,25 @@ class InstallerConfigJSON(InstallerConfig):
                 config_fn,
             )
 
+        super().__init__(config=config, config_fn=config_fn, **kwargs)
+
+
+class InstallerConfigTOML(InstallerConfig):
+    """Class for handling installer configuration from a TOML file"""
+
+    def __init__(self, config_fn: Path, **kwargs) -> None:
+        if not HAS_TOML:
+            raise ImportError(
+                "TOML support requires Python 3.11+ (tomllib) "
+                "or the 'tomli' package for older Python versions"
+            )
+
+        # Load TOML config
+        try:
+            with open(config_fn, "rb") as config_fh:
+                config: Mapping[str, Any] = tomllib.load(config_fh)
+        except tomllib.TOMLDecodeError as e:
+            raise ValueError(f"Config file is not valid TOML: {e}") from e
+
+        # Cerberus validation is handled by the parent class
         super().__init__(config=config, config_fn=config_fn, **kwargs)
