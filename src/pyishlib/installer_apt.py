@@ -12,14 +12,15 @@ from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
 
+log = logging.getLogger(__name__)
+
 
 class InstallerApt:
     """Helper class for managing apt packages"""
 
     INSTALLER_NAME: str = "apt"
 
-    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
-        self.log: logging.Logger = log
+    def __init__(self, runner: CommandRunner) -> None:
         self.runner: CommandRunner = runner
         self._apt_checked: bool = False
         self._has_apt: bool = False
@@ -29,7 +30,7 @@ class InstallerApt:
         """Check if apt is available"""
         if not self._apt_checked:
             self._has_apt = self.runner.which("apt") is not None
-            self.log.debug("has_apt: %s", self._has_apt)
+            log.debug("has_apt: %s", self._has_apt)
             self._apt_checked = True
         return self._has_apt
 
@@ -53,7 +54,7 @@ class InstallerApt:
     def can_use_apt(self, pkg: Optional[Any] = None) -> bool:
         """Check if apt is available, and optionally, if pkg can use it"""
         if pkg is not None and not "apt" in pkg:
-            self.log.debug("apt not available for %s", pkg["name"])
+            log.debug("apt not available for %s", pkg["name"])
             return False
         return self.has_apt
 
@@ -64,10 +65,10 @@ class InstallerApt:
     def is_apt_pkg_installed(self, pkg) -> bool:
         """Check if an apt package is installed"""
         if not self.can_use_apt():
-            self.log.debug("apt not available")
+            log.debug("apt not available")
             return False
         if not self.can_use_apt(pkg):
-            self.log.debug("apt pkg not available for %s", pkg["name"])
+            log.debug("apt pkg not available for %s", pkg["name"])
             return False
 
         try:
@@ -79,7 +80,7 @@ class InstallerApt:
             )
             return "Status: install ok installed" in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.debug("dpkg non-zero exit for %s: %s", pkg["name"], e)
+            log.debug("dpkg non-zero exit for %s: %s", pkg["name"], e)
             return False
 
     def install_apt_pkgs(self, pkgs: Iterable[dict]) -> bool:
@@ -91,14 +92,14 @@ class InstallerApt:
 
         pkg_list: Iterable[str] = [pkg["apt"] for pkg in pkgs]
 
-        self.log.info("Installing with apt: %s", " ".join(pkg_list))
+        log.info("Installing with apt: %s", " ".join(pkg_list))
         try:
             res: CompletedProcess = self.runner.run_sudo(
                 ["apt", "install", "-y"] + pkg_list
             )
             return res.returncode == 0
         except CalledProcessError as e:
-            self.log.critical("apt error installing %s: %s", " ".join(pkg_list), e)
+            log.critical("apt error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
     def install_apt_pkg(self, pkg) -> bool:
@@ -115,13 +116,13 @@ class InstallerApt:
         """Update all installed apt packages"""
         assert self.can_use_apt()
 
-        self.log.info("Updating apt packages")
+        log.info("Updating apt packages")
         try:
             self.runner.run_sudo(["apt", "update"])
             self.runner.run_sudo(["apt", "upgrade", "-y"])
             return True
         except CalledProcessError as e:
-            self.log.critical("apt error updating packages: %s", e)
+            log.critical("apt error updating packages: %s", e)
             raise e
 
     def update_and_install_all(self, pkgs):

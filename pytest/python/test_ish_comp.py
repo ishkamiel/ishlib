@@ -5,7 +5,7 @@
 # Distributed under terms of the MIT license.
 
 #
-# Tests for IshComp base class and related utilities
+# Tests for IshConfig, IshComp utilities, and related types
 
 import sys
 import os
@@ -16,7 +16,14 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.ish_comp import IshComp, Choice, IshLogFormatter
+from pyishlib.ish_comp import (
+    Choice,
+    IshLogFormatter,
+    setup_logging,
+    prompt_yes_no_always,
+    die,
+)
+from pyishlib.ish_config import IshConfig
 
 
 class TestChoice:
@@ -90,122 +97,126 @@ class TestIshLogFormatter:
         assert "[!!]" in result
 
 
-class TestIshComp:
+class TestIshConfig:
 
     def test_default_log_level_is_warning(self):
-        comp = IshComp()
-        assert comp.log.level == logging.WARNING
+        cfg = IshConfig()
+        assert cfg.log_level == logging.WARNING
 
     def test_debug_mode_via_log_level(self):
-        comp = IshComp(log_level=logging.DEBUG)
-        assert comp.debug is True
-        assert comp.verbose is True
+        cfg = IshConfig(log_level=logging.DEBUG)
+        assert cfg.debug is True
+        assert cfg.verbose is True
 
     def test_verbose_mode_via_log_level(self):
-        comp = IshComp(log_level=logging.INFO)
-        assert comp.verbose is True
-        assert comp.debug is False
+        cfg = IshConfig(log_level=logging.INFO)
+        assert cfg.verbose is True
+        assert cfg.debug is False
 
     def test_quiet_mode_via_log_level(self):
-        comp = IshComp(log_level=logging.ERROR)
-        assert comp.quiet is True
+        cfg = IshConfig(log_level=logging.ERROR)
+        assert cfg.quiet is True
 
     def test_not_quiet_by_default(self):
-        comp = IshComp()
-        assert comp.quiet is False
+        cfg = IshConfig()
+        assert cfg.quiet is False
 
     def test_dry_run_default_false(self):
-        comp = IshComp()
-        assert comp.dry_run is False
+        cfg = IshConfig()
+        assert cfg.dry_run is False
 
     def test_dry_run_explicit(self):
-        comp = IshComp(dry_run=True)
-        assert comp.dry_run is True
+        cfg = IshConfig(dry_run=True)
+        assert cfg.dry_run is True
 
     def test_set_dry_run(self):
-        comp = IshComp()
-        comp.set_dry_run(True)
-        assert comp.dry_run is True
+        cfg = IshConfig()
+        cfg.dry_run = True
+        assert cfg.dry_run is True
 
     def test_set_log_level(self):
-        comp = IshComp()
-        comp.set_log_level(logging.DEBUG)
-        assert comp.log.level == logging.DEBUG
+        cfg = IshConfig()
+        cfg.log_level = logging.DEBUG
+        assert cfg.log_level == logging.DEBUG
 
-    def test_set_args(self):
-        comp = IshComp()
+    def test_from_args_dry_run(self):
         args = MagicMock()
         args.dry_run = True
-        comp.set_args(args)
-        assert comp.dry_run is True
+        args.debug = False
+        args.verbose = False
+        args.quiet = False
+        cfg = IshConfig.from_args(args)
+        assert cfg.dry_run is True
 
-    def test_set_conf(self):
-        comp = IshComp()
+    def test_from_args_conf_fallback(self):
+        args = MagicMock(spec=[])  # no attributes
         conf = MagicMock()
         conf.dry_run = True
-        comp.set_conf(conf)
-        assert comp.dry_run is True
+        cfg = IshConfig.from_args(args, conf)
+        assert cfg.dry_run is True
 
-    def test_args_takes_priority_over_conf(self):
+    def test_from_args_args_takes_priority_over_conf(self):
         args = MagicMock()
         args.dry_run = False
+        args.debug = False
+        args.verbose = False
+        args.quiet = False
         conf = MagicMock()
         conf.dry_run = True
-        comp = IshComp(args=args, conf=conf)
+        cfg = IshConfig.from_args(args, conf)
         # args should take priority
-        assert comp.dry_run is False
+        assert cfg.dry_run is False
 
-    def test_die_exits(self):
-        comp = IshComp()
-        with pytest.raises(SystemExit) as exc_info:
-            comp.die("fatal error")
-        assert exc_info.value.code == 1
-
-    def test_die_custom_exit_code(self):
-        comp = IshComp()
-        with pytest.raises(SystemExit) as exc_info:
-            comp.die("fatal error", exit_code=42)
-        assert exc_info.value.code == 42
-
-    def test_print(self, capsys):
-        comp = IshComp()
-        comp.print("hello world")
-        captured = capsys.readouterr()
-        assert captured.out == "hello world\n"
-
-    def test_prompt_yes_no_always_yes(self):
-        comp = IshComp()
-        with patch("builtins.input", return_value="y"):
-            result = comp.prompt_yes_no_always("Continue?")
-        assert result == Choice.YES
-
-    def test_prompt_yes_no_always_no(self):
-        comp = IshComp()
-        with patch("builtins.input", return_value="n"):
-            result = comp.prompt_yes_no_always("Continue?")
-        assert result == Choice.NO
-
-    def test_prompt_yes_no_always_always(self):
-        comp = IshComp()
-        with patch("builtins.input", return_value="a"):
-            result = comp.prompt_yes_no_always("Continue?")
-        assert result == Choice.ALWAYS
-
-    def test_get_opt_from_internal(self):
-        comp = IshComp(dry_run=True)
-        assert comp._get_opt("dry_run") is True
-
-    def test_get_opt_default(self):
-        comp = IshComp()
-        assert comp._get_opt("nonexistent", "default_val") == "default_val"
-
-    def test_debug_log_level_from_args(self):
+    def test_from_args_debug_sets_log_level(self):
         args = MagicMock()
         args.debug = True
         args.verbose = False
         args.quiet = False
-        comp = IshComp(args=args)
-        assert comp.log.level == logging.DEBUG
+        args.dry_run = False
+        cfg = IshConfig.from_args(args)
+        assert cfg.log_level == logging.DEBUG
+
+    def test_die_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            die("fatal error")
+        assert exc_info.value.code == 1
+
+    def test_die_custom_exit_code(self):
+        with pytest.raises(SystemExit) as exc_info:
+            die("fatal error", exit_code=42)
+        assert exc_info.value.code == 42
+
+    def test_prompt_yes_no_always_yes(self):
+        with patch("builtins.input", return_value="y"):
+            result = prompt_yes_no_always("Continue?")
+        assert result == Choice.YES
+
+    def test_prompt_yes_no_always_no(self):
+        with patch("builtins.input", return_value="n"):
+            result = prompt_yes_no_always("Continue?")
+        assert result == Choice.NO
+
+    def test_prompt_yes_no_always_always(self):
+        with patch("builtins.input", return_value="a"):
+            result = prompt_yes_no_always("Continue?")
+        assert result == Choice.ALWAYS
+
+    def test_setup_logging_sets_level(self):
+        setup_logging(logging.DEBUG)
+        pkg_logger = logging.getLogger("pyishlib")
+        assert pkg_logger.level == logging.DEBUG
+        # Reset
+        setup_logging(logging.WARNING)
+
+    def test_dataclass_equality(self):
+        cfg1 = IshConfig(dry_run=True, log_level=logging.DEBUG)
+        cfg2 = IshConfig(dry_run=True, log_level=logging.DEBUG)
+        assert cfg1 == cfg2
+
+    def test_dataclass_repr(self):
+        cfg = IshConfig(dry_run=True)
+        r = repr(cfg)
+        assert "dry_run=True" in r
 
 
 if __name__ == "__main__":

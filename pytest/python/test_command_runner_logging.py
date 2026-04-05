@@ -13,6 +13,7 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib import CommandRunner
+from pyishlib.ish_config import IshConfig
 
 
 class TestCommandRunnerLogging:
@@ -61,7 +62,7 @@ class TestCommandRunnerLogging:
 
     @patch.object(CommandRunner, "_print_cmd")
     def test_run_dry_run_2(self, mock_method):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         command = ["echo", "Hello, World!"]
 
         result = runner.run(command)

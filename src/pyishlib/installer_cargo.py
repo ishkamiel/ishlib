@@ -12,6 +12,8 @@ from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 
+log = logging.getLogger(__name__)
+
 
 class InstallerCargo:
     """Helper class for managing rust and cargo packages"""
@@ -26,8 +28,7 @@ class InstallerCargo:
     # The --locked flags forces cargo to use the pkg-specific versions of deps
     CARGO_INSTALL_CMD: Iterable[str] = ["cargo", "install", "--locked"]
 
-    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
-        self.log: logging.Logger = log
+    def __init__(self, runner: CommandRunner) -> None:
         self.runner: CommandRunner = runner
         self._cargo_checked: bool = False
         self._has_cargo: bool = False
@@ -70,10 +71,10 @@ class InstallerCargo:
     def is_cargo_pkg_installed(self, pkg) -> bool:
         """Check if a cargo package is installed"""
         if not self.can_use_cargo():
-            self.log.debug("Cargo not available")
+            log.debug("Cargo not available")
             return False
         if not self.can_use_cargo(pkg):
-            self.log.debug("Cargo pkg not available for %s", pkg["name"])
+            log.debug("Cargo pkg not available for %s", pkg["name"])
             return False
 
         try:
@@ -85,7 +86,7 @@ class InstallerCargo:
             )
             return pkg["cargo"] in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.debug("Cargo error checking %s: %s", pkg["name"], e)
+            log.debug("Cargo error checking %s: %s", pkg["name"], e)
             return False
 
     def install_cargo_pkgs(self, pkgs: Iterable[dict]) -> bool:
@@ -97,12 +98,12 @@ class InstallerCargo:
 
         pkg_list: Iterable[str] = [pkg["cargo"] for pkg in pkgs]
 
-        self.log.info("Installing with cargo: %s", " ".join(pkg_list))
+        log.info("Installing with cargo: %s", " ".join(pkg_list))
         try:
             res: CompletedProcess = self.runner.run(self.CARGO_INSTALL_CMD + pkg_list)
             return res.returncode == 0
         except CalledProcessError as e:
-            self.log.critical("Cargo error installing %s: %s", " ".join(pkg_list), e)
+            log.critical("Cargo error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
     def install_cargo_pkg(self, pkg) -> bool:
@@ -126,7 +127,7 @@ class InstallerCargo:
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""
         assert self.runner.which("rustup") is not None
-        q: bool = self.log.level > logging.INFO
+        q: bool = log.level > logging.INFO
 
         try:
             res: CompletedProcess = self.runner.run(
@@ -137,7 +138,7 @@ class InstallerCargo:
             self.runner.run(["rustup", "update", "stable"], quiet=q)
             return True
         except CalledProcessError as e:
-            self.log.critical("Rustup error: %s", e)
+            log.critical("Rustup error: %s", e)
             raise e
 
     def update_and_install_all(self, pkgs):

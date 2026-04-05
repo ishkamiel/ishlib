@@ -11,14 +11,15 @@ from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
 
+log = logging.getLogger(__name__)
+
 
 class InstallerBrew:
     """Helper class for managing packages via Homebrew"""
 
     INSTALLER_NAME: str = "brew"
 
-    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
-        self.log: logging.Logger = log
+    def __init__(self, runner: CommandRunner) -> None:
         self.runner: CommandRunner = runner
         self._brew_checked: bool = False
         self._has_brew: bool = False
@@ -61,10 +62,10 @@ class InstallerBrew:
     def is_brew_pkg_installed(self, pkg) -> bool:
         """Check if a Homebrew package is installed"""
         if not self.can_use_brew():
-            self.log.debug("Homebrew not available")
+            log.debug("Homebrew not available")
             return False
         if not self.can_use_brew(pkg):
-            self.log.debug("Homebrew pkg not available for %s", pkg["name"])
+            log.debug("Homebrew pkg not available for %s", pkg["name"])
             return False
 
         try:
@@ -76,7 +77,7 @@ class InstallerBrew:
             )
             return pkg["brew"] in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.debug("Homebrew error checking %s: %s", pkg["name"], e)
+            log.debug("Homebrew error checking %s: %s", pkg["name"], e)
             return False
 
     def install_brew_pkgs(self, pkgs: Iterable[dict]) -> bool:
@@ -88,12 +89,12 @@ class InstallerBrew:
 
         pkg_list: Iterable[str] = [pkg["brew"] for pkg in pkgs]
 
-        self.log.info("Installing with Homebrew: %s", " ".join(pkg_list))
+        log.info("Installing with Homebrew: %s", " ".join(pkg_list))
         try:
             res: CompletedProcess = self.runner.run(["brew", "install"] + pkg_list)
             return res.returncode == 0
         except CalledProcessError as e:
-            self.log.critical("Homebrew error installing %s: %s", " ".join(pkg_list), e)
+            log.critical("Homebrew error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
     def install_brew_pkg(self, pkg) -> bool:

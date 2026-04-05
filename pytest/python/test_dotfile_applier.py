@@ -32,6 +32,8 @@ from pyishlib.dotfile import (
     DEFAULT_IGNORE,
 )
 from pyishlib.command_runner import CommandRunner
+from pyishlib.ish_config import IshConfig
+from pyishlib.ish_comp import Choice
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -432,7 +434,9 @@ class TestApplyChanges:
             _make_file(Path(src) / "dot_bashrc", "content\n")
 
             applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt), dry_run=True
+                source_dir=Path(src),
+                target_dir=Path(tgt),
+                cfg=IshConfig(dry_run=True),
             )
             dotfiles = applier.discover()
             dotfiles = applier.prepare(dotfiles)
@@ -462,9 +466,9 @@ class TestApply:
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
 
-            from pyishlib.ish_comp import Choice
-
-            with patch.object(applier, "prompt_yes_no_always", return_value=Choice.YES):
+            with patch(
+                "pyishlib.dotfile_applier.prompt_yes_no_always", return_value=Choice.YES
+            ):
                 result = applier.apply()
 
             assert result == 1
@@ -476,9 +480,9 @@ class TestApply:
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
 
-            from pyishlib.ish_comp import Choice
-
-            with patch.object(applier, "prompt_yes_no_always", return_value=Choice.NO):
+            with patch(
+                "pyishlib.dotfile_applier.prompt_yes_no_always", return_value=Choice.NO
+            ):
                 result = applier.apply()
 
             assert result == 0
@@ -489,10 +493,12 @@ class TestApply:
             _make_file(Path(src) / "dot_bashrc", "content\n")
 
             applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt), dry_run=True
+                source_dir=Path(src),
+                target_dir=Path(tgt),
+                cfg=IshConfig(dry_run=True),
             )
 
-            with patch.object(applier, "prompt_yes_no_always") as mock_prompt:
+            with patch("pyishlib.dotfile_applier.prompt_yes_no_always") as mock_prompt:
                 result = applier.apply()
                 mock_prompt.assert_not_called()
 
@@ -505,7 +511,9 @@ class TestApply:
             _make_file(Path(src) / "dot_profile", "profile\n")
 
             applier = DotfileApplier(
-                source_dir=Path(src), target_dir=Path(tgt), dry_run=True
+                source_dir=Path(src),
+                target_dir=Path(tgt),
+                cfg=IshConfig(dry_run=True),
             )
             result = applier.apply(files=[Path("dot_bashrc")])
 
@@ -541,7 +549,7 @@ class TestCommandRunnerCopy:
             assert dst.read_text() == "data\n"
 
     def test_copy_dry_run(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         with tempfile.TemporaryDirectory() as tmpdir:
             src = _make_file(Path(tmpdir) / "file.txt", "data\n")
             dst = Path(tmpdir) / "dst" / "file.txt"

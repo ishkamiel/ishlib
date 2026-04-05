@@ -13,3 +13,4 @@ import importlib
 from .command_runner import CommandRunner
 from .dotfile import DotFile
 from .dotfile_applier import DotfileApplier
+from .ish_config import IshConfig

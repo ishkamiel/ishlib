@@ -19,6 +19,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib.command_runner import CommandRunner
+from pyishlib.ish_config import IshConfig
+from pyishlib.ish_comp import Choice
 
 
 class TestCommandRunnerProperties:
@@ -28,7 +30,7 @@ class TestCommandRunnerProperties:
         assert runner.dry_run is False
 
     def test_dry_run_set(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         assert runner.dry_run is True
 
     def test_dry_run_setter(self):
@@ -69,7 +71,7 @@ class TestCommandRunnerRun:
         assert result.returncode != 0
 
     def test_run_dry_run_returns_zero(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         result = runner.run(["false"])
         assert result.returncode == 0
         assert result.stdout == b""
@@ -109,12 +111,12 @@ class TestCommandRunnerRun:
 class TestCommandRunnerGit:
 
     def test_git_prepends_git(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         result = runner.git(["status"])
         assert result.returncode == 0
 
     def test_git_with_work_dir_adds_C_flag(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         with patch.object(
             runner, "run", return_value=MagicMock(returncode=0)
         ) as mock_run:
@@ -152,7 +154,7 @@ class TestCommandRunnerFileOps:
             runner.chdir(Path("/nonexistent/path"), may_fail=False)
 
     def test_chdir_dry_run(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         original_dir = os.getcwd()
         with tempfile.TemporaryDirectory() as tmpdir:
             result = runner.chdir(Path(tmpdir))
@@ -175,7 +177,7 @@ class TestCommandRunnerFileOps:
             assert result is True
 
     def test_mkdir_dry_run(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         with tempfile.TemporaryDirectory() as tmpdir:
             new_dir = Path(tmpdir) / "newdir"
             result = runner.mkdir(new_dir)
@@ -207,7 +209,7 @@ class TestCommandRunnerFileOps:
             assert not subdir.exists()
 
     def test_rm_dry_run(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         with tempfile.NamedTemporaryFile(delete=False) as f:
             path = Path(f.name)
         try:
@@ -235,20 +237,18 @@ class TestCommandRunnerSudo:
 
     def test_run_sudo_aborts_on_user_decline(self):
         runner = CommandRunner()
-        with patch.object(runner, "prompt_yes_no_always") as mock_prompt:
-            from pyishlib.ish_comp import Choice
-
+        with patch("pyishlib.command_runner.prompt_yes_no_always") as mock_prompt:
             mock_prompt.return_value = Choice.NO
             with pytest.raises(KeyboardInterrupt):
                 runner.run_sudo(["echo", "test"])
 
     def test_run_sudo_always_sudo(self):
-        runner = CommandRunner(always_sudo=True, dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True), always_sudo=True)
         result = runner.run_sudo(["echo", "test"])
         assert result.returncode == 0
 
     def test_check_sudo_dry_run_skips_prompt(self):
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         assert runner._check_sudo(["sudo", "echo"], force_sudo=False) is True
 
     def test_check_sudo_force(self):
@@ -257,9 +257,10 @@ class TestCommandRunnerSudo:
 
     def test_check_sudo_always_sets_flag(self):
         runner = CommandRunner()
-        from pyishlib.ish_comp import Choice
-
-        with patch.object(runner, "prompt_yes_no_always", return_value=Choice.ALWAYS):
+        with patch(
+            "pyishlib.command_runner.prompt_yes_no_always",
+            return_value=Choice.ALWAYS,
+        ):
             result = runner._check_sudo(["sudo", "echo"])
             assert result is True
             assert runner._always_sudo is True
