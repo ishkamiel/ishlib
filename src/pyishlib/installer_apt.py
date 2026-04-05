@@ -53,7 +53,7 @@ class InstallerApt:
 
     def can_use_apt(self, pkg: Optional[Any] = None) -> bool:
         """Check if apt is available, and optionally, if pkg can use it"""
-        if pkg is not None and not "apt" in pkg:
+        if pkg is not None and "apt" not in pkg:
             log.debug("apt not available for %s", pkg["name"])
             return False
         return self.has_apt
