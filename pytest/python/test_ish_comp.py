@@ -254,6 +254,39 @@ class TestIshConfig:
         cfg = IshConfig()
         assert cfg.get_opt("nonexistent") is None
 
+    def test_getattr_from_args(self):
+        args = MagicMock()
+        args.custom_opt = "via_attr"
+        cfg = IshConfig.from_args(args)
+        assert cfg.custom_opt == "via_attr"
+
+    def test_getattr_from_conf(self):
+        args = MagicMock(spec=[])
+        conf = MagicMock()
+        conf.custom_opt = "from_conf"
+        cfg = IshConfig.from_args(args, conf)
+        assert cfg.custom_opt == "from_conf"
+
+    def test_getattr_args_wins(self):
+        args = MagicMock()
+        args.custom_opt = "args"
+        conf = MagicMock()
+        conf.custom_opt = "conf"
+        cfg = IshConfig.from_args(args, conf)
+        assert cfg.custom_opt == "args"
+
+    def test_getattr_raises_attributeerror(self):
+        cfg = IshConfig()
+        with pytest.raises(AttributeError):
+            _ = cfg.nonexistent
+
+    def test_getattr_does_not_shadow_fields(self):
+        args = MagicMock()
+        args.dry_run = True
+        cfg = IshConfig(dry_run=False, args=args)
+        # dataclass field wins, __getattr__ is not called
+        assert cfg.dry_run is False
+
     def test_dataclass_equality(self):
         cfg1 = IshConfig(dry_run=True, log_level=logging.DEBUG)
         cfg2 = IshConfig(dry_run=True, log_level=logging.DEBUG)

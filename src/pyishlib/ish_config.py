@@ -55,8 +55,36 @@ class IshConfig:
             log_level = logging.WARNING
         return cls(dry_run=dry_run, log_level=log_level, args=args, conf=conf)
 
+    def __getattr__(self, name: str) -> Any:
+        """Fall back to args -> conf for attributes not on the dataclass.
+
+        This lets ``IshConfig`` act as a drop-in for an argparse namespace::
+
+            cfg = IshConfig.from_args(parsed_args)
+            cfg.dry_run      # dataclass field  (direct)
+            cfg.custom_opt   # from parsed_args (via __getattr__)
+        """
+        # Avoid infinite recursion: args/conf are dataclass fields, so they
+        # are resolved normally.  If we get here for them, they truly don't
+        # exist yet (e.g. during __init__), so bail out.
+        if name in ("args", "conf"):
+            raise AttributeError(name)
+        args = self.__dict__.get("args")
+        conf = self.__dict__.get("conf")
+        if args is not None and hasattr(args, name):
+            return getattr(args, name)
+        if conf is not None and hasattr(conf, name):
+            return getattr(conf, name)
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
+
     def get_opt(self, name: str, default: Optional[Any] = None) -> Any:
-        """Look up *name* with args -> conf -> default priority."""
+        """Look up *name* with args -> conf -> *default* priority.
+
+        Unlike attribute access, this returns *default* instead of raising
+        ``AttributeError`` when the name is not found.
+        """
         return _resolve_opt(name, self.args, self.conf, default)
 
     # -- convenience properties ------------------------------------------------
