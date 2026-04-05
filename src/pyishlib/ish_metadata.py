@@ -144,10 +144,55 @@ def _read_sidecar(file_path: Path) -> Optional[str]:
     return None
 
 
+def merge_metadata(
+    base: Dict[str, Any],
+    override: Dict[str, Any],
+    base_label: str = "embedded",
+    override_label: str = "sidecar",
+) -> Tuple[Dict[str, Any], list]:
+    """Deep-merge two metadata dicts, with *override* winning on conflicts.
+
+    Returns the merged dict and a list of conflict descriptions (strings).
+    Each conflict description notes the key path and differing values.
+    This function can be reused wherever two metadata sources need merging.
+
+    Args:
+        base: The base metadata dictionary.
+        override: The overriding metadata dictionary.
+        base_label: Human-readable label for the base source.
+        override_label: Human-readable label for the override source.
+
+    Returns:
+        A (merged_dict, conflicts) tuple.  *conflicts* is empty when the
+        two dicts are compatible.
+    """
+    conflicts: list = []
+
+    def _merge(dst, src, path=""):
+        for key, val in src.items():
+            key_path = f"{path}.{key}" if path else key
+            if key not in dst:
+                dst[key] = val
+            elif isinstance(dst[key], dict) and isinstance(val, dict):
+                _merge(dst[key], val, key_path)
+            elif dst[key] != val:
+                conflicts.append(
+                    f"{key_path}: {base_label}={dst[key]!r} vs "
+                    f"{override_label}={val!r} (using {override_label})"
+                )
+                dst[key] = val
+
+    merged = json.loads(json.dumps(base))  # deep copy via JSON round-trip
+    _merge(merged, override)
+    return merged, conflicts
+
+
 def read_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     """Read __ISH__ metadata from a file.
 
-    Tries embedded metadata first, then falls back to a .ish sidecar file.
+    Reads both embedded metadata and sidecar metadata when available.
+    If both exist, they are merged with the sidecar taking precedence
+    on conflicts (a warning is logged for each conflict).
 
     Args:
         file_path: Path to the file to read metadata from.
@@ -162,6 +207,7 @@ def read_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     file_path = Path(file_path)
 
     # Try embedded metadata
+    embedded = None
     try:
         text = file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -170,14 +216,22 @@ def read_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     if text is not None:
         raw = _extract_embedded(text)
         if raw is not None:
-            return _parse_toml(raw)
+            embedded = _parse_toml(raw)
 
-    # Fall back to sidecar
+    # Try sidecar
+    sidecar = None
     raw = _read_sidecar(file_path)
     if raw is not None:
-        return _parse_toml(raw)
+        sidecar = _parse_toml(raw)
 
-    return None
+    # Merge or return whichever is available
+    if embedded is not None and sidecar is not None:
+        merged, conflicts = merge_metadata(embedded, sidecar)
+        for conflict in conflicts:
+            log.warning("%s: metadata conflict: %s", file_path, conflict)
+        return merged
+
+    return embedded if embedded is not None else sidecar
 
 
 def scan_directory(
@@ -213,16 +267,22 @@ def scan_directory(
             yield path, meta
 
 
-def _cli_main(argv=None):
-    """CLI entry point for ish_metadata."""
-    parser = argparse.ArgumentParser(
-        prog="ish_metadata",
-        description="Read __ISH__ metadata from files",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def register_cli(subparsers: argparse._SubParsersAction) -> None:
+    """Register metadata subcommands onto an existing subparsers group.
 
+    This allows a parent CLI to embed the metadata commands as part of a
+    larger tool, e.g.::
+
+        parent_sub = parent_parser.add_subparsers(...)
+        ish_metadata.register_cli(parent_sub)
+
+    Args:
+        subparsers: An ``argparse._SubParsersAction`` to add commands to.
+    """
     # read subcommand
-    read_parser = subparsers.add_parser("read", help="Read metadata from a file")
+    read_parser = subparsers.add_parser(
+        "meta-read", help="Read __ISH__ metadata from a file"
+    )
     read_parser.add_argument("file", type=Path, help="File to read metadata from")
     read_parser.add_argument(
         "--format",
@@ -230,10 +290,11 @@ def _cli_main(argv=None):
         default="json",
         help="Output format (default: json)",
     )
+    read_parser.set_defaults(func=_cmd_read)
 
     # scan subcommand
     scan_parser = subparsers.add_parser(
-        "scan", help="Scan a directory for files with metadata"
+        "meta-scan", help="Scan a directory for files with __ISH__ metadata"
     )
     scan_parser.add_argument("directory", type=Path, help="Directory to scan")
     scan_parser.add_argument(
@@ -253,34 +314,48 @@ def _cli_main(argv=None):
         default="json",
         help="Output format (default: json)",
     )
+    scan_parser.set_defaults(func=_cmd_scan)
+
+
+def _cmd_read(args: argparse.Namespace) -> int:
+    """Handler for the meta-read subcommand."""
+    meta = read_metadata(args.file)
+    if meta is None:
+        print(f"No __ISH__ metadata found in {args.file}")
+        return 1
+    _print_output(meta, args.format)
+    return 0
+
+
+def _cmd_scan(args: argparse.Namespace) -> int:
+    """Handler for the meta-scan subcommand."""
+    exts = set(args.extensions) if args.extensions else None
+    results = {
+        str(path): meta
+        for path, meta in scan_directory(
+            args.directory,
+            extensions=exts,
+            recursive=not args.no_recursive,
+        )
+    }
+    if not results:
+        print("No files with __ISH__ metadata found.")
+        return 1
+    _print_output(results, args.format)
+    return 0
+
+
+def _cli_main(argv=None):
+    """CLI entry point for standalone ish_metadata usage."""
+    parser = argparse.ArgumentParser(
+        prog="ish_metadata",
+        description="Read __ISH__ metadata from files",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_cli(subparsers)
 
     args = parser.parse_args(argv)
-
-    if args.command == "read":
-        meta = read_metadata(args.file)
-        if meta is None:
-            print(f"No __ISH__ metadata found in {args.file}")
-            return 1
-        _print_output(meta, args.format)
-        return 0
-
-    if args.command == "scan":
-        exts = set(args.extensions) if args.extensions else None
-        results = {
-            str(path): meta
-            for path, meta in scan_directory(
-                args.directory,
-                extensions=exts,
-                recursive=not args.no_recursive,
-            )
-        }
-        if not results:
-            print("No files with __ISH__ metadata found.")
-            return 1
-        _print_output(results, args.format)
-        return 0
-
-    return 1
+    return args.func(args)
 
 
 def _print_output(data: Dict[str, Any], fmt: str) -> None:

@@ -18,6 +18,7 @@ from pyishlib.ish_metadata import (
     HAS_TOML,
     _extract_embedded,
     _strip_comment_prefix,
+    merge_metadata,
     read_metadata,
     scan_directory,
     _cli_main,
@@ -309,7 +310,7 @@ tags = ["etl"]
             finally:
                 os.unlink(f.name)
 
-    def test_embedded_takes_priority_over_sidecar(self):
+    def test_sidecar_overrides_embedded_on_conflict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             main_file = Path(tmpdir) / "script.sh"
             sidecar_file = Path(tmpdir) / "script.sh.ish"
@@ -325,7 +326,7 @@ __ISH__
             sidecar_file.write_text('[script]\nname = "sidecar"\n', encoding="utf-8")
             meta = read_metadata(main_file)
             assert meta is not None
-            assert meta["script"]["name"] == "embedded"
+            assert meta["script"]["name"] == "sidecar"
 
     def test_invalid_toml_raises(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
@@ -432,6 +433,102 @@ name = "python-script"
     not HAS_TOML,
     reason="toml support not available (needs Python 3.11+ or tomli)",
 )
+class TestMergeMetadata(unittest.TestCase):
+    """Test the merge_metadata function."""
+
+    def test_no_conflict(self):
+        base = {"script": {"name": "test"}}
+        override = {"script": {"tags": ["a"]}}
+        merged, conflicts = merge_metadata(base, override)
+        assert merged == {"script": {"name": "test", "tags": ["a"]}}
+        assert conflicts == []
+
+    def test_conflict_override_wins(self):
+        base = {"script": {"name": "base-name", "tags": ["a"]}}
+        override = {"script": {"name": "sidecar-name"}}
+        merged, conflicts = merge_metadata(base, override)
+        assert merged["script"]["name"] == "sidecar-name"
+        assert merged["script"]["tags"] == ["a"]
+        assert len(conflicts) == 1
+        assert "script.name" in conflicts[0]
+
+    def test_deep_merge(self):
+        base = {"a": {"b": {"c": 1, "d": 2}}}
+        override = {"a": {"b": {"e": 3}}}
+        merged, conflicts = merge_metadata(base, override)
+        assert merged == {"a": {"b": {"c": 1, "d": 2, "e": 3}}}
+        assert conflicts == []
+
+    def test_empty_override(self):
+        base = {"x": 1}
+        merged, conflicts = merge_metadata(base, {})
+        assert merged == {"x": 1}
+        assert conflicts == []
+
+    def test_empty_base(self):
+        override = {"x": 1}
+        merged, conflicts = merge_metadata({}, override)
+        assert merged == {"x": 1}
+        assert conflicts == []
+
+
+@pytest.mark.skipif(
+    not HAS_TOML,
+    reason="toml support not available (needs Python 3.11+ or tomli)",
+)
+class TestReadMetadataMerge(unittest.TestCase):
+    """Test that read_metadata merges embedded and sidecar metadata."""
+
+    def test_merge_embedded_and_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main_file = Path(tmpdir) / "script.sh"
+            sidecar_file = Path(tmpdir) / "script.sh.ish"
+            main_file.write_text(
+                """\
+: <<'__ISH__'
+[script]
+name = "embedded"
+tags = ["a"]
+__ISH__
+""",
+                encoding="utf-8",
+            )
+            sidecar_file.write_text(
+                '[script]\nschedule = "daily"\n',
+                encoding="utf-8",
+            )
+            meta = read_metadata(main_file)
+            assert meta is not None
+            assert meta["script"]["name"] == "embedded"
+            assert meta["script"]["tags"] == ["a"]
+            assert meta["script"]["schedule"] == "daily"
+
+    def test_sidecar_overrides_on_conflict(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main_file = Path(tmpdir) / "script.sh"
+            sidecar_file = Path(tmpdir) / "script.sh.ish"
+            main_file.write_text(
+                """\
+: <<'__ISH__'
+[script]
+name = "embedded"
+__ISH__
+""",
+                encoding="utf-8",
+            )
+            sidecar_file.write_text(
+                '[script]\nname = "sidecar"\n',
+                encoding="utf-8",
+            )
+            meta = read_metadata(main_file)
+            assert meta is not None
+            assert meta["script"]["name"] == "sidecar"
+
+
+@pytest.mark.skipif(
+    not HAS_TOML,
+    reason="toml support not available (needs Python 3.11+ or tomli)",
+)
 class TestCliMain(unittest.TestCase):
     """Test the CLI entry point."""
 
@@ -445,7 +542,7 @@ __ISH__
 """)
             f.flush()
             try:
-                ret = _cli_main(["read", f.name])
+                ret = _cli_main(["meta-read", f.name])
                 assert ret == 0
             finally:
                 os.unlink(f.name)
@@ -455,7 +552,7 @@ __ISH__
             f.write("no metadata\n")
             f.flush()
             try:
-                ret = _cli_main(["read", f.name])
+                ret = _cli_main(["meta-read", f.name])
                 assert ret == 1
             finally:
                 os.unlink(f.name)
@@ -467,12 +564,12 @@ __ISH__
                 ": <<'__ISH__'\n[script]\nname = \"scan-test\"\n__ISH__\n",
                 encoding="utf-8",
             )
-            ret = _cli_main(["scan", tmpdir])
+            ret = _cli_main(["meta-scan", tmpdir])
             assert ret == 0
 
     def test_cli_scan_empty(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            ret = _cli_main(["scan", tmpdir])
+            ret = _cli_main(["meta-scan", tmpdir])
             assert ret == 1
 
 
