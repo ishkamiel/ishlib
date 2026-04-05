@@ -71,11 +71,14 @@ class WingetInstaller:
         try:
             result: subprocess.CompletedProcess = self.runner.run(
                 ["winget", "list", "--id", pkg["winget"], "--exact"],
-                check=True,
+                check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            return result.returncode == 0
+            output = result.stdout
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            return pkg["winget"] in output
         except CalledProcessError as e:
             self.log.debug("winget error checking %s: %s", pkg["name"], e)
             return False

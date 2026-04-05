@@ -293,6 +293,30 @@ class TestWingetInstaller:
         pkg = {"name": "test", "winget": "Test.App"}
         assert winget.is_winget_pkg_installed(pkg) is False
 
+    def test_is_winget_pkg_installed_found(self):
+        runner = make_runner({"winget": "C:\\winget.exe"})
+        winget = WingetInstaller(make_log(), runner)
+        pkg = {"name": "test", "winget": "Test.App"}
+        with patch.object(runner, "run",
+                          return_value=subprocess.CompletedProcess(
+                              args=[], returncode=0,
+                              stdout=b"Name   Id        Version\n"
+                                     b"----------------------------\n"
+                                     b"Test   Test.App  1.2.3\n",
+                              stderr=b"")):
+            assert winget.is_winget_pkg_installed(pkg) is True
+
+    def test_is_winget_pkg_installed_not_found(self):
+        runner = make_runner({"winget": "C:\\winget.exe"})
+        winget = WingetInstaller(make_log(), runner)
+        pkg = {"name": "test", "winget": "Test.App"}
+        with patch.object(runner, "run",
+                          return_value=subprocess.CompletedProcess(
+                              args=[], returncode=0,
+                              stdout=b"No installed package found matching input criteria.\n",
+                              stderr=b"")):
+            assert winget.is_winget_pkg_installed(pkg) is False
+
     def test_winget_namespace(self):
         winget = WingetInstaller(make_log(), make_runner({"winget": "C:\\winget.exe"}))
         ns = winget.namespace
