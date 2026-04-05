@@ -12,4 +12,4 @@ import glob
 import importlib
 
 from .command_runner import CommandRunner
-from .dotfile_applier import DotfileApplier
+from .dotfile_applier import DotFile, DotfileApplier
