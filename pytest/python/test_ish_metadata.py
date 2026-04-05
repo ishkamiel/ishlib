@@ -336,7 +336,7 @@ __ISH__
 """)
             f.flush()
             try:
-                with self.assertRaises(Exception):
+                with self.assertRaises(ValueError):
                     read_metadata(f.name)
             finally:
                 os.unlink(f.name)
