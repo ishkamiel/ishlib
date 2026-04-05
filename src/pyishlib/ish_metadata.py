@@ -75,6 +75,37 @@ _RE_COMMENT_BLOCK = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 
+# Removal patterns -- designed for re.sub() to strip metadata blocks from
+# file content, leaving the surrounding text intact.
+_RE_REMOVE_SHELL_HEREDOC = re.compile(
+    r"^[ \t]*:[ \t]+<<\s*['\"]?__ISH__['\"]?\s*$.*?^__ISH__[ \t]*\n?",
+    re.MULTILINE | re.DOTALL,
+)
+
+_RE_REMOVE_PYTHON_ASSIGN = re.compile(
+    r"^__ish__\s*=\s*(?:\"{3}|\'{3}).*?(?:\"{3}|\'{3})[ \t]*\n?",
+    re.MULTILINE | re.DOTALL,
+)
+
+_RE_REMOVE_POWERSHELL_BLOCK = re.compile(
+    r"<#__ISH__\s*?\r?\n.*?^__ISH__#>[ \t]*\n?",
+    re.MULTILINE | re.DOTALL,
+)
+
+_RE_REMOVE_COMMENT_BLOCK = re.compile(
+    r"^(?P<prefix>[#;%]|//|--)[ \t]+__ISH__\s*$"
+    r".*?"
+    r"^(?P=prefix)[ \t]+__ISH__[ \t]*\n?",
+    re.MULTILINE | re.DOTALL,
+)
+
+_METADATA_REMOVAL_PATTERNS = [
+    _RE_REMOVE_SHELL_HEREDOC,
+    _RE_REMOVE_PYTHON_ASSIGN,
+    _RE_REMOVE_POWERSHELL_BLOCK,
+    _RE_REMOVE_COMMENT_BLOCK,
+]
+
 
 def _parse_toml(text: str) -> Dict[str, Any]:
     """Parse a TOML string and return the resulting dictionary."""
@@ -184,6 +215,24 @@ def merge_metadata(
     merged = json.loads(json.dumps(base))  # deep copy via JSON round-trip
     _merge(merged, override)
     return merged, conflicts
+
+
+def remove_metadata_blocks(text: str) -> str:
+    """Remove all ``__ISH__`` metadata blocks from *text*.
+
+    Uses a set of patterns that mirror the extraction patterns but are
+    designed for ``re.sub()`` removal.  The surrounding file content is
+    left intact.
+
+    Args:
+        text: The full file content as a string.
+
+    Returns:
+        The text with all metadata blocks removed.
+    """
+    for pattern in _METADATA_REMOVAL_PATTERNS:
+        text = pattern.sub("", text)
+    return text
 
 
 def read_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
