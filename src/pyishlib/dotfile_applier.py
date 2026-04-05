@@ -24,7 +24,7 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 from .command_runner import CommandRunner
 from .dotfile import (
@@ -64,7 +64,7 @@ class DotfileApplier:
         ignore: Extra names to ignore on top of :data:`DEFAULT_IGNORE`.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         source_dir: Path,
         target_dir: Optional[Path] = None,
