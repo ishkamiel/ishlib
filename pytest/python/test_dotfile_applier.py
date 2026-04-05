@@ -14,14 +14,16 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib.dotfile_applier import (
+    DotfileApplier,
+    _cli_main,
+)
+from pyishlib.dotfile import (
     ChangeType,
     DotFile,
-    DotfileApplier,
     translate_name,
     translate_path,
-    _cli_main,
-    _load_ignore_file,
-    _is_ignored,
+    load_ignore_file,
+    is_ignored,
     DEFAULT_IGNORE,
 )
 from pyishlib.command_runner import CommandRunner
@@ -164,20 +166,20 @@ class TestIgnore:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / ".dotfileignore"
             p.write_text("# comment\n*.bak\ntemp_*\n\n")
-            patterns = _load_ignore_file(p)
+            patterns = load_ignore_file(p)
             assert patterns == ["*.bak", "temp_*"]
 
     def test_load_ignore_file_missing(self):
-        assert _load_ignore_file(Path("/nonexistent/.dotfileignore")) == []
+        assert load_ignore_file(Path("/nonexistent/.dotfileignore")) == []
 
     def test_is_ignored_by_set(self):
-        assert _is_ignored(".git", frozenset({".git"}), [])
+        assert is_ignored(".git", frozenset({".git"}), [])
 
     def test_is_ignored_by_pattern(self):
-        assert _is_ignored("file.bak", frozenset(), ["*.bak"])
+        assert is_ignored("file.bak", frozenset(), ["*.bak"])
 
     def test_not_ignored(self):
-        assert not _is_ignored("dot_bashrc", frozenset({".git"}), ["*.bak"])
+        assert not is_ignored("dot_bashrc", frozenset({".git"}), ["*.bak"])
 
 
 # ---------------------------------------------------------------------------

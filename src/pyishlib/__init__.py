@@ -12,4 +12,5 @@ import glob
 import importlib
 
 from .command_runner import CommandRunner
-from .dotfile_applier import DotFile, DotfileApplier
+from .dotfile import DotFile
+from .dotfile_applier import DotfileApplier
