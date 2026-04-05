@@ -72,6 +72,7 @@ class DotfileApplier(IshComp):
                 dry_run=self._dry_run,
             )
         )
+        self.runner.dry_run = self.dry_run
 
     @property
     def source_dir(self) -> Path:
@@ -159,6 +160,12 @@ class DotfileApplier(IshComp):
         for source, target in self.scan_source():
             if not target.exists():
                 changes.append(DotfileChange(source, target, ChangeType.NEW))
+            elif not target.is_file():
+                self.log.debug(
+                    "Target exists but is not a regular file, treating as modified: %s",
+                    target,
+                )
+                changes.append(DotfileChange(source, target, ChangeType.MODIFIED))
             elif not filecmp.cmp(source, target, shallow=False):
                 changes.append(DotfileChange(source, target, ChangeType.MODIFIED))
             else:
@@ -183,11 +190,11 @@ class DotfileApplier(IshComp):
             changes: The list of changes to apply.
 
         Returns:
-            The number of files successfully applied.
+            The number of changes processed. In dry-run mode, this is
+            the number of changes that would be applied.
         """
         applied = 0
         for change in changes:
-            self.runner.mkdir(change.target.parent, parents=True)
             if self.runner.copy(change.source, change.target):
                 applied += 1
                 self.log.info(
@@ -202,8 +209,10 @@ class DotfileApplier(IshComp):
         them, asks for user confirmation, and applies the changes.
 
         Returns:
-            The number of files applied, or ``0`` if the user declined
-            or there were no changes.
+            The number of changes processed by :meth:`apply_changes`,
+            or ``0`` if the user declined or there were no changes.
+            In dry-run mode, this is the number of changes that would
+            be applied.
         """
         changes = self.get_changes()
         self.print_changes(changes)
