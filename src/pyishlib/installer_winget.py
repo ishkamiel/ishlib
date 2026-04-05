@@ -11,14 +11,15 @@ from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable
 from .command_runner import CommandRunner
 
+log = logging.getLogger(__name__)
+
 
 class InstallerWinget:
     """Helper class for managing packages via winget (Windows Package Manager)"""
 
     INSTALLER_NAME: str = "winget"
 
-    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
-        self.log: logging.Logger = log
+    def __init__(self, runner: CommandRunner) -> None:
         self.runner: CommandRunner = runner
         self._winget_checked: bool = False
         self._has_winget: bool = False
@@ -61,10 +62,10 @@ class InstallerWinget:
     def is_winget_pkg_installed(self, pkg) -> bool:
         """Check if a winget package is installed"""
         if not self.can_use_winget():
-            self.log.debug("winget not available")
+            log.debug("winget not available")
             return False
         if not self.can_use_winget(pkg):
-            self.log.debug("winget pkg not available for %s", pkg["name"])
+            log.debug("winget pkg not available for %s", pkg["name"])
             return False
 
         try:
@@ -79,7 +80,7 @@ class InstallerWinget:
                 output = output.decode("utf-8", errors="replace")
             return pkg["winget"] in output
         except CalledProcessError as e:
-            self.log.debug("winget error checking %s: %s", pkg["name"], e)
+            log.debug("winget error checking %s: %s", pkg["name"], e)
             return False
 
     def install_winget_pkgs(self, pkgs: Iterable[dict]) -> bool:
@@ -91,7 +92,7 @@ class InstallerWinget:
 
         for pkg in pkgs:
             pkg_id: str = pkg["winget"]
-            self.log.info("Installing with winget: %s", pkg_id)
+            log.info("Installing with winget: %s", pkg_id)
             try:
                 res: CompletedProcess = self.runner.run(
                     [
@@ -105,14 +106,14 @@ class InstallerWinget:
                     ]
                 )
                 if res.returncode != 0:
-                    self.log.critical(
+                    log.critical(
                         "winget error installing %s: returncode %d",
                         pkg_id,
                         res.returncode,
                     )
                     return False
             except CalledProcessError as e:
-                self.log.critical("winget error installing %s: %s", pkg_id, e)
+                log.critical("winget error installing %s: %s", pkg_id, e)
                 raise e
         return True
 

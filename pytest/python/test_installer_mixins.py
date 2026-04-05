@@ -25,11 +25,12 @@ from pyishlib.installer_cargo import InstallerCargo
 from pyishlib.installer_pip import InstallerPip
 from pyishlib.installer_winget import InstallerWinget
 from pyishlib.command_runner import CommandRunner
+from pyishlib.ish_config import IshConfig
 
 
 def make_runner(which_returns=None):
     """Create a CommandRunner with a mocked which method."""
-    runner = CommandRunner(dry_run=True)
+    runner = CommandRunner(cfg=IshConfig(dry_run=True))
 
     def mock_which(cmd):
         if which_returns is None:
@@ -40,54 +41,48 @@ def make_runner(which_returns=None):
     return runner
 
 
-def make_log():
-    """Create a logger for testing."""
-    log = logging.getLogger("test_installer")
-    log.setLevel(logging.DEBUG)
-    return log
-
-
 def make_installer(which_returns=None):
     """Create an Installer with a mocked runner."""
     runner = make_runner(which_returns)
-    installer = Installer(runner=runner, log_level=logging.DEBUG)
+    cfg = IshConfig(dry_run=True, log_level=logging.DEBUG)
+    installer = Installer(cfg=cfg, runner=runner)
     return installer
 
 
 class TestInstallerApt:
 
     def test_has_apt_true(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         assert apt.has_apt is True
 
     def test_has_apt_false(self):
-        apt = InstallerApt(make_log(), make_runner({}))
+        apt = InstallerApt(make_runner({}))
         assert apt.has_apt is False
 
     def test_has_apt_cached(self):
         runner = make_runner({"apt": "/usr/bin/apt"})
-        apt = InstallerApt(make_log(), runner)
+        apt = InstallerApt(runner)
         _ = apt.has_apt
         # Change which to return None — but result should be cached
         runner.which = lambda cmd: None
         assert apt.has_apt is True
 
     def test_can_use_apt_no_apt_key(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         pkg = {"name": "test", "pip": "test"}
         assert apt.can_use_apt(pkg) is False
 
     def test_can_use_apt_with_apt_key(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         pkg = {"name": "test", "apt": "test"}
         assert apt.can_use_apt(pkg) is True
 
     def test_can_use_apt_no_pkg(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         assert apt.can_use_apt() is True
 
     def test_get_apt_pkgs(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         pkgs = [
             {"name": "a", "apt": "a"},
             {"name": "b", "pip": "b"},
@@ -99,12 +94,12 @@ class TestInstallerApt:
         assert result[1]["name"] == "c"
 
     def test_is_apt_pkg_installed_no_apt(self):
-        apt = InstallerApt(make_log(), make_runner({}))
+        apt = InstallerApt(make_runner({}))
         pkg = {"name": "test", "apt": "test"}
         assert apt.is_apt_pkg_installed(pkg) is False
 
     def test_apt_namespace(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         ns = apt.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
@@ -113,7 +108,7 @@ class TestInstallerApt:
 
     def test_install_apt_pkgs_dry_run(self):
         runner = make_runner({"apt": "/usr/bin/apt"})
-        apt = InstallerApt(make_log(), runner)
+        apt = InstallerApt(runner)
         with patch.object(
             runner,
             "run_sudo",
@@ -125,7 +120,7 @@ class TestInstallerApt:
             mock_sudo.assert_called_once_with(["apt", "install", "-y", "test-pkg"])
 
     def test_install_apt_pkg_unless_found_already_installed(self):
-        apt = InstallerApt(make_log(), make_runner({"apt": "/usr/bin/apt"}))
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         with patch.object(apt, "is_apt_pkg_installed", return_value=True):
             pkg = {"name": "test", "apt": "test-pkg"}
             result = apt.install_apt_pkg_unless_found(pkg)
@@ -135,25 +130,25 @@ class TestInstallerApt:
 class TestInstallerPip:
 
     def test_has_pip_true(self):
-        pip = InstallerPip(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         assert pip.has_pip is True
 
     def test_has_pip_false(self):
-        pip = InstallerPip(make_log(), make_runner({}))
+        pip = InstallerPip(make_runner({}))
         assert pip.has_pip is False
 
     def test_can_use_pip_no_pip_key(self):
-        pip = InstallerPip(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         pkg = {"name": "test", "apt": "test"}
         assert pip.can_use_pip(pkg) is False
 
     def test_can_use_pip_with_pip_key(self):
-        pip = InstallerPip(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         pkg = {"name": "test", "pip": "test"}
         assert pip.can_use_pip(pkg) is True
 
     def test_get_pip_pkgs(self):
-        pip = InstallerPip(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         pkgs = [
             {"name": "a", "apt": "a"},
             {"name": "b", "pip": "b"},
@@ -163,7 +158,7 @@ class TestInstallerPip:
         assert result[0]["name"] == "b"
 
     def test_pip_namespace(self):
-        pip = InstallerPip(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         ns = pip.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
@@ -171,7 +166,7 @@ class TestInstallerPip:
 
     def test_install_pip_pkg_returns_value(self):
         runner = make_runner({"pip3": "/usr/bin/pip3"})
-        pip = InstallerPip(make_log(), runner)
+        pip = InstallerPip(runner)
         with patch.object(
             runner,
             "run",
@@ -185,25 +180,25 @@ class TestInstallerPip:
 class TestInstallerBrew:
 
     def test_has_brew_true(self):
-        brew = InstallerBrew(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
+        brew = InstallerBrew(make_runner({"brew": "/usr/local/bin/brew"}))
         assert brew.has_brew is True
 
     def test_has_brew_false(self):
-        brew = InstallerBrew(make_log(), make_runner({}))
+        brew = InstallerBrew(make_runner({}))
         assert brew.has_brew is False
 
     def test_can_use_brew_no_brew_key(self):
-        brew = InstallerBrew(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
+        brew = InstallerBrew(make_runner({"brew": "/usr/local/bin/brew"}))
         pkg = {"name": "test", "apt": "test"}
         assert brew.can_use_brew(pkg) is False
 
     def test_can_use_brew_with_brew_key(self):
-        brew = InstallerBrew(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
+        brew = InstallerBrew(make_runner({"brew": "/usr/local/bin/brew"}))
         pkg = {"name": "test", "brew": "test"}
         assert brew.can_use_brew(pkg) is True
 
     def test_brew_namespace(self):
-        brew = InstallerBrew(make_log(), make_runner({"brew": "/usr/local/bin/brew"}))
+        brew = InstallerBrew(make_runner({"brew": "/usr/local/bin/brew"}))
         ns = brew.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
@@ -211,7 +206,7 @@ class TestInstallerBrew:
 
     def test_install_brew_pkg_returns_value(self):
         runner = make_runner({"brew": "/usr/local/bin/brew"})
-        brew = InstallerBrew(make_log(), runner)
+        brew = InstallerBrew(runner)
         with patch.object(
             runner,
             "run",
@@ -225,25 +220,25 @@ class TestInstallerBrew:
 class TestInstallerCargo:
 
     def test_has_cargo_true(self):
-        cargo = InstallerCargo(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
+        cargo = InstallerCargo(make_runner({"cargo": "/usr/bin/cargo"}))
         assert cargo.has_cargo is True
 
     def test_has_cargo_false(self):
-        cargo = InstallerCargo(make_log(), make_runner({}))
+        cargo = InstallerCargo(make_runner({}))
         assert cargo.has_cargo is False
 
     def test_can_use_cargo_no_cargo_key(self):
-        cargo = InstallerCargo(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
+        cargo = InstallerCargo(make_runner({"cargo": "/usr/bin/cargo"}))
         pkg = {"name": "test", "apt": "test"}
         assert cargo.can_use_cargo(pkg) is False
 
     def test_can_use_cargo_with_cargo_key(self):
-        cargo = InstallerCargo(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
+        cargo = InstallerCargo(make_runner({"cargo": "/usr/bin/cargo"}))
         pkg = {"name": "test", "cargo": "test"}
         assert cargo.can_use_cargo(pkg) is True
 
     def test_cargo_namespace(self):
-        cargo = InstallerCargo(make_log(), make_runner({"cargo": "/usr/bin/cargo"}))
+        cargo = InstallerCargo(make_runner({"cargo": "/usr/bin/cargo"}))
         ns = cargo.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
@@ -251,7 +246,7 @@ class TestInstallerCargo:
 
     def test_install_cargo_pkg_returns_value(self):
         runner = make_runner({"cargo": "/usr/bin/cargo"})
-        cargo = InstallerCargo(make_log(), runner)
+        cargo = InstallerCargo(runner)
         with patch.object(
             runner,
             "run",
@@ -265,36 +260,36 @@ class TestInstallerCargo:
 class TestInstallerWinget:
 
     def test_has_winget_true(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         assert winget.has_winget is True
 
     def test_has_winget_false(self):
-        winget = InstallerWinget(make_log(), make_runner({}))
+        winget = InstallerWinget(make_runner({}))
         assert winget.has_winget is False
 
     def test_has_winget_cached(self):
         runner = make_runner({"winget": "C:\\winget.exe"})
-        winget = InstallerWinget(make_log(), runner)
+        winget = InstallerWinget(runner)
         _ = winget.has_winget
         runner.which = lambda cmd: None
         assert winget.has_winget is True
 
     def test_can_use_winget_no_winget_key(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         pkg = {"name": "test", "apt": "test"}
         assert winget.can_use_winget(pkg) is False
 
     def test_can_use_winget_with_winget_key(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         pkg = {"name": "test", "winget": "Test.App"}
         assert winget.can_use_winget(pkg) is True
 
     def test_can_use_winget_no_pkg(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         assert winget.can_use_winget() is True
 
     def test_get_winget_pkgs(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         pkgs = [
             {"name": "a", "winget": "A.App"},
             {"name": "b", "apt": "b"},
@@ -306,13 +301,13 @@ class TestInstallerWinget:
         assert result[1]["name"] == "c"
 
     def test_is_winget_pkg_installed_no_winget(self):
-        winget = InstallerWinget(make_log(), make_runner({}))
+        winget = InstallerWinget(make_runner({}))
         pkg = {"name": "test", "winget": "Test.App"}
         assert winget.is_winget_pkg_installed(pkg) is False
 
     def test_is_winget_pkg_installed_found(self):
         runner = make_runner({"winget": "C:\\winget.exe"})
-        winget = InstallerWinget(make_log(), runner)
+        winget = InstallerWinget(runner)
         pkg = {"name": "test", "winget": "Test.App"}
         with patch.object(
             runner,
@@ -330,7 +325,7 @@ class TestInstallerWinget:
 
     def test_is_winget_pkg_installed_not_found(self):
         runner = make_runner({"winget": "C:\\winget.exe"})
-        winget = InstallerWinget(make_log(), runner)
+        winget = InstallerWinget(runner)
         pkg = {"name": "test", "winget": "Test.App"}
         with patch.object(
             runner,
@@ -345,7 +340,7 @@ class TestInstallerWinget:
             assert winget.is_winget_pkg_installed(pkg) is False
 
     def test_winget_namespace(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         ns = winget.namespace
         assert hasattr(ns, "can_install")
         assert hasattr(ns, "install")
@@ -354,7 +349,7 @@ class TestInstallerWinget:
 
     def test_install_winget_pkg_returns_value(self):
         runner = make_runner({"winget": "C:\\winget.exe"})
-        winget = InstallerWinget(make_log(), runner)
+        winget = InstallerWinget(runner)
         with patch.object(
             runner,
             "run",
@@ -365,7 +360,7 @@ class TestInstallerWinget:
             assert result is True
 
     def test_install_winget_pkg_unless_found_already_installed(self):
-        winget = InstallerWinget(make_log(), make_runner({"winget": "C:\\winget.exe"}))
+        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         with patch.object(winget, "is_winget_pkg_installed", return_value=True):
             pkg = {"name": "test", "winget": "Test.App"}
             result = winget.install_winget_pkg_unless_found(pkg)
@@ -528,7 +523,7 @@ class TestInstallerPipWindowsSupport:
 
     def test_has_pip_fallback_to_pip(self):
         """When pip3 is not found, falls back to pip."""
-        pip = InstallerPip(make_log(), make_runner({"pip": "/usr/bin/pip"}))
+        pip = InstallerPip(make_runner({"pip": "/usr/bin/pip"}))
         assert pip.has_pip is True
         assert pip._pip_cmd == ["pip"]
 
@@ -537,20 +532,20 @@ class TestInstallerPipWindowsSupport:
         """On Windows, falls back to python -m pip when pip is not on PATH."""
         mock_sys.platform = "win32"
         mock_sys.executable = "C:\\Python39\\python.exe"
-        pip = InstallerPip(make_log(), make_runner({}))
+        pip = InstallerPip(make_runner({}))
         assert pip.has_pip is True
         assert pip._pip_cmd == ["C:\\Python39\\python.exe", "-m", "pip"]
 
     def test_pip_install_cmd_includes_user_flag(self):
         """pip install command always includes --user."""
-        pip = InstallerPip(make_log(), make_runner({"pip3": "/usr/bin/pip3"}))
+        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         cmd = pip.pip_install_cmd
         assert "--user" in cmd
 
     def test_has_pip_fallback_cached(self):
         """After fallback from pip3 to pip, result is cached."""
         runner = make_runner({"pip": "/usr/bin/pip"})
-        pip = InstallerPip(make_log(), runner)
+        pip = InstallerPip(runner)
         _ = pip.has_pip
         # Change which to return None — but result should be cached
         runner.which = lambda cmd: None
@@ -564,7 +559,7 @@ class TestCommandRunnerWindowsSupport:
     def test_run_sudo_raises_on_windows(self, mock_sys):
         """run_sudo raises OSError on Windows."""
         mock_sys.platform = "win32"
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         with pytest.raises(OSError, match="sudo is not available on Windows"):
             runner.run_sudo(["apt", "update"])
 
@@ -572,19 +567,19 @@ class TestCommandRunnerWindowsSupport:
     def test_on_ubuntu_false_on_windows(self, mock_sys):
         """on_ubuntu() returns False on Windows without calling uname."""
         mock_sys.platform = "win32"
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         assert runner.on_ubuntu() is False
 
     @patch("pyishlib.command_runner.sys")
     def test_on_ubuntu_desktop_false_on_windows(self, mock_sys):
         """on_ubuntu_desktop() returns False on Windows."""
         mock_sys.platform = "win32"
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         assert runner.on_ubuntu_desktop() is False
 
     def test_on_ubuntu_dry_run_no_type_error(self):
         """on_ubuntu() handles dry-run mode without TypeError from bytes/str mismatch."""
-        runner = CommandRunner(dry_run=True)
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
         # In dry-run mode, run() returns stdout=b"", which must not cause
         # a TypeError when checking 'in' against a string.
         result = runner.on_ubuntu()

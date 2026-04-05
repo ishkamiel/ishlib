@@ -5,21 +5,30 @@
 # Distributed under terms of the MIT license.
 """Helper commands for running commands and common shell tasks"""
 
+import logging
 import subprocess
 import sys
 import os
 from pathlib import Path
 import shutil
 from typing import Optional, Iterable
-from .ish_comp import IshComp
+
+from .ish_config import IshConfig
+from .ish_comp import prompt_yes_no_always
+
+log = logging.getLogger(__name__)
 
 
-class CommandRunner(IshComp):
+class CommandRunner:
     """Helper class for running commands and common shell tasks"""
 
-    def __init__(self, always_sudo: Optional[bool] = False, **kwargs) -> None:
-        self._always_sudo: Optional[bool] = always_sudo
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        cfg: Optional[IshConfig] = None,
+        always_sudo: bool = False,
+    ) -> None:
+        self.cfg: IshConfig = cfg if cfg is not None else IshConfig()
+        self._always_sudo: bool = always_sudo
 
     @property
     def on_windows(self) -> bool:
@@ -29,20 +38,30 @@ class CommandRunner(IshComp):
     @property
     def dry_run(self) -> bool:
         """Is dry-run mode enabled"""
-        return self._get_opt("dry_run", False)
+        return self.cfg.dry_run
+
+    @dry_run.setter
+    def dry_run(self, dry_run: bool) -> None:
+        self.cfg.dry_run = dry_run
+
+    @property
+    def verbose(self) -> bool:
+        """Is verbose mode enabled"""
+        return self.cfg.verbose
+
+    @property
+    def quiet(self) -> bool:
+        """Is quiet mode enabled"""
+        return self.cfg.quiet
 
     @property
     def always_sudo(self) -> bool:
         """Is always-sudo mode enabled, i.e., sudo without asking"""
-        return self._get_opt("always_sudo", False)
+        return self._always_sudo
 
     @always_sudo.setter
     def always_sudo(self, always_sudo: bool) -> None:
         self._always_sudo = always_sudo
-
-    @dry_run.setter
-    def dry_run(self, dry_run: bool) -> None:
-        self._dry_run = dry_run
 
     def run_sudo(
         self, command: Iterable[str], force_sudo: Optional[bool] = False, **kwargs
@@ -111,16 +130,16 @@ class CommandRunner(IshComp):
     ) -> bool:
         """Change directory to path, optionally creating it if it does not exist"""
         if os.getcwd() == str(path):
-            self.log.debug("Already in directory %s, skipping chdir", path)
+            log.debug("Already in directory %s, skipping chdir", path)
             return True
 
         if not path.exists():
             if mkdir:
                 self.mkdir(path)
             else:
-                self.log.error("Path %s does not exist, cannot chdir", path)
+                log.error("Path %s does not exist, cannot chdir", path)
                 if not may_fail:
-                    self.die(f"Path {path} does not exist, stopping")
+                    die(f"Path {path} does not exist, stopping")
                 return False
 
         self._print_cmd([f"cd {path}"])
@@ -133,7 +152,7 @@ class CommandRunner(IshComp):
     def rm(self, path: Path, recursive: Optional[bool] = False) -> bool:
         """Remove path, optionally recursively"""
         if not path.exists():
-            self.log.debug("Path %s does not exist, skipping delete", path)
+            log.debug("Path %s does not exist, skipping delete", path)
             return True
 
         self._print_rm(path, recursive)
@@ -149,7 +168,7 @@ class CommandRunner(IshComp):
     def mkdir(self, path: Path, parents: Optional[bool] = False) -> bool:
         """Create path, optionally creating parent directories"""
         if path.exists():
-            self.log.debug("Path %s already exists, skipping mkdir", path)
+            log.debug("Path %s already exists, skipping mkdir", path)
             return True
 
         self._print_mkdir(path, parents)
@@ -187,12 +206,12 @@ class CommandRunner(IshComp):
         if self.on_windows:
             return False
         if not self.on_ubuntu():
-            self.log.info("Not running on Ubuntu")
+            log.info("Not running on Ubuntu")
             return False
 
         session_type = os.getenv("XDG_SESSION_TYPE")
         if session_type not in ["x11", "wayland"]:
-            self.log.info("Not running on X11/Wayland")
+            log.info("Not running on X11/Wayland")
             return False
         return True
 
@@ -202,9 +221,9 @@ class CommandRunner(IshComp):
 
     def _print_cmd(self, command: Iterable[str]) -> None:
         cmd_str: str = " ".join([str(c) for c in command])
-        self.log.debug("_print_cmd: %s", cmd_str)
+        log.debug("_print_cmd: %s", cmd_str)
         if self.verbose or self.dry_run:
-            self.print(cmd_str)
+            print(cmd_str)
 
     def _print_rm(self, path: Path, recursive: Optional[bool] = False) -> None:
         if self.quiet:
@@ -228,8 +247,8 @@ class CommandRunner(IshComp):
         self, msg: str, is_fatal: Optional[bool] = False, exit_code: Optional[int] = 1
     ) -> None:
         if is_fatal:
-            self.die(msg, exit_code)
-        self.log.error(msg)
+            die(msg, exit_code)
+        log.error(msg)
 
     def _check_sudo(
         self, command: Iterable[str], force_sudo: Optional[bool] = False
@@ -238,10 +257,16 @@ class CommandRunner(IshComp):
             return True
 
         if self.dry_run:
-            self.log.info("Dry run, skipping sudo check")
+            log.info("Dry run, skipping sudo check")
             return True
 
-        choice = self.prompt_yes_no_always(f"Going to run {' '.join(command)}")
+        choice = prompt_yes_no_always(f"Going to run {' '.join(command)}")
         if choice.always:
             self._always_sudo = True
         return choice.yes
+
+
+def die(msg: str, exit_code: int = 1):
+    """Log a critical message and exit"""
+    log.critical(msg)
+    sys.exit(exit_code)

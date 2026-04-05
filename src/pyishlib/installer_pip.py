@@ -12,6 +12,8 @@ from subprocess import CompletedProcess, CalledProcessError
 from typing import Any, Optional, Iterable, Mapping
 from .command_runner import CommandRunner
 
+log = logging.getLogger(__name__)
+
 
 class InstallerPip:
     """Helper class for managing python packages via pip"""
@@ -23,8 +25,7 @@ class InstallerPip:
         "pip": "pip",
     }
 
-    def __init__(self, log: logging.Logger, runner: CommandRunner) -> None:
-        self.log: logging.Logger = log
+    def __init__(self, runner: CommandRunner) -> None:
         self.runner: CommandRunner = runner
         self._pip_checked: bool = False
         self._has_pip: bool = False
@@ -101,10 +102,10 @@ class InstallerPip:
         """Check if a pip package is installed"""
 
         if not self.can_use_pip():
-            self.log.debug("Pip not available")
+            log.debug("Pip not available")
             return False
         if not self.can_use_pip(pkg):
-            self.log.debug("Pip pkg not available for %s", pkg["name"])
+            log.debug("Pip pkg not available for %s", pkg["name"])
             return False
 
         try:
@@ -116,7 +117,7 @@ class InstallerPip:
             )
             return pkg["pip"] in result.stdout.decode("utf-8")
         except CalledProcessError as e:
-            self.log.debug("Pip error checking %s: %s", pkg["name"], e)
+            log.debug("Pip error checking %s: %s", pkg["name"], e)
             return False
 
     def install_pip_pkgs(self, pkgs: Iterable[dict]) -> bool:
@@ -129,14 +130,14 @@ class InstallerPip:
 
         pkg_list: Iterable[str] = [pkg["pip"] for pkg in pkgs]
 
-        self.log.info("Installing with pip: %s", " ".join(pkg_list))
+        log.info("Installing with pip: %s", " ".join(pkg_list))
         try:
             res: CompletedProcess = self.runner.run(
                 list(self.pip_install_cmd) + pkg_list
             )
             return res.returncode == 0
         except CalledProcessError as e:
-            self.log.critical("Pip error installing %s: %s", " ".join(pkg_list), e)
+            log.critical("Pip error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
     def install_pip_pkg(self, pkg) -> bool:
@@ -156,7 +157,7 @@ class InstallerPip:
 
         self.install_pip_pkg_unless_found(self.PIP_UPDATE_PKG)
         self.runner.run(list(self._pip_cmd) + ["install", "--upgrade", "pip"])
-        self.log.warning("pip update not implemented (only updates pip itself)")
+        log.warning("pip update not implemented (only updates pip itself)")
         return True
 
     def update_and_install_pip_pkgs(self, pkgs):

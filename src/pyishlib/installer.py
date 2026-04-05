@@ -5,36 +5,38 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+import logging
 from typing import Any, Optional, Iterable, Mapping
+
+from .ish_config import IshConfig
 from .command_runner import CommandRunner
-from .ish_comp import IshComp
 from .installer_cargo import InstallerCargo
 from .installer_apt import InstallerApt
 from .installer_pip import InstallerPip
 from .installer_brew import InstallerBrew
 from .installer_winget import InstallerWinget
 
+log = logging.getLogger(__name__)
 
-class Installer(IshComp):
+
+class Installer:
     """Installer class for installing packages."""
 
-    def __init__(self, runner: Optional[CommandRunner] = None, **kwargs: Any) -> None:
-        IshComp.__init__(self, **kwargs)
+    def __init__(
+        self,
+        cfg: Optional[IshConfig] = None,
+        runner: Optional[CommandRunner] = None,
+    ) -> None:
+        self.cfg: IshConfig = cfg if cfg is not None else IshConfig()
         self._backends: dict = {}
         self.runner: CommandRunner = (
-            runner
-            if runner is not None
-            else CommandRunner(
-                args=self._args,
-                conf=self._conf,
-                dry_run=self._dry_run,
-            )
+            runner if runner is not None else CommandRunner(cfg=self.cfg)
         )
-        self.register_installer(InstallerApt(self.log, self.runner))
-        self.register_installer(InstallerCargo(self.log, self.runner))
-        self.register_installer(InstallerPip(self.log, self.runner))
-        self.register_installer(InstallerBrew(self.log, self.runner))
-        self.register_installer(InstallerWinget(self.log, self.runner))
+        self.register_installer(InstallerApt(self.runner))
+        self.register_installer(InstallerCargo(self.runner))
+        self.register_installer(InstallerPip(self.runner))
+        self.register_installer(InstallerBrew(self.runner))
+        self.register_installer(InstallerWinget(self.runner))
 
     def register_installer(self, backend: Any) -> None:
         """Register an installer backend.
@@ -50,7 +52,7 @@ class Installer(IshComp):
     def get_backend(self, name: str) -> Any:
         """Get an installer backend instance by name."""
         if name not in self._backends:
-            self.log.critical("Installer backend %s not found", name)
+            log.critical("Installer backend %s not found", name)
             raise ValueError(f"Installer backend {name} not found")
         return self._backends[name]
 
@@ -70,7 +72,7 @@ class Installer(IshComp):
         for i in self._backends:
             if self.installer(i).can_install(pkg):
                 return i
-        self.log.debug("No installer found for %s", pkg["name"])
+        log.debug("No installer found for %s", pkg["name"])
         return None
 
     def install_pkgs(self, pkgs: Iterable[Mapping]) -> bool:
@@ -86,7 +88,7 @@ class Installer(IshComp):
             if installer is not None:
                 to_install[installer].append(pkg)
                 continue
-            self.log.error("No installer found for %s", pkg["name"])
+            log.error("No installer found for %s", pkg["name"])
 
         # Finally, install the packages
         for i, i_pkgs in to_install.items():
@@ -101,24 +103,24 @@ class Installer(IshComp):
         if "cmd" in package:
             found_checker = True
             if self.runner.which(package["cmd"]) is not None:
-                self.log.debug(
+                log.debug(
                     "Package %s installed, found command %s",
                     package["name"],
                     package["cmd"],
                 )
                 return True
-            self.log.debug("Did not find %s with which", package["cmd"])
+            log.debug("Did not find %s with which", package["cmd"])
         for i in self._backends:
             ns = self.installer(i)
             if ns.can_install(package):
                 found_checker = True
                 if ns.is_installed(package):
-                    self.log.debug("Package %s installed with %s", package["name"], i)
+                    log.debug("Package %s installed with %s", package["name"], i)
                     return True
-                self.log.debug("Package %s not installed with %s", package["name"], i)
+                log.debug("Package %s not installed with %s", package["name"], i)
 
         if not found_checker:
-            self.log.error("Cannot check if %s is installed", package["name"])
+            log.error("Cannot check if %s is installed", package["name"])
         return False
 
     def install_pkg(self, pkg: dict) -> bool:

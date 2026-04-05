@@ -3,12 +3,12 @@
 # Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-"""Some common functionality for internal ishpy use"""
+"""Common utilities for pyishlib: logging setup, prompts, and enums."""
 
 import sys
-from enum import Enum
-from typing import Optional, Any, NoReturn
 import logging
+from enum import Enum
+from typing import NoReturn
 
 
 class Choice(Enum):
@@ -51,100 +51,30 @@ class IshLogFormatter(logging.Formatter):
         return super().format(record)
 
 
-class IshComp:
-    """Base class for all ishlib classes"""
+def setup_logging(log_level: int = logging.WARNING) -> None:
+    """Configure the ``pyishlib`` package logger once.
 
-    def __init__(
-        self,
-        args: Optional[Any] = None,
-        conf: Optional[Any] = None,
-        dry_run: Optional[bool] = None,
-        log_level: Optional[int] = None,
-    ) -> None:
-        self._args: Optional[Any] = args
-        self._conf: Optional[Any] = conf
-        self._dry_run: Optional[bool] = dry_run
+    Call this at the application entry point (CLI ``main``, script top-level,
+    etc.).  Individual modules obtain their own loggers with
+    ``logging.getLogger(__name__)`` and inherit this configuration.
+    """
+    pkg_logger = logging.getLogger("pyishlib")
+    pkg_logger.handlers.clear()
+    handler = logging.StreamHandler()
+    handler.setFormatter(IshLogFormatter())
+    pkg_logger.addHandler(handler)
+    pkg_logger.setLevel(log_level)
 
-        # Start logging facilities
-        self.log: logging.Logger = logging.getLogger(__name__)
-        handler = logging.StreamHandler()
-        handler.setFormatter(IshLogFormatter())
-        self.log.handlers.clear()  # Remove any existing handlers
-        self.log.addHandler(handler)
-        if log_level is None:
-            if self._get_opt("debug", False):
-                log_level = logging.DEBUG
-            elif self._get_opt("verbose", False):
-                log_level = logging.INFO
-            elif self._get_opt("quiet", False):
-                log_level = logging.ERROR
-            else:
-                log_level = logging.WARNING
-        self.log.setLevel(log_level)
-        self.log.debug(
-            "Log level set to %s (%d)", logging.getLevelName(log_level), log_level
-        )
 
-    @property
-    def debug(self) -> bool:
-        """Is debug mode enabled, either by args, config, or explicitly"""
-        return self.log.level <= logging.DEBUG
+def prompt_yes_no_always(msg: str) -> Choice:
+    """Prompt for a yes/no/always choice on *stdin*."""
+    while True:
+        choice: str = input(f"{msg} [y/n/A] (Ctr-C to abort): ").strip().lower()
+        if choice in ["y", "n", "a"]:
+            return Choice(choice)
 
-    @property
-    def verbose(self) -> bool:
-        """Is verbose mode enabled, either by args, config, or explicitly"""
-        return self.log.level <= logging.INFO
 
-    @property
-    def quiet(self) -> bool:
-        """Is quiet mode enabled, either by args, config, or explicitly"""
-        return self.log.level >= logging.ERROR
-
-    @property
-    def dry_run(self) -> bool:
-        """Is dry-run mode enabled, either by args, config, or explicitly"""
-        return self._get_opt("dry_run", False)
-
-    def set_dry_run(self, quiet: bool) -> None:
-        """Set dry-run mode"""
-        self._dry_run = quiet
-
-    def set_args(self, args: Any) -> None:
-        """Set optional the arguments object, assuming argparse behavior"""
-        self._args = args
-
-    def set_conf(self, conf: Any) -> None:
-        """Set the configuration object, e.g., a json or tomlib file"""
-        self._conf = conf
-
-    def set_log_level(self, log_level: int) -> None:
-        """Set the log level"""
-        self.log.setLevel(log_level)
-        self.log.debug("Log level set to %s", logging.getLevelName(log_level))
-
-    def die(self, msg: str, exit_code: int = 1) -> NoReturn:
-        """Log a critical message and exit"""
-        self.log.critical(msg)
-        sys.exit(exit_code)
-
-    def print(self, msg: str) -> None:
-        """Print message without any decoration or prefix"""
-        print(msg)
-
-    def prompt_yes_no_always(self, msg: str) -> Choice:
-        """Prompt for a yes/no/always choice"""
-        while True:
-            choice: str = input(f"{msg} [y/n/A] (Ctr-C to abort): ").strip().lower()
-            if choice in ["y", "n", "a"]:
-                return Choice(choice)
-
-    def _get_opt(self, opt: str, default: Optional[Any] = None) -> Any:
-        if self._args is not None and hasattr(self._args, opt):
-            return getattr(self._args, opt)
-        if self._conf is not None and hasattr(self._conf, opt):
-            return getattr(self._conf, opt)
-        if hasattr(self, f"_{opt}"):
-            val = getattr(self, f"_{opt}")
-            if val is not None:
-                return val
-        return default
+def die(msg: str, exit_code: int = 1) -> NoReturn:
+    """Log a critical message and exit."""
+    logging.getLogger("pyishlib").critical(msg)
+    sys.exit(exit_code)

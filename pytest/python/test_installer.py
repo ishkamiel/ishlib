@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 from pyishlib.installer import Installer
 from pyishlib.command_runner import CommandRunner
+from pyishlib.ish_config import IshConfig
 import logging
 import subprocess
 
@@ -18,9 +19,9 @@ class TestInstaller(unittest.TestCase):
     @patch("pyishlib.installer.CommandRunner.which", return_value="fakecmd")
     # @patch("pyishlib.installer.CommandRunner.run", return_value=subprocess.CompletedProcess(args=[], returncode=0))
     def test_is_installed(self, mock_which):
-        runner = CommandRunner(dry_run=True)
-        installer = Installer(runner=runner)
-        # installer.set_log_level(logging.DEBUG)
+        cfg = IshConfig(dry_run=True)
+        runner = CommandRunner(cfg=cfg)
+        installer = Installer(cfg=cfg, runner=runner)
 
         pkg_config = {"name": "fakepkg", "apt": "fakepkg", "cmd": "fakecmd"}
 
@@ -41,9 +42,9 @@ class TestInstaller(unittest.TestCase):
         return_value=subprocess.CompletedProcess(args=[], returncode=0),
     )
     def test_apt(self, mock_run, mock_which):
-        runner = CommandRunner(dry_run=True)
-        installer = Installer(runner=runner)
-        installer.set_log_level(logging.DEBUG)
+        cfg = IshConfig(dry_run=True, log_level=logging.DEBUG)
+        runner = CommandRunner(cfg=cfg)
+        installer = Installer(cfg=cfg, runner=runner)
 
         pkg_config = {"name": "fakepkg", "apt": "fakepkg", "cmd": "fakecmd"}
         install_package_result: bool = installer.install_pkg(pkg_config)

@@ -35,14 +35,17 @@ from .dotfile import (
     is_ignored,
     load_ignore_file,
 )
-from .ish_comp import IshComp
+from .ish_config import IshConfig
+from .ish_comp import prompt_yes_no_always, setup_logging
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # DotfileApplier
 # ---------------------------------------------------------------------------
 
 
-class DotfileApplier(IshComp):
+class DotfileApplier:
     """Three-stage dotfile applier.
 
     1. :meth:`discover` -- find dotfiles in *source_dir* or from an
@@ -55,21 +58,21 @@ class DotfileApplier(IshComp):
     Args:
         source_dir: Root of the dotfile repository.
         target_dir: Installation target (default ``$HOME``).
+        cfg: Shared :class:`IshConfig` (created automatically if *None*).
         runner: Optional :class:`CommandRunner` (created automatically
                 if *None*).
         ignore: Extra names to ignore on top of :data:`DEFAULT_IGNORE`.
-        **kwargs: Forwarded to :class:`IshComp`.
     """
 
     def __init__(
         self,
         source_dir: Path,
         target_dir: Optional[Path] = None,
+        cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
         ignore: Optional[frozenset] = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        self.cfg: IshConfig = cfg if cfg is not None else IshConfig()
         self._source_dir: Path = Path(source_dir)
         self._target_dir: Path = (
             Path(target_dir) if target_dir is not None else Path.home()
@@ -79,14 +82,9 @@ class DotfileApplier(IshComp):
             self._source_dir / DOTFILEIGNORE
         )
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
-
-        if runner is not None:
-            self.runner: CommandRunner = runner
-        else:
-            self.runner = CommandRunner(
-                args=self._args, conf=self._conf, dry_run=self._dry_run
-            )
-        self.runner.dry_run = self.dry_run
+        self.runner: CommandRunner = (
+            runner if runner is not None else CommandRunner(cfg=self.cfg)
+        )
 
     @property
     def source_dir(self) -> Path:
@@ -133,7 +131,7 @@ class DotfileApplier(IshComp):
     ) -> None:
         for entry in sorted(current.iterdir()):
             if is_ignored(entry.name, self._ignore, self._ignore_patterns):
-                self.log.debug("Ignoring %s", entry)
+                log.debug("Ignoring %s", entry)
                 continue
 
             rel = rel_prefix / entry.name if rel_prefix != Path() else Path(entry.name)
@@ -149,7 +147,7 @@ class DotfileApplier(IshComp):
         for rel in files:
             source = self._source_dir / rel
             if not source.is_file():
-                self.log.warning("File not found, skipping: %s", source)
+                log.warning("File not found, skipping: %s", source)
                 continue
             dotfiles.append(DotFile(source, rel, self._target_dir))
         dotfiles.sort(key=lambda df: df.translated)
@@ -178,7 +176,7 @@ class DotfileApplier(IshComp):
             staged_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dotfile.source, staged_path)
             dotfile.staged = staged_path
-            self.log.debug("Staged %s -> %s", dotfile.source, staged_path)
+            log.debug("Staged %s -> %s", dotfile.source, staged_path)
 
         return dotfiles
 
@@ -199,20 +197,20 @@ class DotfileApplier(IshComp):
             if change is not None:
                 changed.append(dotfile)
             else:
-                self.log.debug("Unchanged: %s", dotfile.target)
+                log.debug("Unchanged: %s", dotfile.target)
         return changed
 
     def print_changes(self, changes: List[DotFile]) -> None:
         """Print a human-readable summary of pending changes."""
         if not changes:
-            self.print("No changes to apply.")
+            print("No changes to apply.")
             return
 
-        self.print(f"Changes to apply ({len(changes)}):")
+        print(f"Changes to apply ({len(changes)}):")
         for dotfile in changes:
             change = dotfile.get_change_type()
             label = "NEW" if change == ChangeType.NEW else "MOD"
-            self.print(f"  [{label}] {dotfile.target}")
+            print(f"  [{label}] {dotfile.target}")
 
     def apply_changes(self, changes: List[DotFile]) -> int:
         """Copy changed files into the target directory.
@@ -228,9 +226,7 @@ class DotfileApplier(IshComp):
         for dotfile in changes:
             if self.runner.copy(dotfile.effective_source, dotfile.target):
                 applied += 1
-                self.log.info(
-                    "Applied %s -> %s", dotfile.effective_source, dotfile.target
-                )
+                log.info("Applied %s -> %s", dotfile.effective_source, dotfile.target)
         return applied
 
     # -- Full pipeline -------------------------------------------------------
@@ -254,10 +250,10 @@ class DotfileApplier(IshComp):
         if not changes:
             return 0
 
-        if not self.dry_run:
-            choice = self.prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
+        if not self.cfg.dry_run:
+            choice = prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
             if choice.no:
-                self.print("Aborted.")
+                print("Aborted.")
                 return 0
 
         return self.apply_changes(changes)
@@ -266,8 +262,6 @@ class DotfileApplier(IshComp):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-
-log = logging.getLogger(__name__)
 
 
 def register_cli(subparsers: argparse._SubParsersAction) -> None:
@@ -346,13 +340,17 @@ def _build_applier(args: argparse.Namespace) -> DotfileApplier:
         ignore = ignore | frozenset(args.ignore)
 
     log_level = logging.INFO if getattr(args, "verbose", False) else logging.WARNING
+    cfg = IshConfig(
+        dry_run=getattr(args, "dry_run", False),
+        log_level=log_level,
+    )
+    setup_logging(cfg.log_level)
 
     return DotfileApplier(
         source_dir=args.source,
         target_dir=args.target,
+        cfg=cfg,
         ignore=ignore,
-        dry_run=getattr(args, "dry_run", False),
-        log_level=log_level,
     )
 
 
