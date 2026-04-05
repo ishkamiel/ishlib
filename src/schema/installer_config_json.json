@@ -30,6 +30,9 @@
         },
         "ubuntu": {
           "type": "boolean"
+        },
+        "winget": {
+          "type": "string"
         }
       },
       "required": [],
