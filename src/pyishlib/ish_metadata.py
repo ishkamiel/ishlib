@@ -24,10 +24,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, Optional, Set, Tuple, Union
 
 try:
     import tomllib  # Python 3.11+
@@ -43,8 +42,6 @@ except ModuleNotFoundError:
 
 log = logging.getLogger(__name__)
 
-_SENTINEL = "__ISH__"
-
 # Pattern: : <<'__ISH__' ... __ISH__
 _RE_SHELL_HEREDOC = re.compile(
     r"""^[ \t]*:[ \t]+<<\s*['"]?__ISH__['"]?\s*$""" r"""(.*?)""" r"""^__ISH__\s*$""",
@@ -59,7 +56,7 @@ _RE_PYTHON_ASSIGN = re.compile(
 
 # Pattern: <#__ISH__ ... __ISH__#>
 _RE_POWERSHELL_BLOCK = re.compile(
-    r"""<#__ISH__\s*?\n""" r"""(.*?)""" r"""^__ISH__#>""",
+    r"""<#__ISH__\s*?\r?\n""" r"""(.*?)""" r"""^__ISH__#>""",
     re.MULTILINE | re.DOTALL,
 )
 
@@ -80,7 +77,10 @@ def _parse_toml(text: str) -> Dict[str, Any]:
             "TOML support requires Python 3.11+ (tomllib) "
             "or the 'tomli' package for older Python versions"
         )
-    return tomllib.loads(text)
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"Invalid TOML metadata: {e}") from e
 
 
 def _strip_comment_prefix(body: str, prefix: str) -> str:
@@ -137,7 +137,7 @@ def _read_sidecar(file_path: Path) -> Optional[str]:
     return None
 
 
-def read_metadata(file_path: str | Path) -> Optional[Dict[str, Any]]:
+def read_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     """Read __ISH__ metadata from a file.
 
     Tries embedded metadata first, then falls back to a .ish sidecar file.
@@ -157,7 +157,7 @@ def read_metadata(file_path: str | Path) -> Optional[Dict[str, Any]]:
     # Try embedded metadata
     try:
         text = file_path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
+    except UnicodeDecodeError:
         text = None
 
     if text is not None:
@@ -174,7 +174,7 @@ def read_metadata(file_path: str | Path) -> Optional[Dict[str, Any]]:
 
 
 def scan_directory(
-    directory: str | Path,
+    directory: Union[str, Path],
     extensions: Optional[Set[str]] = None,
     recursive: bool = True,
 ) -> Iterator[Tuple[Path, Dict[str, Any]]]:
@@ -192,7 +192,7 @@ def scan_directory(
     directory = Path(directory)
     walker = directory.rglob("*") if recursive else directory.glob("*")
 
-    for path in sorted(walker):
+    for path in walker:
         if not path.is_file():
             continue
         if extensions and path.suffix not in extensions:
@@ -254,43 +254,40 @@ def _cli_main(argv=None):
         if meta is None:
             print(f"No __ISH__ metadata found in {args.file}")
             return 1
-        _print_output(meta, args.format, label=str(args.file))
+        _print_output(meta, args.format)
         return 0
 
     if args.command == "scan":
         exts = set(args.extensions) if args.extensions else None
-        found = False
-        for path, meta in scan_directory(
-            args.directory,
-            extensions=exts,
-            recursive=not args.no_recursive,
-        ):
-            found = True
-            _print_output(meta, args.format, label=str(path))
-        if not found:
+        results = {
+            str(path): meta
+            for path, meta in scan_directory(
+                args.directory,
+                extensions=exts,
+                recursive=not args.no_recursive,
+            )
+        }
+        if not results:
             print("No files with __ISH__ metadata found.")
             return 1
+        _print_output(results, args.format)
         return 0
 
     return 1
 
 
-def _print_output(meta: Dict[str, Any], fmt: str, label: str = "") -> None:
+def _print_output(data: Dict[str, Any], fmt: str) -> None:
     """Print metadata in the requested format."""
-    if label:
-        print(f"--- {label} ---")
-
     if fmt == "toml":
         try:
             import tomli_w
 
-            print(tomli_w.dumps(meta))
+            print(tomli_w.dumps(data))
         except ImportError:
-            # Simple fallback: print as TOML-ish key=value
-            print(json.dumps(meta, indent=2))
+            print(json.dumps(data, indent=2))
             log.warning("tomli_w not installed, falling back to JSON output")
     else:
-        print(json.dumps(meta, indent=2))
+        print(json.dumps(data, indent=2))
 
 
 if __name__ == "__main__":
