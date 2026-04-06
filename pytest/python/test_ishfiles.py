@@ -324,54 +324,94 @@ class TestReverseTranslation:
 
 
 # ---------------------------------------------------------------------------
-# resolve
+# DotfileFinder
 # ---------------------------------------------------------------------------
 
 
-class TestResolveFileArgs:
+class TestDotfileFinder:
+
+    def _make_finder(self, src, tgt):
+        from pyishlib.dotfile_finder import DotfileFinder
+        from pyishlib.ish_config import IshConfig
+
+        cfg = IshConfig(defaults={"source": src, "target": tgt})
+        return DotfileFinder(cfg)
 
     def test_resolve_source_path(self):
-        from pyishlib.ishfiles.resolve import resolve_file_arg
-
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            result = resolve_file_arg("dot_bashrc", Path(src), Path(tgt))
-            assert result == Path("dot_bashrc")
+            finder = self._make_finder(src, tgt)
+            df = finder.get("dot_bashrc")
+            assert df is not None
+            assert df.rel_path == Path("dot_bashrc")
+            assert df.translated == Path(".bashrc")
 
     def test_resolve_target_name(self):
-        from pyishlib.ishfiles.resolve import resolve_file_arg
-
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            result = resolve_file_arg(".bashrc", Path(src), Path(tgt))
-            assert result == Path("dot_bashrc")
+            finder = self._make_finder(src, tgt)
+            df = finder.get(".bashrc")
+            assert df is not None
+            assert df.rel_path == Path("dot_bashrc")
 
     def test_resolve_absolute_source(self):
-        from pyishlib.ishfiles.resolve import resolve_file_arg
-
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            result = resolve_file_arg(
-                str(Path(src) / "dot_bashrc"), Path(src), Path(tgt)
-            )
-            assert result == Path("dot_bashrc")
+            finder = self._make_finder(src, tgt)
+            df = finder.get(str(Path(src) / "dot_bashrc"))
+            assert df is not None
+            assert df.rel_path == Path("dot_bashrc")
 
     def test_resolve_absolute_target(self):
-        from pyishlib.ishfiles.resolve import resolve_file_arg
-
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            result = resolve_file_arg(str(Path(tgt) / ".bashrc"), Path(src), Path(tgt))
-            assert result == Path("dot_bashrc")
+            finder = self._make_finder(src, tgt)
+            df = finder.get(str(Path(tgt) / ".bashrc"))
+            assert df is not None
+            assert df.rel_path == Path("dot_bashrc")
 
     def test_resolve_unresolvable(self):
-        from pyishlib.ishfiles.resolve import resolve_file_arg
-
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            result = resolve_file_arg(
-                "/completely/unrelated/path", Path(src), Path(tgt)
-            )
-            assert result is None
+            finder = self._make_finder(src, tgt)
+            df = finder.get("/completely/unrelated/path")
+            assert df is None
+
+    def test_get_all(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            _make_file(Path(src) / "dot_vimrc", "content\n")
+            finder = self._make_finder(src, tgt)
+            results = finder.get_all([".bashrc", ".vimrc"])
+            assert len(results) == 2
+            names = {df.rel_path for df in results}
+            assert Path("dot_bashrc") in names
+            assert Path("dot_vimrc") in names
+
+    def test_get_rel_paths(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            finder = self._make_finder(src, tgt)
+            paths = finder.get_rel_paths([".bashrc", str(Path(src) / "dot_bashrc")])
+            assert Path("dot_bashrc") in paths
+
+    def test_translate_arg_known_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            finder = self._make_finder(src, tgt)
+            assert finder.translate_arg(".bashrc") == "dot_bashrc"
+
+    def test_translate_arg_unknown_stays(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            finder = self._make_finder(src, tgt)
+            assert finder.translate_arg("--verbose") == "--verbose"
+
+    def test_dotfile_has_correct_target(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            finder = self._make_finder(src, tgt)
+            df = finder.get("dot_bashrc")
+            assert df.target == Path(tgt) / ".bashrc"
+            assert df.source == Path(src) / "dot_bashrc"
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +436,32 @@ class TestGitCommand:
                 ["--source", "/nonexistent/dir", "--target", tgt, "git", "status"]
             )
             assert ret == 1
+
+    def test_git_translates_target_paths(self):
+        """Target-style paths like ~/.bashrc are translated for git."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            import subprocess
+
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            subprocess.run(["git", "init", src], check=True, capture_output=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=src, check=True, capture_output=True
+            )
+
+            # 'git diff' on a target path should translate it
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "git",
+                    "diff",
+                    "--name-only",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+            assert ret == 0
 
 
 # ---------------------------------------------------------------------------

@@ -10,9 +10,9 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from pathlib import Path
 
 from ...ish_config import IshConfig
+from ..applier import make_finder
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -32,17 +32,23 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 def run(cfg: IshConfig) -> int:
     """Execute a git command in the dotfiles source directory.
 
+    File-path arguments that resolve to known dotfiles are translated
+    to their source-relative equivalents so that, for example,
+    ``ishfiles git diff ~/.bashrc`` becomes ``git diff dot_bashrc``
+    inside the source repository.
+
     Returns:
         The exit code from the git process.
     """
-    source_dir = Path(cfg.get_opt("source")).expanduser()
+    finder = make_finder(cfg)
 
-    if not source_dir.is_dir():
-        print(f"Source directory does not exist: {source_dir}", file=sys.stderr)
+    if not finder.source_dir.is_dir():
+        print(f"Source directory does not exist: {finder.source_dir}", file=sys.stderr)
         return 1
 
     git_args = cfg.get_opt("git_args", [])
-    cmd = ["git"] + list(git_args)
+    translated = [finder.translate_arg(a) for a in git_args]
+    cmd = ["git"] + translated
 
-    result = subprocess.run(cmd, cwd=source_dir)
+    result = subprocess.run(cmd, cwd=finder.source_dir)
     return result.returncode
