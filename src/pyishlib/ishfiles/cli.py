@@ -9,6 +9,8 @@ Entry point for the ``ishfiles`` tool.  Subcommands are registered by
 modules in :mod:`~pyishlib.ishfiles.commands`.
 """
 
+# pylint: disable=duplicate-code
+
 from __future__ import annotations
 
 import argparse

@@ -12,14 +12,11 @@ merges it with CLI arguments and built-in defaults through
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
 
 from ..ish_config import IshConfig
-
-log = logging.getLogger(__name__)
 
 DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()

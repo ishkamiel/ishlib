@@ -62,7 +62,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
                    available for ``${__ish_<name>}`` substitution.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         source_dir: Path,
         target_dir: Optional[Path] = None,

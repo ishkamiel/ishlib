@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -48,7 +49,7 @@ def print_new_file(new: Path, new_label: str) -> None:
         new:       Path to the new file.
         new_label: Label shown in the ``+++`` header.
     """
-    if _git_diff(Path("/dev/null"), new, "/dev/null", new_label):
+    if _git_diff(Path(os.devnull), new, "/dev/null", new_label):
         return
     _python_new_file(new, new_label)
 
