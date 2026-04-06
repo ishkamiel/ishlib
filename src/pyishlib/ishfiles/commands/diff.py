@@ -9,13 +9,11 @@ from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
 
 from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
-from ...dotfile_applier import DotfileApplier
-from ...dotfile_ignore import DotfileIgnore, ISHFILES_IGNORE_DIRS, ISHIGNORE_FILE
 from ...ish_config import IshConfig
+from ..applier import make_applier
 
 log = logging.getLogger(__name__)
 
@@ -35,22 +33,7 @@ def run(cfg: IshConfig) -> int:
     Returns:
         0 when there are no changes, 1 when there are differences.
     """
-    source_dir = Path(cfg.get_opt("source")).expanduser()
-    target_dir = Path(cfg.get_opt("target")).expanduser()
-
-    di = DotfileIgnore(
-        source_dir=source_dir,
-        ignore_file=ISHIGNORE_FILE,
-        extra_names=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
-        extra_patterns=cfg.get_opt("patterns", []),
-    )
-
-    applier = DotfileApplier(
-        source_dir=source_dir,
-        target_dir=target_dir,
-        cfg=cfg,
-        dotfile_ignore=di,
-    )
+    applier = make_applier(cfg)
 
     dotfiles = applier.discover()
     if not dotfiles:
