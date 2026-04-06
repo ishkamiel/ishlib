@@ -88,7 +88,7 @@ def run_scripts(
         print(f"Scripts to run ({len(all_scripts)}): {', '.join(names)}")
 
     runner = CommandRunner(cfg=cfg)
-    preprocessor = FilePreprocessor()
+    preprocessor = FilePreprocessor(variables=cfg.context.as_dict())
 
     for script_path in all_scripts:
         script = DotfileScript(

@@ -28,6 +28,7 @@ from pyishlib.dotfile_preprocessor import (
     _substitute_variables,
 )
 from pyishlib.dotfile_applier import DotfileApplier
+from pyishlib.ish_config import IshConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -812,10 +813,12 @@ export HOST=${__ish_hostname}
                 Path(src) / "dot_bashrc",
                 "export EDITOR=${__ish_editor}\n",
             )
+            cfg = IshConfig()
+            cfg.context.set("editor", "vim")
             applier = DotfileApplier(
                 source_dir=Path(src),
                 target_dir=Path(tgt),
-                variables={"editor": "vim"},
+                cfg=cfg,
             )
             dotfiles = applier.discover()
             dotfiles = applier.prepare(dotfiles)
@@ -860,10 +863,12 @@ export BROWSER=safari
 #@ish fi
 """,
             )
+            cfg = IshConfig()
+            cfg.context.set("platform", "linux")
             applier = DotfileApplier(
                 source_dir=Path(src),
                 target_dir=Path(tgt),
-                variables={"platform": "linux"},
+                cfg=cfg,
             )
             dotfiles = applier.discover()
             dotfiles = applier.prepare(dotfiles)

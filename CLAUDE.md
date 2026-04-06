@@ -202,6 +202,15 @@ All configuration — directory names, file names, defaults, and constants — f
 
 New ishfiles-specific directory or file name constants should be defined in `ishfiles/config.py` and registered as constants on `IshConfig`.
 
+### DotfileContext and Preprocessing Variables
+
+Preprocessing variables (used in `${__ish_<name>}` substitution and `@ish if` conditionals) are stored on `cfg.context`, a `DotfileContext` instance that is a field of `IshConfig`. Components that need preprocessing variables should read them from `cfg.context.as_dict()` — never accept a separate `variables` parameter.
+
+- `DotfileContext` is populated during config loading (`ishfiles/config.py:load_config()`) from platform detection and TOML config.
+- Components access it via `cfg.context.as_dict()` when constructing a `FilePreprocessor` or `DotFilePreprocessor`.
+- In `@ish if` expressions, the context is exposed as the `ish` namespace (e.g., `ish.platform == 'linux'`).
+- The dotfiles source directory is read from `cfg.get_opt("source")`, not passed as a separate `dotfiles_dir` parameter.
+
 ### Subcommand Pattern
 
 Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` and `run(cfg)` functions. Register new commands in `ishfiles/cli.py`. The `apply` command runs dotfile installation, then package installation, then scripts — in that order.

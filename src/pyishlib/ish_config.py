@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
+from .dotfile_context import DotfileContext
+
 try:
     import tomllib  # Python 3.11+
 except ModuleNotFoundError:
@@ -50,6 +52,9 @@ class IshConfig:
     conf: Any = field(default=None, repr=False, compare=False)
     defaults: dict = field(default_factory=dict, repr=False, compare=False)
     constants: dict = field(default_factory=dict, repr=False, compare=False)
+    context: DotfileContext = field(
+        default_factory=DotfileContext, repr=False, compare=False
+    )
 
     # -- TOML loading ----------------------------------------------------------
 
@@ -269,7 +274,7 @@ class IshConfig:
         # Avoid infinite recursion: these are dataclass fields resolved via
         # __dict__ directly.  If we get here for them they truly don't exist
         # yet (e.g. during __init__), so bail out.
-        if name in ("args", "conf", "defaults", "constants"):
+        if name in ("args", "conf", "defaults", "constants", "context"):
             raise AttributeError(name)
         constants = self.__dict__.get("constants") or {}
         if name in constants:

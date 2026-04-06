@@ -51,16 +51,17 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
     3. :meth:`apply` -- compare staged files with *target_dir*, prompt
        the user, and install changed files.
 
+    Preprocessing variables are read from ``cfg.context``.
+
     Args:
         source_dir: Root of the dotfile repository.
         target_dir: Installation target (default ``$HOME``).
         cfg: Shared :class:`IshConfig` (created automatically if *None*).
+             Its ``context`` attribute provides preprocessing variables.
         runner: Optional :class:`CommandRunner` (created automatically
                 if *None*).
         dotfile_ignore: :class:`DotfileIgnore` controlling which files
                    to skip during discovery.
-        variables: Optional dictionary of preprocessing variables
-                   available for ``${__ish_<name>}`` substitution.
         finder: Optional pre-built :class:`DotfileFinder`.  When given,
                 *source_dir* and *target_dir* are read from it.
     """
@@ -72,7 +73,6 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
         dotfile_ignore: Optional[DotfileIgnore] = None,
-        variables: Optional[dict] = None,
         finder: Optional[DotfileFinder] = None,
     ) -> None:
         if runner is not None:
@@ -100,7 +100,6 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         else:
             self._dotfile_ignore = DotfileIgnore(self._finder.source_dir)
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
-        self._variables: dict = dict(variables) if variables else {}
 
     @property
     def finder(self) -> DotfileFinder:
@@ -154,7 +153,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         """
         self._staging_dir = tempfile.TemporaryDirectory()  # pylint: disable=R1732
         staging_root = Path(self._staging_dir.name)
-        preprocessor = DotFilePreprocessor(variables=self._variables)
+        preprocessor = DotFilePreprocessor(variables=self.cfg.context.as_dict())
 
         for dotfile in dotfiles:
             staged_path = staging_root / dotfile.translated
