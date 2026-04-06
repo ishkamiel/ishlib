@@ -14,6 +14,7 @@ modules in :mod:`~pyishlib.ishfiles.commands`.
 from __future__ import annotations
 
 import argparse
+import logging
 from typing import List, Optional
 
 from ..ish_comp import setup_logging
@@ -101,6 +102,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command is None:
         parser.print_help()
         return 2
+
+    # Set up logging early from CLI flags so TOML loading warnings
+    # respect --verbose/--debug/--quiet.
+    if args.debug:
+        setup_logging(logging.DEBUG)
+    elif args.verbose:
+        setup_logging(logging.INFO)
+    elif args.quiet:
+        setup_logging(logging.ERROR)
 
     cfg = load_config(args=args)
     setup_logging(cfg.log_level)

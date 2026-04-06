@@ -8,6 +8,11 @@ Provides `print_diff` which uses `git diff --no-index` for
 coloured, familiar output and falls back to Python's :mod:`difflib`
 when git is not available.
 
+.. note::
+
+   The git backend uses file paths as diff headers; the *old_label* and
+   *new_label* parameters are only honoured by the Python fallback.
+
 #### `print_diff(old: Path, new: Path, old_label: str, new_label: str)`
 
 Print a unified diff between two files.
@@ -15,11 +20,14 @@ Print a unified diff between two files.
 Tries `git diff --no-index` first for coloured output.  Falls back
 to `difflib.unified_diff` when git is unavailable or fails.
 
+The *old_label* and *new_label* are used in the Python fallback's
+`---` / `+++` headers; git uses the actual file paths instead.
+
 Args:
-    old:       Path to the "before" file (or `/dev/null` for new files).
+    old:       Path to the "before" file.
     new:       Path to the "after" file.
-    old_label: Label shown in the `---` header.
-    new_label: Label shown in the `+++` header.
+    old_label: Label for the `---` header (Python fallback only).
+    new_label: Label for the `+++` header (Python fallback only).
 
 #### `print_new_file(new: Path, new_label: str)`
 
@@ -30,7 +38,7 @@ prefix display.
 
 Args:
     new:       Path to the new file.
-    new_label: Label shown in the `+++` header.
+    new_label: Label for the `+++` header (Python fallback only).
 
 #### `print_binary_diff(old_label: str, new_label: str)`
 

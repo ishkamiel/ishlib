@@ -8,6 +8,11 @@
 Provides :func:`print_diff` which uses ``git diff --no-index`` for
 coloured, familiar output and falls back to Python's :mod:`difflib`
 when git is not available.
+
+.. note::
+
+   The git backend uses file paths as diff headers; the *old_label* and
+   *new_label* parameters are only honoured by the Python fallback.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -28,13 +34,16 @@ def print_diff(old: Path, new: Path, old_label: str, new_label: str) -> None:
     Tries ``git diff --no-index`` first for coloured output.  Falls back
     to :func:`difflib.unified_diff` when git is unavailable or fails.
 
+    The *old_label* and *new_label* are used in the Python fallback's
+    ``---`` / ``+++`` headers; git uses the actual file paths instead.
+
     Args:
-        old:       Path to the "before" file (or ``/dev/null`` for new files).
+        old:       Path to the "before" file.
         new:       Path to the "after" file.
-        old_label: Label shown in the ``---`` header.
-        new_label: Label shown in the ``+++`` header.
+        old_label: Label for the ``---`` header (Python fallback only).
+        new_label: Label for the ``+++`` header (Python fallback only).
     """
-    if _git_diff(old, new, old_label, new_label):
+    if _git_diff(old, new):
         return
     _python_diff(old, new, old_label, new_label)
 
@@ -47,9 +56,9 @@ def print_new_file(new: Path, new_label: str) -> None:
 
     Args:
         new:       Path to the new file.
-        new_label: Label shown in the ``+++`` header.
+        new_label: Label for the ``+++`` header (Python fallback only).
     """
-    if _git_diff(Path(os.devnull), new, "/dev/null", new_label):
+    if _git_diff(Path(os.devnull), new):
         return
     _python_new_file(new, new_label)
 
@@ -77,18 +86,19 @@ def _has_git() -> bool:
     return _GIT_AVAILABLE
 
 
-def _git_diff(  # pylint: disable=unused-argument
-    old: Path, new: Path, old_label: str, new_label: str
-) -> bool:
+def _git_diff(old: Path, new: Path) -> bool:
     """Try ``git diff --no-index``.  Returns True on success."""
     if not _has_git():
         return False
+    color = "always" if sys.stdout.isatty() else "never"
     try:
         result = subprocess.run(
             [
                 "git",
+                "--no-pager",
                 "diff",
                 "--no-index",
+                f"--color={color}",
                 "--",
                 str(old),
                 str(new),

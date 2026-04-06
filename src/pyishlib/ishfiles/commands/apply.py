@@ -30,6 +30,6 @@ def run(cfg: IshConfig) -> int:
     """
     applier = make_applier(cfg)
     applied = applier.apply()
-    if applied:
+    if applied and not cfg.quiet:
         print(f"Applied {applied} file(s).")
     return 0
