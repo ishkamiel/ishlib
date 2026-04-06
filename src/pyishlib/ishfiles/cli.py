@@ -18,7 +18,7 @@ import logging
 from typing import List, Optional
 
 from ..ish_comp import setup_logging
-from .commands import apply, diff
+from .commands import add, apply, diff, git
 from .config import load_config
 
 
@@ -81,8 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # -- subcommands ----------------------------------------------------------
     subparsers = parser.add_subparsers(dest="command")
+    add.register(subparsers)
     apply.register(subparsers)
     diff.register(subparsers)
+    git.register(subparsers)
 
     return parser
 
