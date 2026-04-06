@@ -6,12 +6,14 @@
 """Helper library for package installing tasks"""
 
 import logging
-from typing import Any, Optional, Iterable, Mapping
+from pathlib import Path
+from typing import Any, Dict, Optional, Iterable, Mapping
 
 from .ish_config import IshConfig
 from .command_runner import CommandRunner
 from .installer_cargo import InstallerCargo
 from .installer_apt import InstallerApt
+from .installer_custom import InstallerCustom
 from .installer_pip import InstallerPip
 from .installer_brew import InstallerBrew
 from .installer_winget import InstallerWinget
@@ -26,6 +28,8 @@ class Installer:
         self,
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
+        dotfiles_dir: Optional[Path] = None,
+        variables: Optional[Dict[str, str]] = None,
     ) -> None:
         self.cfg: IshConfig = cfg if cfg is not None else IshConfig()
         self._backends: dict = {}
@@ -37,6 +41,13 @@ class Installer:
         self.register_installer(InstallerPip(self.runner))
         self.register_installer(InstallerBrew(self.runner))
         self.register_installer(InstallerWinget(self.runner))
+        self.register_installer(
+            InstallerCustom(
+                self.runner,
+                dotfiles_dir=dotfiles_dir,
+                variables=variables,
+            )
+        )
 
     def register_installer(self, backend: Any) -> None:
         """Register an installer backend.

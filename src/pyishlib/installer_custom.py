@@ -1,0 +1,202 @@
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
+"""Custom script-based package installer.
+
+Installs packages by executing user-provided scripts found in an
+``ishinstallers/`` folder within the dotfiles directory.  Scripts are
+named ``install_<pkg_name>`` (with an optional extension) and go through
+the same ``@ish`` directive preprocessing as dotfiles, allowing them to
+use ``${__ish_<name>}`` variable substitution and ``#@ish if``
+conditionals.
+
+The custom installer integrates with the standard installer framework
+and can be selected via the ``custom`` key in package configuration::
+
+    [my-tool]
+    custom = "my-tool"
+    cmd = "my-tool"
+
+This will look for a script named ``install_my-tool`` (or
+``install_my-tool.sh``, ``install_my-tool.py``, etc.) in the
+``ishinstallers/`` directory.
+"""
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional
+
+from .command_runner import CommandRunner
+from .dotfile_script import DotfileScript
+from .file_preprocessor import FilePreprocessor
+
+log = logging.getLogger(__name__)
+
+# Name of the subdirectory within the dotfiles directory
+INSTALLERS_DIR_NAME = "ishinstallers"
+
+
+class InstallerCustom:
+    """Installer backend that runs user-provided install scripts.
+
+    Scripts are looked up in ``<dotfiles_dir>/ishinstallers/`` and named
+    ``install_<pkg_name>`` (with optional extension).  Each script is
+    preprocessed through the ``@ish`` directive pipeline before execution.
+
+    Args:
+        runner: :class:`CommandRunner` for executing scripts.
+        dotfiles_dir: Path to the dotfiles directory containing the
+                      ``ishinstallers/`` folder.  If *None*, the custom
+                      installer will report that it cannot install anything.
+        variables: Optional preprocessing variables to pass to scripts.
+    """
+
+    INSTALLER_NAME: str = "custom"
+
+    def __init__(
+        self,
+        runner: CommandRunner,
+        dotfiles_dir: Optional[Path] = None,
+        variables: Optional[Dict[str, str]] = None,
+    ) -> None:
+        self.runner: CommandRunner = runner
+        self._dotfiles_dir: Optional[Path] = dotfiles_dir
+        self._variables: Dict[str, str] = dict(variables) if variables else {}
+
+    @property
+    def installers_dir(self) -> Optional[Path]:
+        """The ishinstallers directory, or None if not configured."""
+        if self._dotfiles_dir is None:
+            return None
+        d = self._dotfiles_dir / INSTALLERS_DIR_NAME
+        return d if d.is_dir() else None
+
+    @property
+    def namespace(self):
+        """Get the common Namespace for installer commands."""
+
+        # pylint: disable=R0903
+        class Namespace:
+            """Namespace for custom installer commands."""
+
+            can_install = self.can_use_custom
+            install = self.install_custom_pkgs
+            install_unless_found = self.install_custom_pkg_unless_found
+            is_installed = self.is_custom_pkg_installed
+            update = self.update_custom_pkgs
+            update_and_install_all = self.update_and_install_all
+
+        return Namespace()
+
+    def can_use_custom(self, pkg: Optional[Any] = None) -> bool:
+        """Check if custom installer is available for a package.
+
+        Returns True when the package has a ``custom`` key and a matching
+        install script exists in the ishinstallers directory.
+        """
+        if pkg is not None and "custom" not in pkg:
+            log.debug("custom not specified for %s", pkg.get("name", "?"))
+            return False
+        if self.installers_dir is None:
+            log.debug("No ishinstallers directory configured or found")
+            return False
+        if pkg is not None:
+            script = self._find_script(pkg["custom"])
+            if script is None:
+                log.debug(
+                    "No install script found for %s in %s",
+                    pkg["custom"],
+                    self.installers_dir,
+                )
+                return False
+        return True
+
+    def _find_script(self, pkg_name: str) -> Optional[Path]:
+        """Find the install script for a package.
+
+        Looks for ``install_<pkg_name>`` with any extension (or none)
+        in the ishinstallers directory.
+
+        Returns:
+            Path to the script, or None if not found.
+        """
+        if self.installers_dir is None:
+            return None
+
+        # Try exact name first (no extension)
+        exact = self.installers_dir / f"install_{pkg_name}"
+        if exact.is_file():
+            return exact
+
+        # Try with common extensions
+        for candidate in sorted(self.installers_dir.iterdir()):
+            if candidate.is_file() and candidate.stem == f"install_{pkg_name}":
+                return candidate
+
+        return None
+
+    def is_custom_pkg_installed(self, pkg: Any) -> bool:
+        """Check if a custom-installed package is present.
+
+        Custom packages rely on the ``cmd`` field in the package config
+        for installation checks.  If no ``cmd`` is specified, this
+        always returns False (the package will be re-installed).
+        """
+        if "cmd" in pkg:
+            return self.runner.which(pkg["cmd"]) is not None
+        return False
+
+    def install_custom_pkgs(self, pkgs: Iterable[dict]) -> bool:
+        """Install packages using custom scripts.
+
+        Each package is installed individually by preprocessing and
+        executing its corresponding script.
+        """
+        assert isinstance(pkgs, Iterable) and all(
+            isinstance(pkg, dict) for pkg in pkgs
+        ), "pkgs should be an iterable of dictionaries"
+
+        success = True
+        for pkg in pkgs:
+            if not self._install_one(pkg):
+                success = False
+        return success
+
+    def _install_one(self, pkg: dict) -> bool:
+        """Install a single package via its custom script."""
+        pkg_name = pkg["custom"]
+        script_path = self._find_script(pkg_name)
+        if script_path is None:
+            log.error("No install script found for %s", pkg_name)
+            return False
+
+        log.info("Installing %s via custom script: %s", pkg["name"], script_path)
+
+        preprocessor = FilePreprocessor(variables=dict(self._variables))
+        script = DotfileScript(
+            path=script_path,
+            preprocessor=preprocessor,
+            runner=self.runner,
+        )
+        return script.execute()
+
+    def install_custom_pkg(self, pkg: dict) -> bool:
+        """Install a single package."""
+        return self.install_custom_pkgs([pkg])
+
+    def install_custom_pkg_unless_found(self, pkg: dict) -> bool:
+        """Install a package unless it is already present."""
+        if not self.is_custom_pkg_installed(pkg):
+            return self.install_custom_pkg(pkg)
+        return True
+
+    def update_custom_pkgs(self) -> bool:
+        """Update custom packages (no-op for custom installer)."""
+        log.debug("Custom installer has no global update mechanism")
+        return True
+
+    def update_and_install_all(self, pkgs: Iterable[dict]) -> bool:
+        """Install custom packages (update is a no-op)."""
+        return self.install_custom_pkgs(pkgs)

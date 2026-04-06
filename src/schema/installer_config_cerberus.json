@@ -17,6 +17,9 @@
         "cmd": {
           "type": "string"
         },
+        "custom": {
+          "type": "string"
+        },
         "gnome": {
           "type": "boolean"
         },
