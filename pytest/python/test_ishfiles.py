@@ -8,6 +8,7 @@
 # Tests for the ishfiles tool (config, ignore, CLI)
 
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -419,6 +420,10 @@ class TestDotfileFinder:
 # ---------------------------------------------------------------------------
 
 
+_has_git = shutil.which("git") is not None
+
+
+@pytest.mark.skipif(not _has_git, reason="git not available")
 class TestGitCommand:
 
     def test_git_status(self):

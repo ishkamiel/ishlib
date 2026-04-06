@@ -79,11 +79,18 @@ def run(cfg: IshConfig) -> int:
             errors += 1
             continue
 
+        # Refuse if the source path is a directory (not a regular file)
+        if dotfile.source.exists() and not dotfile.source.is_file():
+            print(
+                f"Source path is not a regular file: {dotfile.source}",
+                file=sys.stderr,
+            )
+            errors += 1
+            continue
+
         # Check for duplicates
         if dotfile.source.exists():
-            if dotfile.source.is_file() and filecmp.cmp(
-                str(dotfile.source), str(dotfile.target), shallow=False
-            ):
+            if filecmp.cmp(str(dotfile.source), str(dotfile.target), shallow=False):
                 print(f"Warning: already tracked (identical): {dotfile.translated}")
                 continue
 

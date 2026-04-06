@@ -254,6 +254,11 @@ class DotfileFinder:
 
     def _resolve_relative(self, p: Path) -> Optional[Path]:
         """Resolve a relative path."""
+        # Reject path-traversal components.
+        if ".." in p.parts:
+            log.warning("Rejecting path with '..' components: %s", p)
+            return None
+
         # Direct match in source
         if (self._source_dir / p).exists():
             return p

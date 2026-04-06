@@ -52,5 +52,12 @@ def run(cfg: IshConfig) -> int:
     translated = [finder.translate_arg(a) for a in git_args]
     cmd = ["git"] + translated
 
-    result = subprocess.run(cmd, cwd=finder.source_dir)
+    try:
+        result = subprocess.run(cmd, cwd=finder.source_dir)
+    except FileNotFoundError:
+        print(
+            "git executable not found. Please install git or ensure it is in PATH.",
+            file=sys.stderr,
+        )
+        return 1
     return result.returncode
