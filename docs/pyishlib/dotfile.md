@@ -81,3 +81,15 @@ Converts the `dot_` prefix to a literal `.` prefix.
 Translate all components of a relative path.
 
 Each component is passed through `translate_name`.
+
+#### `reverse_translate_name(name: str)`
+
+Reverse-translate a single path component to dotfile repo naming.
+
+Converts a leading `.` to the `dot_` prefix.
+
+#### `reverse_translate_path(rel_path: Path)`
+
+Reverse-translate all components of a relative path.
+
+Each component is passed through `reverse_translate_name`.

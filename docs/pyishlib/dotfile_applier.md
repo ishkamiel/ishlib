@@ -20,7 +20,7 @@ prefixes.  The pipeline has three stages:
 Three-stage dotfile applier.
 
 1. `discover` -- find dotfiles in *source_dir* or from an
-   explicit list.
+   explicit list (delegated to `DotfileFinder`).
 2. `prepare` -- stage files into a temporary directory with
    preprocessing (metadata extraction, variable substitution, etc.).
 3. `apply` -- compare staged files with *target_dir*, prompt
@@ -36,8 +36,14 @@ Args:
                to skip during discovery.
     variables: Optional dictionary of preprocessing variables
                available for `${__ish_<name>}` substitution.
+    finder: Optional pre-built `DotfileFinder`.  When given,
+            *source_dir* and *target_dir* are read from it.
 
-#### `__init__(source_dir: Path, target_dir: Optional[Path] = None, cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfile_ignore: Optional[DotfileIgnore] = None, variables: Optional[dict] = None)`
+#### `__init__(source_dir: Optional[Path] = None, target_dir: Optional[Path] = None, cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfile_ignore: Optional[DotfileIgnore] = None, variables: Optional[dict] = None, finder: Optional[DotfileFinder] = None)`
+
+#### `finder`
+
+The `DotfileFinder` used for path resolution.
 
 #### `source_dir`
 
@@ -51,9 +57,8 @@ The target directory (typically `$HOME`).
 
 Discover dotfiles to process.
 
-When *files* is given, each path is treated as relative to the
-source directory and looked up directly.  Otherwise the source
-directory is scanned recursively.
+Delegates to `DotfileFinder.discover`, passing the
+configured ignore rules for recursive scans.
 
 Args:
     files: Optional explicit list of relative paths inside the
