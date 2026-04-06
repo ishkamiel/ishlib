@@ -22,7 +22,7 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib.installer import Installer
-from pyishlib.installer_custom import InstallerCustom, INSTALLERS_DIR_NAME
+from pyishlib.installer_custom import InstallerCustom
 from pyishlib.command_runner import CommandRunner
 from pyishlib.ish_config import IshConfig
 from pyishlib.file_preprocessor import FilePreprocessor
@@ -60,7 +60,7 @@ class TestInstallerCustom:
 
     def test_can_use_custom_no_custom_key(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
             pkg = {"name": "test", "apt": "test"}
@@ -68,7 +68,7 @@ class TestInstallerCustom:
 
     def test_can_use_custom_no_script(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
             pkg = {"name": "test", "custom": "nonexistent"}
@@ -76,7 +76,7 @@ class TestInstallerCustom:
 
     def test_can_use_custom_with_script(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
@@ -86,7 +86,7 @@ class TestInstallerCustom:
 
     def test_can_use_custom_with_extension(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool.sh"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
@@ -96,7 +96,7 @@ class TestInstallerCustom:
 
     def test_can_use_custom_no_pkg(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
             assert custom.can_use_custom() is True
@@ -133,7 +133,7 @@ class TestInstallerCustom:
 
     def test_find_script_exact_name(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
@@ -143,7 +143,7 @@ class TestInstallerCustom:
 
     def test_find_script_with_extension(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool.sh"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
@@ -153,14 +153,14 @@ class TestInstallerCustom:
 
     def test_find_script_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
             assert custom._find_script("nonexistent") is None
 
     def test_find_script_prefers_exact_name(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             exact = installers / "install_mytool"
             exact.write_text("#!/bin/sh\necho exact\n", encoding="utf-8")
@@ -205,7 +205,7 @@ class TestInstallerCustomRegistration:
 
     def test_get_installer_with_custom(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
@@ -365,7 +365,7 @@ class TestInstallerCustomIntegration:
 
     def test_install_pkg_dry_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho installing mytool\n", encoding="utf-8")
@@ -377,7 +377,7 @@ class TestInstallerCustomIntegration:
 
     def test_install_pkg_with_preprocessing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text(
@@ -392,7 +392,7 @@ class TestInstallerCustomIntegration:
 
     def test_install_pkg_with_variables(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text(
@@ -411,7 +411,7 @@ class TestInstallerCustomIntegration:
 
     def test_install_pkg_no_script(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
 
             runner = CommandRunner(cfg=IshConfig(dry_run=True))
@@ -422,7 +422,7 @@ class TestInstallerCustomIntegration:
 
     def test_install_multiple_pkgs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            installers = Path(tmpdir) / INSTALLERS_DIR_NAME
+            installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
             for name in ("tool1", "tool2"):
                 script = installers / f"install_{name}"
