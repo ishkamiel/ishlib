@@ -21,7 +21,6 @@ from types import SimpleNamespace
 from typing import Any, Optional
 
 from ..ish_config import IshConfig
-from ..installer_custom import INSTALLERS_DIR_NAME
 
 DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()
@@ -39,7 +38,7 @@ _CONSTANTS = {
     # Reserved directory for user scripts executed on apply/runscripts
     "scripts_dir": "ishscripts",
     # Reserved directory for custom per-package install scripts
-    "installers_dir": INSTALLERS_DIR_NAME,
+    "installers_dir": "ishinstallers",
     # Name of the per-repo ignore file
     "ignore_file": ".ishignore",
     # Package config filenames recognised inside config_dir

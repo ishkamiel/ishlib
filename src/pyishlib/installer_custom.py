@@ -34,8 +34,7 @@ from .file_preprocessor import FilePreprocessor
 
 log = logging.getLogger(__name__)
 
-# Name of the subdirectory within the dotfiles directory
-INSTALLERS_DIR_NAME = "ishinstallers"
+_DEFAULT_INSTALLERS_DIR = "ishinstallers"
 
 
 class InstallerCustom:
@@ -45,10 +44,14 @@ class InstallerCustom:
     ``install_<pkg_name>`` (with optional extension).  Each script is
     preprocessed through the ``@ish`` directive pipeline before execution.
 
+    The directory name is read from the ``installers_dir`` config option
+    on the runner's :class:`IshConfig`, falling back to ``ishinstallers``
+    when the option is not registered.
+
     Args:
         runner: :class:`CommandRunner` for executing scripts.
         dotfiles_dir: Path to the dotfiles directory containing the
-                      ``ishinstallers/`` folder.  If *None*, the custom
+                      installers folder.  If *None*, the custom
                       installer will report that it cannot install anything.
         variables: Optional preprocessing variables to pass to scripts.
     """
@@ -66,11 +69,18 @@ class InstallerCustom:
         self._variables: Dict[str, str] = dict(variables) if variables else {}
 
     @property
+    def _installers_dir_name(self) -> str:
+        """The installers directory name from config, or the default."""
+        return self.runner.cfg.get_opt(
+            "installers_dir", _DEFAULT_INSTALLERS_DIR
+        )
+
+    @property
     def installers_dir(self) -> Optional[Path]:
-        """The ishinstallers directory, or None if not configured."""
+        """The installers directory, or None if not configured."""
         if self._dotfiles_dir is None:
             return None
-        d = self._dotfiles_dir / INSTALLERS_DIR_NAME
+        d = self._dotfiles_dir / self._installers_dir_name
         return d if d.is_dir() else None
 
     @property
