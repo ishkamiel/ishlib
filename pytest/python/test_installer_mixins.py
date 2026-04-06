@@ -22,6 +22,7 @@ from pyishlib.installer import Installer
 from pyishlib.installer_apt import InstallerApt
 from pyishlib.installer_brew import InstallerBrew
 from pyishlib.installer_cargo import InstallerCargo
+from pyishlib.installer_custom import InstallerCustom
 from pyishlib.installer_pip import InstallerPip
 from pyishlib.installer_winget import InstallerWinget
 from pyishlib.command_runner import CommandRunner
@@ -374,18 +375,20 @@ class TestInstallerRegistration:
         assert "apt" in installer._backends
         assert "brew" in installer._backends
         assert "cargo" in installer._backends
+        assert "custom" in installer._backends
         assert "pip" in installer._backends
         assert "winget" in installer._backends
 
     def test_registered_backends_count(self):
         installer = make_installer(which_returns={})
-        assert len(installer._backends) == 5
+        assert len(installer._backends) == 6
 
     def test_get_backend_returns_instance(self):
         installer = make_installer(which_returns={})
         assert isinstance(installer.get_backend("apt"), InstallerApt)
         assert isinstance(installer.get_backend("brew"), InstallerBrew)
         assert isinstance(installer.get_backend("cargo"), InstallerCargo)
+        assert isinstance(installer.get_backend("custom"), InstallerCustom)
         assert isinstance(installer.get_backend("pip"), InstallerPip)
         assert isinstance(installer.get_backend("winget"), InstallerWinget)
 
@@ -394,11 +397,11 @@ class TestInstallerRegistration:
         with pytest.raises(ValueError):
             installer.get_backend("nonexistent")
 
-    def test_register_custom_installer(self):
+    def test_register_extra_installer(self):
         installer = make_installer(which_returns={})
 
-        class CustomInstaller:
-            INSTALLER_NAME = "custom"
+        class ExtraInstaller:
+            INSTALLER_NAME = "extra"
 
             @property
             def namespace(self):
@@ -421,9 +424,9 @@ class TestInstallerRegistration:
 
                 return Namespace()
 
-        installer.register_installer(CustomInstaller())
-        assert "custom" in installer._backends
-        assert len(installer._backends) == 6
+        installer.register_installer(ExtraInstaller())
+        assert "extra" in installer._backends
+        assert len(installer._backends) == 7
 
     def test_register_override_existing(self):
         installer = make_installer(which_returns={})
