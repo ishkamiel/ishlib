@@ -1,3 +1,8 @@
+#
+# Author: Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2018 Hans Liljestrand <hans@liljestrand.dev>
+#
+# Distributed under terms of the MIT license.
 
 SRC_FILES = $(wildcard src/sh/*.sh) $(wildcard src/bash/*.bash) src/readme_src.md
 
