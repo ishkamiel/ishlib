@@ -67,6 +67,14 @@ pytest
 
 Pytest runs in parallel by default (`--numprocesses=auto` in `pytest.ini`).
 
+To run a single test file or test function:
+
+```bash
+pytest pytest/shell/test_func-path.py            # one test file
+pytest pytest/shell/test_func-path.py::test_name  # one test function
+pytest -k "test_pattern"                          # by name pattern
+```
+
 ## Key Conventions
 
 ### Shell Code
@@ -113,6 +121,37 @@ Pytest runs in parallel by default (`--numprocesses=auto` in `pytest.ini`).
 - LF line endings, final newline required
 - No trailing whitespace
 
+## Testing Patterns
+
+### Shell Tests (`pytest/shell/`)
+
+Shell tests execute scripts in subprocesses across multiple shells. Shared helpers live in `pytest/shell/__init__.py`:
+
+- `gen_script_and_check_output(shell, tmp_path, script_content)` -- write and run a script, return stdout
+- `gen_file(tmp_path, content)` -- write a temp `test.sh` file
+
+Each test file defines `pytest_generate_tests` to set which shells to parametrize:
+
+```python
+import inspect
+from . import gen_script_and_check_output
+
+def pytest_generate_tests(metafunc):
+    metafunc.parametrize("shell", ["bash", "dash", "sh", "zsh"])  # or ["bash"] for bash-only
+
+def test_example(shell, tmp_path, ishlib):
+    out = gen_script_and_check_output(shell, tmp_path, inspect.cleandoc(f"""
+    #!/usr/bin/env {shell}
+    . "{ishlib}"
+    ish_say "hello"
+    """))
+    assert "hello" in out
+```
+
+### Python Tests (`pytest/python/`)
+
+Python tests use `unittest.TestCase` classes with `@patch` for mocking. No shared conftest -- each file imports directly from `pyishlib`.
+
 ## Pre-commit Hooks
 
 The repo uses pre-commit with: pylint, black, markdownlint, typos, license header insertion, and pytest. Shellcheck is exercised via the pytest shell tests rather than a dedicated pre-commit hook.
@@ -135,6 +174,19 @@ The `pyishlib` installer framework supports loading package configuration from *
 - Development environment uses Python 3.13.2 (`.python-version`)
 - CI tests against Python 3.8, 3.9, 3.10, 3.11, 3.12
 - TOML support uses `tomllib` (Python 3.11+ stdlib) with `tomli` fallback for older versions (declared in `requirements.txt`)
+
+## Build Pipeline Details
+
+`scripts/build_ishlib.py` compiles `ishlib.sh` from `src/sh/base.sh` as the entry point:
+
+- Include directives (`. "$ISHLIB/path/to/file"`) are recursively expanded inline
+- `__ISHLIB_VERSION__` and `__ISHLIB_NAME__` are replaced with build-time values
+- Shellcheck directives and source guards are stripped
+- POSIX functions are included first, then a shell gate (`[ -z "${BASH_VERSION:-}" ]`) causes early return for non-bash shells, followed by bash-only extensions
+
+## Markdown Linting
+
+Markdownlint (mdl) excludes rules: MD013 (line length), MD024 (duplicate headers), MD026 (trailing punctuation in headers). Generated docs (`docs/ishlib_shell.md`, `docs/pyishlib/`) are excluded from linting.
 
 ## Important Warnings
 
