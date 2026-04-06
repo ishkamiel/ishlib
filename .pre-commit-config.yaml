@@ -35,7 +35,7 @@ repos:
         entry: mdl
         language: ruby
         files: \.(md|mdown|markdown)$
-        exclude: ^README\.md$
+        exclude: ^docs/ishlib\.md$
 -   repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.5.6
     hooks:

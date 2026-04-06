@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2026-04-05.1532
+# ishlib 2026-04-06.0354
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-05.1532"
+export ish_VERSION_NUMBER="2026-04-06.0354"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
