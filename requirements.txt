@@ -4,3 +4,8 @@ jsonschema
 pytest-xdist
 pyyaml
 tomli; python_version < "3.11"
+
+# Documentation
+griffe
+mkdocs
+mkdocs-material

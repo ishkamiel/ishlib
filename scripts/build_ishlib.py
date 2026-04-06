@@ -4,7 +4,7 @@
 # Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-"""Build ishlib.sh from src/sh/base.sh and src/readme_src.md (for internal use)"""
+"""Build ishlib.sh from src/sh/base.sh and src/docs/ishlib_shell.md (for internal use)"""
 
 import os
 import time
@@ -13,13 +13,13 @@ import re
 
 ISHLIB_NAME = "ishlib"
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 OUT_FN = os.path.join(ROOT_DIR, "ishlib.sh")
 BASE_FN = os.path.join(ROOT_DIR, "src/sh/base.sh")
-README_FN = os.path.join(ROOT_DIR, "src/readme_src.md")
+DOC_TEMPLATE_FN = os.path.join(ROOT_DIR, "src/docs/ishlib_shell.md")
 
-README_DOCUMENTATION_START = "## Documentation"
+DOC_TEMPLATE_END_MARKER = "## Documentation"
 
 DEBUG_MODE = False
 
@@ -73,7 +73,7 @@ class Parser:
         """Process a single line"""
         # Handle __ISHLIB_README__
         if line.strip() == "__ISHLIB_README__":
-            self.source_readme()
+            self.source_doc_template()
             return
 
         # Handle includes
@@ -100,13 +100,13 @@ class Parser:
         line = line.replace("__ISHLIB_NAME__", ISHLIB_NAME)
         self.out_fh.write(line)
 
-    def source_readme(self):
-        """Source the README file"""
-        log_debug(f"source_readme from {README_FN}")
-        with open(README_FN, "r", encoding="utf-8") as fh:
+    def source_doc_template(self):
+        """Source the shell docs intro template"""
+        log_debug(f"source_doc_template from {DOC_TEMPLATE_FN}")
+        with open(DOC_TEMPLATE_FN, "r", encoding="utf-8") as fh:
             for line in fh:
                 self.process_oneline(line)
-                if line.strip() == README_DOCUMENTATION_START:
+                if line.strip() == DOC_TEMPLATE_END_MARKER:
                     return
         raise EOFError("Unexpected EOF file")
 

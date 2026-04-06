@@ -15,7 +15,13 @@ development tasks.
   function reference.
 
 - **Python library** (`src/pyishlib/`): Installer framework with backends for
-  apt, brew, cargo, and pip.
+  apt, brew, cargo, pip, and winget.
+  See the [Python library documentation](docs/pyishlib/index.md) for details.
+
+- **ishfiles** (planned): CLI tool built on `pyishlib` for managing system
+  configuration and dotfiles.
+  <!-- TODO: Add ishfiles quick start and usage documentation here once the
+       CLI tool is implemented. -->
 
 ## Quick start
 
@@ -42,6 +48,9 @@ make ishlib.sh
 
 # Regenerate shell docs
 make docs/ishlib_shell.md
+
+# Serve documentation locally (MkDocs)
+mkdocs serve
 ```
 
 ## Repository structure
@@ -52,9 +61,10 @@ src/
   bash/       # Bash-only extensions (sourced into ishlib.sh)
   pyishlib/   # Python installer framework
   schema/     # Config schemas
+  docs/       # Documentation sources
 pytest/       # Test suite (shell + python)
 t/            # Legacy Perl/TAP tests
-docs/         # Generated documentation
+docs/         # Generated/served documentation (MkDocs site source)
 ```
 
 ## Known bugs and issues
