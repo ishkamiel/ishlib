@@ -44,6 +44,7 @@ class Installer:
         self.register_installer(
             InstallerCustom(
                 self.runner,
+                cfg=self.cfg,
                 dotfiles_dir=dotfiles_dir,
                 variables=variables,
             )
