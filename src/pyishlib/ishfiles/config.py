@@ -12,7 +12,6 @@ merges it with CLI arguments and built-in defaults through
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,17 +25,9 @@ DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()
 DEFAULT_CONFIG_FILE = Path.home() / ".config" / "ishfiles" / "config.toml"
 
-SCHEMA: Path = (
+_SCHEMA: Path = (
     Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
 )
-
-#: Mapping from TOML ``section.key`` paths to flat attribute names used
-#: by :meth:`IshConfig.load_toml`.
-_FLATTEN_MAP = {
-    "ishfiles.source": "source",
-    "ishfiles.target": "target",
-    "ignore.patterns": "ignore_patterns",
-}
 
 
 def load_config(
@@ -67,12 +58,12 @@ def load_config(
     defaults = {
         "source": str(DEFAULT_SOURCE_DIR),
         "target": str(DEFAULT_TARGET_DIR),
-        "ignore_patterns": [],
+        "patterns": [],
     }
 
     return IshConfig.from_toml(
         toml_path=cfg_path,
-        flatten=_FLATTEN_MAP,
+        schema=_SCHEMA,
         args=filtered_args,
         defaults=defaults,
     )

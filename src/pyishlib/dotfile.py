@@ -9,8 +9,7 @@ Provides the :class:`DotFile` value object that tracks a managed dotfile
 through the discover / prepare / apply pipeline, along with chezmoi-style
 ``dot_`` name translation.
 
-Ignore-list constants and utilities live in :mod:`dotfile_ignore` and are
-re-exported here for backwards compatibility.
+Ignore-list constants and utilities live in :mod:`dotfile_ignore`.
 """
 
 from __future__ import annotations
@@ -18,17 +17,7 @@ from __future__ import annotations
 import filecmp
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
-
-# Re-export ignore utilities so existing ``from .dotfile import …`` still works.
-from .dotfile_ignore import (  # noqa: F401
-    DEFAULT_IGNORE,
-    DEFAULT_IGNORE_PATTERNS,
-    DOTFILEIGNORE,
-    DotfileIgnore,
-    is_ignored,
-    load_ignore_file,
-)
+from typing import Any, Dict, Optional
 
 DOT_PREFIX = "dot_"
 
