@@ -8,14 +8,13 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import logging
 from pathlib import Path
-from typing import List
 
+from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
 from ...dotfile_applier import DotfileApplier
-from ...dotfile_ignore import ISHFILES_IGNORE_DIRS, ISHIGNORE_FILE
+from ...dotfile_ignore import DotfileIgnore, ISHFILES_IGNORE_DIRS, ISHIGNORE_FILE
 from ...ish_config import IshConfig
 
 log = logging.getLogger(__name__)
@@ -39,13 +38,18 @@ def run(cfg: IshConfig) -> int:
     source_dir = Path(cfg.get_opt("source")).expanduser()
     target_dir = Path(cfg.get_opt("target")).expanduser()
 
+    di = DotfileIgnore(
+        source_dir=source_dir,
+        ignore_file=ISHIGNORE_FILE,
+        extra_names=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
+        extra_patterns=cfg.get_opt("ignore_patterns", []),
+    )
+
     applier = DotfileApplier(
         source_dir=source_dir,
         target_dir=target_dir,
         cfg=cfg,
-        ignore=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
-        ignore_file=ISHIGNORE_FILE,
-        ignore_patterns=cfg.get_opt("ignore_patterns", []),
+        dotfile_ignore=di,
     )
 
     dotfiles = applier.discover()
@@ -61,53 +65,35 @@ def run(cfg: IshConfig) -> int:
         return 0
 
     for dotfile in changes:
-        _print_diff(dotfile)
+        _show_diff(dotfile)
 
     return 1
 
 
-def _print_diff(dotfile: DotFile) -> None:
-    """Print a unified diff for a single dotfile."""
+def _show_diff(dotfile: DotFile) -> None:
+    """Print a diff for a single dotfile using :mod:`pyishlib.diff`."""
     change = dotfile.get_change_type()
 
     if change == ChangeType.NEW:
-        print(f"--- /dev/null")
-        print(f"+++ {dotfile.target}")
         try:
-            source_lines = dotfile.effective_source.read_text(
-                encoding="utf-8"
-            ).splitlines(keepends=True)
-            for line in source_lines:
-                print(f"+{line}", end="")
-            if source_lines and not source_lines[-1].endswith("\n"):
-                print()
-            print()
+            dotfile.effective_source.read_bytes().decode("utf-8")
         except UnicodeDecodeError:
-            print("+<binary file>")
-            print()
+            print_binary_diff("/dev/null", str(dotfile.target))
+            return
+        print_new_file(dotfile.effective_source, str(dotfile.target))
         return
 
-    # MODIFIED -- show unified diff
+    # MODIFIED
     try:
-        target_lines = dotfile.target.read_text(encoding="utf-8").splitlines(
-            keepends=True
-        )
-        source_lines = dotfile.effective_source.read_text(encoding="utf-8").splitlines(
-            keepends=True
-        )
+        dotfile.target.read_bytes().decode("utf-8")
+        dotfile.effective_source.read_bytes().decode("utf-8")
     except UnicodeDecodeError:
-        print(f"--- {dotfile.target}")
-        print(f"+++ {dotfile.effective_source}")
-        print("<binary files differ>")
-        print()
+        print_binary_diff(str(dotfile.target), str(dotfile.effective_source))
         return
 
-    diff = difflib.unified_diff(
-        target_lines,
-        source_lines,
-        fromfile=str(dotfile.target),
-        tofile=str(dotfile.effective_source),
+    print_diff(
+        dotfile.target,
+        dotfile.effective_source,
+        old_label=str(dotfile.target),
+        new_label=str(dotfile.effective_source),
     )
-    diff_text = "".join(diff)
-    if diff_text:
-        print(diff_text)

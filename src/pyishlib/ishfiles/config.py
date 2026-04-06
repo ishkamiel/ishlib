@@ -12,20 +12,13 @@ merges it with CLI arguments and built-in defaults through
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..ish_config import IshConfig
-
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:
-    try:
-        import tomli as tomllib  # type: ignore[no-redef]
-    except ImportError:
-        tomllib = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -33,41 +26,17 @@ DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()
 DEFAULT_CONFIG_FILE = Path.home() / ".config" / "ishfiles" / "config.toml"
 
+SCHEMA: Path = (
+    Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
+)
 
-def _load_toml(path: Path) -> Dict[str, Any]:
-    """Load a TOML file, returning an empty dict on missing file or no TOML support."""
-    if not path.is_file():
-        log.debug("Config file not found: %s", path)
-        return {}
-    if tomllib is None:
-        log.warning(
-            "TOML support unavailable (need Python 3.11+ or 'tomli'); " "ignoring %s",
-            path,
-        )
-        return {}
-    with open(path, "rb") as fh:
-        return tomllib.load(fh)
-
-
-def _toml_to_namespace(file_data: Dict[str, Any]) -> SimpleNamespace:
-    """Flatten the ``[ishfiles]`` and ``[ignore]`` TOML sections into a namespace.
-
-    The resulting namespace has attributes ``source``, ``target``, and
-    ``ignore_patterns`` that :class:`IshConfig` can resolve via
-    ``__getattr__``.
-    """
-    ishfiles_section = file_data.get("ishfiles", {})
-    ignore_section = file_data.get("ignore", {})
-
-    attrs: Dict[str, Any] = {}
-    if "source" in ishfiles_section:
-        attrs["source"] = str(Path(ishfiles_section["source"]).expanduser())
-    if "target" in ishfiles_section:
-        attrs["target"] = str(Path(ishfiles_section["target"]).expanduser())
-
-    attrs["ignore_patterns"] = list(ignore_section.get("patterns", []))
-
-    return SimpleNamespace(**attrs)
+#: Mapping from TOML ``section.key`` paths to flat attribute names used
+#: by :meth:`IshConfig.load_toml`.
+_FLATTEN_MAP = {
+    "ishfiles.source": "source",
+    "ishfiles.target": "target",
+    "ignore.patterns": "ignore_patterns",
+}
 
 
 def load_config(
@@ -88,9 +57,6 @@ def load_config(
     elif args is not None and getattr(args, "config", None) is not None:
         cfg_path = Path(args.config)
 
-    file_data = _load_toml(cfg_path)
-    conf = _toml_to_namespace(file_data) if file_data else None
-
     # Filter out None-valued args so they don't shadow conf/defaults in
     # IshConfig's resolution chain (hasattr returns True for None attrs).
     filtered_args = None
@@ -104,4 +70,9 @@ def load_config(
         "ignore_patterns": [],
     }
 
-    return IshConfig.from_args(args=filtered_args, conf=conf, defaults=defaults)
+    return IshConfig.from_toml(
+        toml_path=cfg_path,
+        flatten=_FLATTEN_MAP,
+        args=filtered_args,
+        defaults=defaults,
+    )

@@ -28,7 +28,7 @@ from typing import List, Optional, Sequence
 
 from .command_runner import CommandRunner
 from .dotfile import ChangeType, DotFile
-from .dotfile_ignore import build_ignore, is_ignored
+from .dotfile_ignore import DotfileIgnore
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
@@ -56,6 +56,9 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         cfg: Shared :class:`IshConfig` (created automatically if *None*).
         runner: Optional :class:`CommandRunner` (created automatically
                 if *None*).
+        dotfile_ignore: Pre-built :class:`DotfileIgnore` instance.  When
+                   given, *ignore*, *ignore_file*, and *ignore_patterns*
+                   are ignored.
         ignore: Extra exact names to add to the default ignore set.
         ignore_file: Name of the ignore file to load from *source_dir*
                    (default ``.dotfileignore``).
@@ -70,6 +73,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         target_dir: Optional[Path] = None,
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
+        dotfile_ignore: Optional[DotfileIgnore] = None,
         ignore: Optional[frozenset] = None,
         ignore_file: Optional[str] = None,
         ignore_patterns: Optional[Sequence[str]] = None,
@@ -85,14 +89,17 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         self._target_dir: Path = (
             Path(target_dir) if target_dir is not None else Path.home()
         )
-        _build_kw = {
-            "source_dir": self._source_dir,
-            "extra_names": ignore or frozenset(),
-            "extra_patterns": ignore_patterns or (),
-        }
-        if ignore_file is not None:
-            _build_kw["ignore_file"] = ignore_file
-        self._ignore, self._ignore_patterns = build_ignore(**_build_kw)
+        if dotfile_ignore is not None:
+            self._dotfile_ignore = dotfile_ignore
+        else:
+            _kw: dict = {
+                "source_dir": self._source_dir,
+                "extra_names": ignore or frozenset(),
+                "extra_patterns": ignore_patterns or (),
+            }
+            if ignore_file is not None:
+                _kw["ignore_file"] = ignore_file
+            self._dotfile_ignore = DotfileIgnore(**_kw)
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
         self._variables: dict = dict(variables) if variables else {}
 
@@ -140,7 +147,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         dotfiles: List[DotFile],
     ) -> None:
         for entry in sorted(current.iterdir()):
-            if is_ignored(entry.name, self._ignore, self._ignore_patterns):
+            if self._dotfile_ignore.is_ignored(entry.name):
                 log.debug("Ignoring %s", entry)
                 continue
 

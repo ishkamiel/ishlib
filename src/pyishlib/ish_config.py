@@ -8,7 +8,19 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Dict, Optional
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ImportError:
+        tomllib = None  # type: ignore[assignment]
+
+_log = logging.getLogger(__name__)
 
 _MISSING = object()
 
@@ -36,6 +48,84 @@ class IshConfig:
     args: Any = field(default=None, repr=False, compare=False)
     conf: Any = field(default=None, repr=False, compare=False)
     defaults: dict = field(default_factory=dict, repr=False, compare=False)
+
+    # -- TOML loading ----------------------------------------------------------
+
+    @staticmethod
+    def load_toml(
+        path: Path,
+        flatten: Optional[Dict[str, str]] = None,
+    ) -> Optional[SimpleNamespace]:
+        """Load a TOML file and return a :class:`SimpleNamespace`.
+
+        The namespace can be used as the *conf* argument to
+        :meth:`from_args`.
+
+        Args:
+            path:    Path to the TOML file.  Returns *None* when the
+                     file does not exist or TOML support is unavailable.
+            flatten: Optional mapping of ``section.key`` → ``attr_name``
+                     used to flatten nested TOML sections into top-level
+                     namespace attributes.  For example
+                     ``{"ishfiles.source": "source"}`` maps
+                     ``[ishfiles] source = …`` to ``ns.source``.
+                     Keys without a dot are looked up at the top level.
+        """
+        if not path.is_file():
+            _log.debug("Config file not found: %s", path)
+            return None
+        if tomllib is None:
+            _log.warning(
+                "TOML support unavailable (need Python 3.11+ or 'tomli'); "
+                "ignoring %s",
+                path,
+            )
+            return None
+
+        with open(path, "rb") as fh:
+            data = tomllib.load(fh)
+
+        if not data:
+            return None
+
+        if flatten is None:
+            return SimpleNamespace(**data)
+
+        attrs: Dict[str, Any] = {}
+        for toml_path, attr_name in flatten.items():
+            parts = toml_path.split(".", 1)
+            if len(parts) == 2:
+                section, key = parts
+                value = data.get(section, {}).get(key)
+            else:
+                value = data.get(parts[0])
+            if value is not None:
+                attrs[attr_name] = value
+        return SimpleNamespace(**attrs) if attrs else None
+
+    @classmethod
+    def from_toml(
+        cls,
+        toml_path: Path,
+        flatten: Optional[Dict[str, str]] = None,
+        args: Optional[Any] = None,
+        defaults: Optional[dict] = None,
+    ) -> "IshConfig":
+        """Build an ``IshConfig`` from a TOML file, args, and defaults.
+
+        Convenience wrapper that calls :meth:`load_toml` and feeds the
+        result into :meth:`from_args`.
+
+        Args:
+            toml_path: Path to the TOML configuration file.
+            flatten:   Flattening map passed to :meth:`load_toml`.
+            args:      Optional argparse namespace (highest priority).
+            defaults:  Optional fallback dict (lowest priority).
+        """
+        conf = cls.load_toml(toml_path, flatten=flatten)
+        return cls.from_args(args=args, conf=conf, defaults=defaults)
+
+    # -- from_args -------------------------------------------------------------
 
     @classmethod
     def from_args(

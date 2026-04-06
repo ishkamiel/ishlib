@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +22,7 @@ sys.path.insert(
 
 from pyishlib.dotfile_ignore import (
     DEFAULT_IGNORE,
+    DotfileIgnore,
     ISHFILES_IGNORE_DIRS,
     ISHIGNORE_FILE,
     build_ignore,
@@ -45,8 +47,6 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 
 def _make_args(**overrides):
     """Create a minimal argparse-like namespace."""
-    from types import SimpleNamespace
-
     defaults = {
         "source": None,
         "target": None,
@@ -121,53 +121,79 @@ class TestLoadConfig:
 
 
 # ---------------------------------------------------------------------------
-# Ignore
+# DotfileIgnore
 # ---------------------------------------------------------------------------
 
 
-class TestIgnore:
+class TestDotfileIgnore:
 
     def test_hardcoded_dirs(self):
         assert "ishconfig" in ISHFILES_IGNORE_DIRS
         assert "ishscripts" in ISHFILES_IGNORE_DIRS
 
-    def test_build_ignore_default(self):
+    def test_default_ignore(self):
         with tempfile.TemporaryDirectory() as d:
-            names, patterns = build_ignore(Path(d))
-            assert names == DEFAULT_IGNORE
+            di = DotfileIgnore(Path(d))
+            assert di.is_ignored(".git")
+            assert di.is_ignored("__pycache__")
+            assert not di.is_ignored("dot_bashrc")
+
+    def test_extra_names(self):
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(Path(d), extra_names=ISHFILES_IGNORE_DIRS)
+            assert di.is_ignored("ishconfig")
+            assert di.is_ignored("ishscripts")
             for name in DEFAULT_IGNORE:
-                assert name in names
+                assert di.is_ignored(name)
 
-    def test_build_ignore_with_extra_names(self):
-        with tempfile.TemporaryDirectory() as d:
-            names, patterns = build_ignore(Path(d), extra_names=ISHFILES_IGNORE_DIRS)
-            for name in ISHFILES_IGNORE_DIRS:
-                assert name in names
-
-    def test_build_ignore_with_ignore_file(self):
+    def test_ignore_file(self):
         with tempfile.TemporaryDirectory() as d:
             _make_file(Path(d) / ISHIGNORE_FILE, "*.log\ntemp_*\n")
-            names, patterns = build_ignore(Path(d), ignore_file=ISHIGNORE_FILE)
-            assert "*.log" in patterns
-            assert "temp_*" in patterns
+            di = DotfileIgnore(Path(d), ignore_file=ISHIGNORE_FILE)
+            assert di.is_ignored("debug.log")
+            assert di.is_ignored("temp_stuff")
+            assert not di.is_ignored("keep_me")
 
-    def test_build_ignore_with_extra_patterns(self):
+    def test_extra_patterns(self):
         with tempfile.TemporaryDirectory() as d:
-            names, patterns = build_ignore(Path(d), extra_patterns=["*.bak"])
-            assert "*.bak" in patterns
+            di = DotfileIgnore(Path(d), extra_patterns=["*.bak"])
+            assert di.is_ignored("file.bak")
 
-    def test_build_ignore_combines_all_sources(self):
+    def test_default_patterns(self):
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(Path(d))
+            assert di.is_ignored("file.ish")
+
+    def test_combines_all_sources(self):
         with tempfile.TemporaryDirectory() as d:
             _make_file(Path(d) / ISHIGNORE_FILE, "*.log\n")
-            names, patterns = build_ignore(
+            di = DotfileIgnore(
                 Path(d),
                 ignore_file=ISHIGNORE_FILE,
                 extra_patterns=["*.bak"],
             )
-            # from .ishignore file
-            assert "*.log" in patterns
-            # from extra
-            assert "*.bak" in patterns
+            assert di.is_ignored("file.log")
+            assert di.is_ignored("file.bak")
+            assert di.is_ignored("file.ish")
+            assert di.is_ignored(".git")
+
+    def test_build_ignore_returns_instance(self):
+        with tempfile.TemporaryDirectory() as d:
+            di = build_ignore(Path(d))
+            assert isinstance(di, DotfileIgnore)
+            assert di.is_ignored(".git")
+
+    def test_names_property(self):
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(Path(d), extra_names=frozenset({"foo"}))
+            assert "foo" in di.names
+            assert ".git" in di.names
+
+    def test_patterns_property(self):
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(Path(d), extra_patterns=["*.bak"])
+            assert "*.bak" in di.patterns
+            assert "*.ish" in di.patterns
 
 
 # ---------------------------------------------------------------------------
