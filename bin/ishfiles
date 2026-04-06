@@ -16,7 +16,4 @@ if (_repo_root / "src" / "pyishlib").is_dir():
 
 from pyishlib.ishfiles.cli import main  # noqa: E402
 
-if __name__ == "__main__":
-    sys.exit(main())
-
-sys.exit(main())
+raise SystemExit(main())
