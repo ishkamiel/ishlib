@@ -22,8 +22,12 @@ sys.path.insert(
 )
 
 from pyishlib.dotfile_ignore import DotfileIgnore
-from pyishlib.ishfiles.ignore import ISHFILES_PATTERNS, ISHIGNORE_FILE, build_ignore
+from pyishlib.ishfiles.ignore import build_ignore
 from pyishlib.ishfiles.config import (
+    CONFIG_DIR,
+    SCRIPTS_DIR,
+    INSTALLERS_DIR,
+    IGNORE_FILE,
     DEFAULT_SOURCE_DIR,
     DEFAULT_TARGET_DIR,
     load_config,
@@ -123,9 +127,23 @@ class TestLoadConfig:
 
 class TestDotfileIgnore:
 
-    def test_ishfiles_patterns(self):
-        assert "ishconfig" in ISHFILES_PATTERNS
-        assert "ishscripts" in ISHFILES_PATTERNS
+    def test_config_constants(self):
+        assert CONFIG_DIR == "ishconfig"
+        assert SCRIPTS_DIR == "ishscripts"
+        assert INSTALLERS_DIR == "ishinstallers"
+        assert IGNORE_FILE == ".ishignore"
+
+    def test_config_registers_constants(self):
+        cfg = load_config(config_file=Path("/nonexistent/config.toml"))
+        assert cfg.get_opt("config_dir") == CONFIG_DIR
+        assert cfg.get_opt("scripts_dir") == SCRIPTS_DIR
+        assert cfg.get_opt("installers_dir") == INSTALLERS_DIR
+        assert cfg.get_opt("ignore_file") == IGNORE_FILE
+
+    def test_constants_are_readonly(self):
+        cfg = load_config(config_file=Path("/nonexistent/config.toml"))
+        with pytest.raises(ValueError):
+            cfg.set_default("config_dir", "other")
 
     def test_default_ignore(self):
         with tempfile.TemporaryDirectory() as d:
@@ -135,17 +153,19 @@ class TestDotfileIgnore:
             assert not di.is_ignored("dot_bashrc")
 
     def test_build_ignore_includes_ishfiles_patterns(self):
+        cfg = load_config(config_file=Path("/nonexistent/config.toml"))
         with tempfile.TemporaryDirectory() as d:
-            di = build_ignore(Path(d))
+            di = build_ignore(cfg, Path(d))
             assert di.is_ignored("ishconfig")
             assert di.is_ignored("ishscripts")
-            assert di.is_ignored(ISHIGNORE_FILE)
+            assert di.is_ignored("ishinstallers")
+            assert di.is_ignored(IGNORE_FILE)
             assert di.is_ignored(".git")
 
     def test_ignore_file(self):
         with tempfile.TemporaryDirectory() as d:
-            _make_file(Path(d) / ISHIGNORE_FILE, "*.log\ntemp_*\n")
-            di = DotfileIgnore(Path(d), ignore_file=ISHIGNORE_FILE)
+            _make_file(Path(d) / IGNORE_FILE, "*.log\ntemp_*\n")
+            di = DotfileIgnore(Path(d), ignore_file=IGNORE_FILE)
             assert di.is_ignored("debug.log")
             assert di.is_ignored("temp_stuff")
             assert not di.is_ignored("keep_me")
@@ -162,10 +182,10 @@ class TestDotfileIgnore:
 
     def test_combines_all_sources(self):
         with tempfile.TemporaryDirectory() as d:
-            _make_file(Path(d) / ISHIGNORE_FILE, "*.log\n")
+            _make_file(Path(d) / IGNORE_FILE, "*.log\n")
             di = DotfileIgnore(
                 Path(d),
-                ignore_file=ISHIGNORE_FILE,
+                ignore_file=IGNORE_FILE,
                 extra_patterns=["*.bak"],
             )
             assert di.is_ignored("file.log")
@@ -174,8 +194,9 @@ class TestDotfileIgnore:
             assert di.is_ignored(".git")
 
     def test_build_ignore_returns_dotfileignore(self):
+        cfg = load_config(config_file=Path("/nonexistent/config.toml"))
         with tempfile.TemporaryDirectory() as d:
-            di = build_ignore(Path(d))
+            di = build_ignore(cfg, Path(d))
             assert isinstance(di, DotfileIgnore)
             assert di.is_ignored(".git")
 

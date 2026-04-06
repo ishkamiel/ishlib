@@ -5,7 +5,7 @@
 **ishlib** is a modular shell scripting library providing utility functions for sysadmin and development tasks. It has two components:
 
 - **Shell library** (`ishlib.sh`): A compiled, self-documenting POSIX/Bash function library built from modular sources in `src/`
-- **Python library** (`src/pyishlib/`): Installer framework with backends for apt, brew, cargo, pip, and winget
+- **Python library** (`src/pyishlib/`): Installer framework with backends for apt, brew, cargo, pip, winget, and custom scripts; plus the `ishfiles` CLI for dotfile/package/script management
 
 ## Repository Structure
 
@@ -187,6 +187,32 @@ The `pyishlib` installer framework supports loading package configuration from *
 ## Markdown Linting
 
 Markdownlint (mdl) excludes rules: MD013 (line length), MD024 (duplicate headers), MD026 (trailing punctuation in headers). Generated docs (`docs/ishlib_shell.md`, `docs/pyishlib/`) are excluded from linting.
+
+## ishfiles CLI Architecture
+
+The `ishfiles` CLI tool (`src/pyishlib/ishfiles/`) manages dotfiles, packages, and scripts. Key design rules:
+
+### IshConfig as the Single Source of Truth
+
+All configuration — directory names, file names, defaults, and constants — flows through the `IshConfig` object built by `ishfiles/config.py:load_config()`. Components must **never** import path constants directly from other modules; instead, read them from the `cfg` (`IshConfig`) instance via `cfg.get_opt("name")`.
+
+- **Constants** (read-only): Reserved directory and file names (`config_dir`, `scripts_dir`, `installers_dir`, `ignore_file`, `package_files`) are registered via `cfg.set_constant()` in `load_config()`. They cannot be overridden by CLI args, TOML config, or defaults. Attempting to shadow a constant via `set_default()` raises `ValueError`.
+- **Defaults** (overridable): Values like `source`, `target`, `patterns` that users can override via CLI args or TOML config.
+- **Lookup priority**: constants > args > conf > defaults.
+
+New ishfiles-specific directory or file name constants should be defined in `ishfiles/config.py` and registered as constants on `IshConfig`.
+
+### Subcommand Pattern
+
+Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` and `run(cfg)` functions. Register new commands in `ishfiles/cli.py`. The `apply` command runs dotfile installation, then package installation, then scripts — in that order.
+
+### Reserved Directories in Dotfile Source
+
+The ishfiles source folder reserves these directories (ignored during dotfile application):
+
+- `ishconfig/` — package configuration (`packages.toml` / `packages.json`)
+- `ishscripts/` — user scripts executed on `apply` and `runscripts`
+- `ishinstallers/` — custom per-package install scripts
 
 ## Important Warnings
 

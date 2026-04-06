@@ -49,6 +49,7 @@ class IshConfig:
     args: Any = field(default=None, repr=False, compare=False)
     conf: Any = field(default=None, repr=False, compare=False)
     defaults: dict = field(default_factory=dict, repr=False, compare=False)
+    constants: dict = field(default_factory=dict, repr=False, compare=False)
 
     # -- TOML loading ----------------------------------------------------------
 
@@ -221,11 +222,43 @@ class IshConfig:
 
         Defaults have the lowest priority: args and conf attributes
         will still override them.
+
+        Raises:
+            ValueError: If the name is already registered as a constant.
         """
+        if name in self.constants:
+            raise ValueError(
+                f"Cannot set default for read-only config option: {name!r}"
+            )
         self.defaults[name] = value
 
+    def set_constant(self, name: str, value: Any) -> None:
+        """Register a read-only config option.
+
+        Constants have the highest priority and cannot be overridden by
+        args, conf, or defaults.  Attempting to register a constant
+        that already exists with a different value raises ``ValueError``.
+
+        Raises:
+            ValueError: If the name is already registered with a different
+                        value, or if it conflicts with an existing default.
+        """
+        if name in self.constants:
+            if self.constants[name] != value:
+                raise ValueError(
+                    f"Cannot redefine read-only config option {name!r}: "
+                    f"{self.constants[name]!r} -> {value!r}"
+                )
+            return
+        if name in self.defaults:
+            raise ValueError(
+                f"Cannot register constant {name!r}: "
+                f"already exists as a default"
+            )
+        self.constants[name] = value
+
     def __getattr__(self, name: str) -> Any:
-        """Fall back to args -> conf -> defaults for unknown attributes.
+        """Fall back to constants -> args -> conf -> defaults for unknown attributes.
 
         This lets ``IshConfig`` act as a drop-in for an argparse namespace::
 
@@ -236,8 +269,11 @@ class IshConfig:
         # Avoid infinite recursion: these are dataclass fields resolved via
         # __dict__ directly.  If we get here for them they truly don't exist
         # yet (e.g. during __init__), so bail out.
-        if name in ("args", "conf", "defaults"):
+        if name in ("args", "conf", "defaults", "constants"):
             raise AttributeError(name)
+        constants = self.__dict__.get("constants") or {}
+        if name in constants:
+            return constants[name]
         args = self.__dict__.get("args")
         conf = self.__dict__.get("conf")
         defaults = self.__dict__.get("defaults") or {}
@@ -252,12 +288,15 @@ class IshConfig:
         )
 
     def get_opt(self, name: str, default: Any = _MISSING) -> Any:
-        """Look up *name* with args -> conf -> defaults -> *default* priority.
+        """Look up *name* with constants -> args -> conf -> defaults -> *default* priority.
 
-        Unlike attribute access, this returns *default* instead of raising
-        ``AttributeError`` when the name is not found.  When no explicit
-        *default* is given and the name is not found, returns ``None``.
+        Constants always win.  Unlike attribute access, this returns
+        *default* instead of raising ``AttributeError`` when the name is
+        not found.  When no explicit *default* is given and the name is
+        not found, returns ``None``.
         """
+        if name in self.constants:
+            return self.constants[name]
         if self.args is not None and hasattr(self.args, name):
             return getattr(self.args, name)
         if self.conf is not None and hasattr(self.conf, name):

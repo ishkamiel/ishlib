@@ -5,7 +5,7 @@
 # Distributed under terms of the MIT license.
 """Shared installer logic for ishfiles commands.
 
-Loads a package configuration file from the ``ishconfig`` directory
+Loads a package configuration file from the config directory
 inside the ishfiles source folder and provides helpers to install
 the declared packages via the :class:`~pyishlib.installer.Installer`
 framework.
@@ -25,21 +25,23 @@ from ..ish_config import IshConfig
 
 log = logging.getLogger(__name__)
 
-#: Recognised package-list filenames inside ``<source>/ishconfig/``.
-_PACKAGE_FILES = [
-    ("packages.toml", InstallerConfigTOML),
-    ("packages.json", InstallerConfigJSON),
-]
+#: Map of file suffix to config loader class.
+_SUFFIX_LOADERS = {
+    ".toml": InstallerConfigTOML,
+    ".json": InstallerConfigJSON,
+}
 
 
-def find_package_config(source_dir: Path) -> Optional[Path]:
+def find_package_config(cfg: IshConfig, source_dir: Path) -> Optional[Path]:
     """Return the first existing package config file, or *None*.
 
-    Searches ``<source_dir>/ishconfig/`` for ``packages.toml`` then
-    ``packages.json``.
+    Searches ``<source_dir>/<config_dir>/`` for each filename listed in
+    the ``package_files`` config option.
     """
-    config_dir = Path(source_dir) / "ishconfig"
-    for filename, _ in _PACKAGE_FILES:
+    config_dir_name = cfg.get_opt("config_dir")
+    package_files = cfg.get_opt("package_files")
+    config_dir = Path(source_dir) / config_dir_name
+    for filename in package_files:
         candidate = config_dir / filename
         if candidate.is_file():
             log.debug("Found package config: %s", candidate)
@@ -50,13 +52,10 @@ def find_package_config(source_dir: Path) -> Optional[Path]:
 def load_packages(config_file: Path) -> Iterable[dict]:
     """Load and return the platform-filtered package list from *config_file*."""
     suffix = config_file.suffix.lower()
-    if suffix == ".toml":
-        cfg = InstallerConfigTOML(config_file)
-    elif suffix == ".json":
-        cfg = InstallerConfigJSON(config_file)
-    else:
+    loader = _SUFFIX_LOADERS.get(suffix)
+    if loader is None:
         raise ValueError(f"Unsupported package config format: {config_file}")
-    return cfg.get_pkgs()
+    return loader(config_file).get_pkgs()
 
 
 def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int:
@@ -70,10 +69,11 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
         0 on success or when no config file is found, 1 on errors.
     """
     source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
-    config_file = find_package_config(source_dir)
+    config_file = find_package_config(cfg, source_dir)
 
     if config_file is None:
-        log.info("No package config found in %s/ishconfig/", source_dir)
+        config_dir_name = cfg.get_opt("config_dir")
+        log.info("No package config found in %s/%s/", source_dir, config_dir_name)
         return 0
 
     log.info("Loading packages from %s", config_file)
