@@ -257,8 +257,7 @@ class IshConfig:
             return
         if name in self.defaults:
             raise ValueError(
-                f"Cannot register constant {name!r}: "
-                f"already exists as a default"
+                f"Cannot register constant {name!r}: " f"already exists as a default"
             )
         self.constants[name] = value
 
