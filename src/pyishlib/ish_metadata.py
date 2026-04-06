@@ -50,60 +50,51 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
-# Pattern: : <<'__ISH__' ... __ISH__
+# ---------------------------------------------------------------------------
+# Metadata block patterns
+#
+# Each pattern matches a complete __ISH__ metadata block and captures the
+# body content in a named ``body`` group.  The same compiled regex is used
+# for both *extraction* (via ``m.group("body")``) and *removal* (via
+# ``pattern.sub("", text)``).  Trailing horizontal whitespace and an
+# optional newline are consumed so that removal leaves clean output.
+# ---------------------------------------------------------------------------
+
+# Shell heredoc: : <<'__ISH__' ... __ISH__
 _RE_SHELL_HEREDOC = re.compile(
-    r"^[ \t]*:[ \t]+<<\s*['\"]?__ISH__['\"]?\s*$(.*?)^__ISH__\s*$",
+    r"^[ \t]*:[ \t]+<<\s*['\"]?__ISH__['\"]?[ \t]*\n"
+    r"(?P<body>.*?)"
+    r"^__ISH__[ \t]*\n?",
     re.MULTILINE | re.DOTALL,
 )
 
-# Pattern: __ish__ = """..."""  or __ish__ = '''...'''
+# Python assignment: __ish__ = """..."""  or __ish__ = '''...'''
 _RE_PYTHON_ASSIGN = re.compile(
-    r"^__ish__\s*=\s*(?:\"{3}|'{3})(.*?)(?:\"{3}|'{3})",
+    r"^__ish__\s*=\s*(?:\"{3}|'{3})(?P<body>.*?)(?:\"{3}|'{3})[ \t]*\n?",
     re.MULTILINE | re.DOTALL,
 )
 
-# Pattern: <#__ISH__ ... __ISH__#>
+# PowerShell block comment: <#__ISH__ ... __ISH__#>
 _RE_POWERSHELL_BLOCK = re.compile(
-    r"<#__ISH__\s*?\r?\n(.*?)^__ISH__#>",
+    r"<#__ISH__\s*?\r?\n(?P<body>.*?)^__ISH__#>[ \t]*\n?",
     re.MULTILINE | re.DOTALL,
 )
 
-# Pattern: comment-prefixed block with any single-char or double-char prefix
-# e.g., # __ISH__ / // __ISH__ / -- __ISH__ / ; __ISH__ / % __ISH__
+# Comment-prefixed block: # __ISH__ ... # __ISH__
+# Supports: #, //, --, ;, % prefixes
 _RE_COMMENT_BLOCK = re.compile(
-    r"^(?P<prefix>[#;%]|//|--)[ \t]+__ISH__\s*$(?P<body>.*?)^(?P=prefix)[ \t]+__ISH__\s*$",
-    re.MULTILINE | re.DOTALL,
-)
-
-# Removal patterns -- designed for re.sub() to strip metadata blocks from
-# file content, leaving the surrounding text intact.
-_RE_REMOVE_SHELL_HEREDOC = re.compile(
-    r"^[ \t]*:[ \t]+<<\s*['\"]?__ISH__['\"]?\s*$.*?^__ISH__[ \t]*\n?",
-    re.MULTILINE | re.DOTALL,
-)
-
-_RE_REMOVE_PYTHON_ASSIGN = re.compile(
-    r"^__ish__\s*=\s*(?:\"{3}|\'{3}).*?(?:\"{3}|\'{3})[ \t]*\n?",
-    re.MULTILINE | re.DOTALL,
-)
-
-_RE_REMOVE_POWERSHELL_BLOCK = re.compile(
-    r"<#__ISH__\s*?\r?\n.*?^__ISH__#>[ \t]*\n?",
-    re.MULTILINE | re.DOTALL,
-)
-
-_RE_REMOVE_COMMENT_BLOCK = re.compile(
-    r"^(?P<prefix>[#;%]|//|--)[ \t]+__ISH__\s*$"
-    r".*?"
+    r"^(?P<prefix>[#;%]|//|--)[ \t]+__ISH__[ \t]*\n"
+    r"(?P<body>.*?)"
     r"^(?P=prefix)[ \t]+__ISH__[ \t]*\n?",
     re.MULTILINE | re.DOTALL,
 )
 
-_METADATA_REMOVAL_PATTERNS = [
-    _RE_REMOVE_SHELL_HEREDOC,
-    _RE_REMOVE_PYTHON_ASSIGN,
-    _RE_REMOVE_POWERSHELL_BLOCK,
-    _RE_REMOVE_COMMENT_BLOCK,
+# Ordered list used by both extraction and removal.
+_METADATA_PATTERNS = [
+    _RE_SHELL_HEREDOC,
+    _RE_PYTHON_ASSIGN,
+    _RE_POWERSHELL_BLOCK,
+    _RE_COMMENT_BLOCK,
 ]
 
 
@@ -143,26 +134,14 @@ def _extract_embedded(text: str) -> Optional[str]:
     Tries each embedding pattern in order and returns the first match,
     or None if no embedded metadata is found.
     """
-    # Shell heredoc
-    m = _RE_SHELL_HEREDOC.search(text)
-    if m:
-        return m.group(1)
-
-    # Python assignment
-    m = _RE_PYTHON_ASSIGN.search(text)
-    if m:
-        return m.group(1)
-
-    # PowerShell block comment
-    m = _RE_POWERSHELL_BLOCK.search(text)
-    if m:
-        return m.group(1)
-
-    # Comment-prefixed block
-    m = _RE_COMMENT_BLOCK.search(text)
-    if m:
-        return _strip_comment_prefix(m.group("body"), m.group("prefix"))
-
+    for pattern in _METADATA_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            body = m.group("body")
+            # Comment-prefixed blocks need prefix stripping
+            if "prefix" in m.groupdict():
+                body = _strip_comment_prefix(body, m.group("prefix"))
+            return body
     return None
 
 
@@ -220,9 +199,9 @@ def merge_metadata(
 def remove_metadata_blocks(text: str) -> str:
     """Remove all ``__ISH__`` metadata blocks from *text*.
 
-    Uses a set of patterns that mirror the extraction patterns but are
-    designed for ``re.sub()`` removal.  The surrounding file content is
-    left intact.
+    Uses the same patterns as :func:`_extract_embedded` so that
+    extraction and removal are always consistent.  The surrounding file
+    content is left intact.
 
     Args:
         text: The full file content as a string.
@@ -230,7 +209,7 @@ def remove_metadata_blocks(text: str) -> str:
     Returns:
         The text with all metadata blocks removed.
     """
-    for pattern in _METADATA_REMOVAL_PATTERNS:
+    for pattern in _METADATA_PATTERNS:
         text = pattern.sub("", text)
     return text
 
