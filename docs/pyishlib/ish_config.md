@@ -77,13 +77,29 @@ Set a single default value.
 Defaults have the lowest priority: args and conf attributes
 will still override them.
 
+Raises:
+    ValueError: If the name is already registered as a constant.
+
+#### `set_constant(name: str, value: Any)`
+
+Register a read-only config option.
+
+Constants have the highest priority and cannot be overridden by
+args, conf, or defaults.  Attempting to register a constant
+that already exists with a different value raises `ValueError`.
+
+Raises:
+    ValueError: If the name is already registered with a different
+                value, or if it conflicts with an existing default.
+
 #### `get_opt(name: str, default: Any = _MISSING)`
 
-Look up *name* with args -> conf -> defaults -> *default* priority.
+Look up *name* with constants -> args -> conf -> defaults -> *default* priority.
 
-Unlike attribute access, this returns *default* instead of raising
-`AttributeError` when the name is not found.  When no explicit
-*default* is given and the name is not found, returns `None`.
+Constants always win.  Unlike attribute access, this returns
+*default* instead of raising `AttributeError` when the name is
+not found.  When no explicit *default* is given and the name is
+not found, returns `None`.
 
 #### `debug`
 
@@ -97,4 +113,4 @@ True when the log level is INFO or lower.
 
 True when the log level is ERROR or higher.
 
-#### `__init__(dry_run: bool = False, log_level: int = logging.WARNING, args: Any = None, conf: Any = None, defaults: dict = dict())`
+#### `__init__(dry_run: bool = False, log_level: int = logging.WARNING, args: Any = None, conf: Any = None, defaults: dict = dict(), constants: dict = dict(), context: DotfileContext = DotfileContext())`

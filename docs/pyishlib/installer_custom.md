@@ -26,22 +26,24 @@ This will look for a script named `install_my-tool` (or
 
 Installer backend that runs user-provided install scripts.
 
-Scripts are looked up in `<dotfiles_dir>/ishinstallers/` and named
+Scripts are looked up in `<source>/ishinstallers/` and named
 `install_<pkg_name>` (with optional extension).  Each script is
 preprocessed through the `@ish` directive pipeline before execution.
 
+The dotfiles directory is resolved from `cfg.get_opt("source")`.
+The directory name is read from `cfg.get_opt("installers_dir")`.
+Preprocessing variables come from `cfg.context`.
+
 Args:
     runner: `CommandRunner` for executing scripts.
-    dotfiles_dir: Path to the dotfiles directory containing the
-                  `ishinstallers/` folder.  If *None*, the custom
-                  installer will report that it cannot install anything.
-    variables: Optional preprocessing variables to pass to scripts.
+    cfg: `IshConfig` providing `source`, `installers_dir`,
+         and `context`.  If *None*, a default is created.
 
-#### `__init__(runner: CommandRunner, dotfiles_dir: Optional[Path] = None, variables: Optional[Dict[str, str]] = None)`
+#### `__init__(runner: CommandRunner, cfg: Optional[IshConfig] = None)`
 
 #### `installers_dir`
 
-The ishinstallers directory, or None if not configured.
+The installers directory, or None if not configured.
 
 #### `namespace`
 
@@ -52,7 +54,7 @@ Get the common Namespace for installer commands.
 Check if custom installer is available for a package.
 
 Returns True when the package has a `custom` key and a matching
-install script exists in the ishinstallers directory.
+install script exists in the installers directory.
 
 #### `is_custom_pkg_installed(pkg: Any)`
 

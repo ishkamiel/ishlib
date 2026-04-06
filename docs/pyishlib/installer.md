@@ -8,7 +8,13 @@ Helper library for package installing tasks
 
 Installer class for installing packages.
 
-#### `__init__(cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfiles_dir: Optional[Path] = None, variables: Optional[Dict[str, str]] = None)`
+Args:
+    cfg: Shared `IshConfig`.  The `source` option is used
+         to locate the dotfiles directory (for custom install scripts),
+         and `cfg.context` provides preprocessing variables.
+    runner: Optional `CommandRunner`.
+
+#### `__init__(cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None)`
 
 #### `register_installer(backend: Any)`
 
