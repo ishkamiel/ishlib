@@ -8,7 +8,7 @@ SHELL_SRC_FILES = $(wildcard src/sh/*.sh) $(wildcard src/bash/*.bash) src/readme
 
 PYTEST_ARGS = -d -n$(shell nproc)
 
-all: docs/ishlib.md ishlib.sh verify
+all: docs/ishlib_shell.md ishlib.sh verify
 
 .PHONY: verify
 verify: ishlib.sh $(SHELL_SRC_FILES)
@@ -20,7 +20,7 @@ ishlib.sh: $(SHELL_SRC_FILES) $(BUILD_SCRIPT)
 	./build_ishlib.py
 	chmod +x $@
 
-docs/ishlib.md: ishlib.sh $(SHELL_SRC_FILES) | docs
+docs/ishlib_shell.md: ishlib.sh $(SHELL_SRC_FILES) | docs
 	$(info === Updating $@)
 	./ishlib.sh -h --markdown | head -n -1 > $@
 
