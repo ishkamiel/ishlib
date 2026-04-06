@@ -26,20 +26,21 @@ Three-stage dotfile applier.
 3. `apply` -- compare staged files with *target_dir*, prompt
    the user, and install changed files.
 
+Preprocessing variables are read from `cfg.context`.
+
 Args:
     source_dir: Root of the dotfile repository.
     target_dir: Installation target (default `$HOME`).
     cfg: Shared `IshConfig` (created automatically if *None*).
+         Its `context` attribute provides preprocessing variables.
     runner: Optional `CommandRunner` (created automatically
             if *None*).
     dotfile_ignore: `DotfileIgnore` controlling which files
                to skip during discovery.
-    variables: Optional dictionary of preprocessing variables
-               available for `${__ish_<name>}` substitution.
     finder: Optional pre-built `DotfileFinder`.  When given,
             *source_dir* and *target_dir* are read from it.
 
-#### `__init__(source_dir: Optional[Path] = None, target_dir: Optional[Path] = None, cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfile_ignore: Optional[DotfileIgnore] = None, variables: Optional[dict] = None, finder: Optional[DotfileFinder] = None)`
+#### `__init__(source_dir: Optional[Path] = None, target_dir: Optional[Path] = None, cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfile_ignore: Optional[DotfileIgnore] = None, finder: Optional[DotfileFinder] = None)`
 
 #### `finder`
 
