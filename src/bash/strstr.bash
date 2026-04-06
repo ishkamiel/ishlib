@@ -20,7 +20,7 @@ position of the found variable into ${!pos_var}.
 Arguments:
     haystack - the string to look in
     needle - the string to search for
-    pos_var - name of a variable for positionli
+    pos_var - name of a variable for position
 
 Side-effects:
     ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle

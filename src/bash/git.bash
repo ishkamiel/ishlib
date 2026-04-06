@@ -16,10 +16,10 @@ ish_SOURCED_git_bash=1 # source guard
 
 Arguments:
   url                   - the git remote URL
-  dir                   - The destianation directory
+  dir                   - The destination directory
   --update_submodules   - Run submodule update after clone
   -b|--branch branch      - Specify branch to checkout / update
-  -c|--commit           - Also checkokut specific commit
+  -c|--commit           - Also checkout specific commit
 
 Globals:
   bin_git               - Path to git (default : git)

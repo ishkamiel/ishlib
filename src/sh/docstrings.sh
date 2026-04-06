@@ -23,8 +23,8 @@ likely misbehave in other contexts.
 Arguments:
 file          - the file to read for here-documents
 --markdown    - Attempt to produce markdown
---text-only   - Attempt to produce texst-only
---tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
+--text-only   - Attempt to produce text-only
+--tag TAG     - use the given TAG for docstrings (default is DOCSTRING)
 --no-newlines - prevent insertion of newlines
 
 Returns:

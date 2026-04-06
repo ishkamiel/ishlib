@@ -9,7 +9,7 @@
 ish_SOURCED=1 # source guard
 
 : <<'DOCSTRING'
-# ishlib 2026-04-06.0354
+# ishlib 2026-04-06.0555
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-06.0354"
+export ish_VERSION_NUMBER="2026-04-06.0555"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -189,8 +189,8 @@ likely misbehave in other contexts.
 Arguments:
 file          - the file to read for here-documents
 --markdown    - Attempt to produce markdown
---text-only   - Attempt to produce texst-only
---tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
+--text-only   - Attempt to produce text-only
+--tag TAG     - use the given TAG for docstrings (default is DOCSTRING)
 --no-newlines - prevent insertion of newlines
 
 Returns:
@@ -365,10 +365,10 @@ print_docstrings() {
 
 #### Print and debug helpers
 
-The print functions all follow the same pattern, i.e, they print a short tag
-followed by the all arguments colorized as specified by global color tags.
-At present, all printouts are to sdtderr. All functions return 0, or in
-case of failure, never returns.
+The print functions all follow the same pattern, i.e., they print a short tag
+followed by all arguments colorized as specified by global color tags.
+At present, all printouts are to stderr. All functions return 0, or, in
+case of failure, do not return.
 
 DOCSTRING
 
@@ -470,7 +470,7 @@ ishlib_debug() {
 }
 
 : <<'DOCSTRING'
-`has_prefix str prefx`
+`has_prefix str prefix`
 
 Source:
 
@@ -554,7 +554,7 @@ has_command() {
 }
 
 : <<'DOCSTRING'
-substr string start [end] [--var result_var]
+`substr string start [end] [--var result_var]`
 DOCSTRING
 substr() {
   _t="${ish_DebugTag}substr:"
@@ -719,7 +719,7 @@ position of the found variable into ${!pos_var}.
 Arguments:
     haystack - the string to look in
     needle - the string to search for
-    pos_var - name of a variable for positionli
+    pos_var - name of a variable for position
 
 Side-effects:
     ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
@@ -749,7 +749,7 @@ applicable.
 Arguments:
   var       - Indirect reference to command
   installer - Optional installer function
-  args      - Additional argumednts to installer function
+  args      - Additional arguments to installer function
 
 Side effects:
   ${!var} - the variable named by var is set to the found or installed cmd
@@ -1026,10 +1026,10 @@ ish_run() {
 
 Arguments:
   url                   - the git remote URL
-  dir                   - The destianation directory
+  dir                   - The destination directory
   --update_submodules   - Run submodule update after clone
   -b|--branch branch      - Specify branch to checkout / update
-  -c|--commit           - Also checkokut specific commit
+  -c|--commit           - Also checkout specific commit
 
 Globals:
   bin_git               - Path to git (default : git)

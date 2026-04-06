@@ -15,10 +15,10 @@ ish_SOURCED_prints_and_prompts_sh=1 # source guard
 
 #### Print and debug helpers
 
-The print functions all follow the same pattern, i.e, they print a short tag
-followed by the all arguments colorized as specified by global color tags.
-At present, all printouts are to sdtderr. All functions return 0, or in
-case of failure, never returns.
+The print functions all follow the same pattern, i.e., they print a short tag
+followed by all arguments colorized as specified by global color tags.
+At present, all printouts are to stderr. All functions return 0, or, in
+case of failure, do not return.
 
 DOCSTRING
 

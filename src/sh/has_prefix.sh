@@ -12,7 +12,7 @@ ish_SOURCED_has_prefix_sh=1 # source guard
 . "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
-`has_prefix str prefx`
+`has_prefix str prefix`
 
 Source:
 
