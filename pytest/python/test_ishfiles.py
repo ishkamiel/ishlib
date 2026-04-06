@@ -19,17 +19,16 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
-from pyishlib.dotfile import DEFAULT_IGNORE
+from pyishlib.dotfile_ignore import (
+    DEFAULT_IGNORE,
+    ISHFILES_IGNORE_DIRS,
+    ISHIGNORE_FILE,
+    build_ignore,
+)
 from pyishlib.ishfiles.config import (
     DEFAULT_SOURCE_DIR,
     DEFAULT_TARGET_DIR,
     load_config,
-)
-from pyishlib.ishfiles.ignore import (
-    HARDCODED_IGNORE_DIRS,
-    ISHFILES_IGNORE,
-    ISHIGNORE_FILE,
-    build_ignore,
 )
 from pyishlib.ishfiles.cli import main as cli_main
 
@@ -129,27 +128,26 @@ class TestLoadConfig:
 class TestIgnore:
 
     def test_hardcoded_dirs(self):
-        assert "ishconfig" in HARDCODED_IGNORE_DIRS
-        assert "ishscripts" in HARDCODED_IGNORE_DIRS
+        assert "ishconfig" in ISHFILES_IGNORE_DIRS
+        assert "ishscripts" in ISHFILES_IGNORE_DIRS
 
-    def test_ishfiles_ignore_includes_defaults(self):
-        for name in DEFAULT_IGNORE:
-            assert name in ISHFILES_IGNORE
-
-    def test_ishfiles_ignore_includes_hardcoded_dirs(self):
-        for name in HARDCODED_IGNORE_DIRS:
-            assert name in ISHFILES_IGNORE
-
-    def test_build_ignore_without_ishignore(self):
+    def test_build_ignore_default(self):
         with tempfile.TemporaryDirectory() as d:
             names, patterns = build_ignore(Path(d))
-            assert names == ISHFILES_IGNORE
-            assert patterns == []
+            assert names == DEFAULT_IGNORE
+            for name in DEFAULT_IGNORE:
+                assert name in names
 
-    def test_build_ignore_with_ishignore(self):
+    def test_build_ignore_with_extra_names(self):
+        with tempfile.TemporaryDirectory() as d:
+            names, patterns = build_ignore(Path(d), extra_names=ISHFILES_IGNORE_DIRS)
+            for name in ISHFILES_IGNORE_DIRS:
+                assert name in names
+
+    def test_build_ignore_with_ignore_file(self):
         with tempfile.TemporaryDirectory() as d:
             _make_file(Path(d) / ISHIGNORE_FILE, "*.log\ntemp_*\n")
-            names, patterns = build_ignore(Path(d))
+            names, patterns = build_ignore(Path(d), ignore_file=ISHIGNORE_FILE)
             assert "*.log" in patterns
             assert "temp_*" in patterns
 
@@ -161,8 +159,12 @@ class TestIgnore:
     def test_build_ignore_combines_all_sources(self):
         with tempfile.TemporaryDirectory() as d:
             _make_file(Path(d) / ISHIGNORE_FILE, "*.log\n")
-            names, patterns = build_ignore(Path(d), extra_patterns=["*.bak"])
-            # from .ishignore
+            names, patterns = build_ignore(
+                Path(d),
+                ignore_file=ISHIGNORE_FILE,
+                extra_patterns=["*.bak"],
+            )
+            # from .ishignore file
             assert "*.log" in patterns
             # from extra
             assert "*.bak" in patterns
