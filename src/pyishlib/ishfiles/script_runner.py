@@ -21,6 +21,7 @@ from ..command_runner import CommandRunner
 from ..dotfile_script import DotfileScript
 from ..file_preprocessor import FilePreprocessor
 from ..ish_config import IshConfig
+from ..os_info import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +98,19 @@ def run_scripts(
             preprocessor=preprocessor,
             runner=runner,
         )
+
+        # Preprocess to extract metadata for OS filtering
+        try:
+            script.preprocess()
+        except (UnicodeDecodeError, FileNotFoundError):
+            log.error("Cannot read script: %s", script_path)
+            return 1
+
+        if should_skip_for_os_from_metadata(script.metadata):
+            log.debug("Skipping %s (OS rules in metadata)", script_path.name)
+            if not cfg.quiet:
+                print(f"  [skipped] {script_path.name} (OS rules)")
+            continue
 
         if cfg.dry_run:
             log.info("Would run script: %s", script_path.name)

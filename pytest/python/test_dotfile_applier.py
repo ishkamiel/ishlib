@@ -173,11 +173,18 @@ class TestIgnore:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / ".dotfileignore"
             p.write_text("# comment\n*.bak\ntemp_*\n\n")
-            patterns = load_ignore_file(p)
+            patterns, only_on, ignore_on = load_ignore_file(p)
             assert patterns == ["*.bak", "temp_*"]
+            assert only_on == {}
+            assert ignore_on == {}
 
     def test_load_ignore_file_missing(self):
-        assert load_ignore_file(Path("/nonexistent/.dotfileignore")) == []
+        patterns, only_on, ignore_on = load_ignore_file(
+            Path("/nonexistent/.dotfileignore")
+        )
+        assert patterns == []
+        assert only_on == {}
+        assert ignore_on == {}
 
     def test_is_ignored_default(self):
         with tempfile.TemporaryDirectory() as d:
