@@ -4,6 +4,3 @@
 #
 # Distributed under terms of the MIT license.
 """ishfiles -- dotfile manager built on pyishlib."""
-
-from .config import IshfilesConfig
-from .scanner import IshfilesScanner

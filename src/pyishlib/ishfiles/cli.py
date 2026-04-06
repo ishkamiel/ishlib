@@ -12,11 +12,11 @@ modules in :mod:`~pyishlib.ishfiles.commands`.
 from __future__ import annotations
 
 import argparse
-import sys
+from typing import List, Optional
 
 from ..ish_comp import setup_logging
 from .commands import apply, diff
-from .config import IshfilesConfig
+from .config import load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list | None = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     """CLI entry point.
 
     Args:
@@ -100,11 +100,7 @@ def main(argv: list | None = None) -> int:
         parser.print_help()
         return 2
 
-    ishfiles_cfg = IshfilesConfig.load(args=args)
-    setup_logging(ishfiles_cfg.log_level)
+    cfg = load_config(args=args)
+    setup_logging(cfg.log_level)
 
-    return args.func(ishfiles_cfg)
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    return args.func(cfg)

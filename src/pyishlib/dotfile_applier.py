@@ -64,6 +64,8 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         runner: Optional :class:`CommandRunner` (created automatically
                 if *None*).
         ignore: Extra names to ignore on top of :data:`DEFAULT_IGNORE`.
+        ignore_patterns: Extra fnmatch-style patterns to ignore on top of
+                   :data:`DEFAULT_IGNORE_PATTERNS` and ``.dotfileignore``.
         variables: Optional dictionary of preprocessing variables
                    available for ``${__ish_<name>}`` substitution.
     """
@@ -75,6 +77,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
         ignore: Optional[frozenset] = None,
+        ignore_patterns: Optional[Sequence[str]] = None,
         variables: Optional[dict] = None,
     ) -> None:
         if runner is not None:
@@ -91,6 +94,8 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         self._ignore_patterns: List[str] = list(
             DEFAULT_IGNORE_PATTERNS
         ) + load_ignore_file(self._source_dir / DOTFILEIGNORE)
+        if ignore_patterns:
+            self._ignore_patterns.extend(ignore_patterns)
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
         self._variables: dict = dict(variables) if variables else {}
 

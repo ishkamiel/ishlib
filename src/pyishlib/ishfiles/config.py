@@ -5,17 +5,19 @@
 # Distributed under terms of the MIT license.
 """Configuration loading for ishfiles.
 
-Handles loading of settings from the TOML config file
-(``~/.config/ishfiles/config.toml``), CLI arguments, and built-in
-defaults.  The resolved values are exposed through :class:`IshfilesConfig`.
+Loads the TOML config file (``~/.config/ishfiles/config.toml``) and
+merges it with CLI arguments and built-in defaults through
+:class:`~pyishlib.ish_config.IshConfig`.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
+
+from ..ish_config import IshConfig
 
 try:
     import tomllib  # Python 3.11+
@@ -33,11 +35,7 @@ DEFAULT_CONFIG_FILE = Path.home() / ".config" / "ishfiles" / "config.toml"
 
 
 def _load_toml(path: Path) -> Dict[str, Any]:
-    """Load a TOML file and return its contents as a dict.
-
-    Returns an empty dict when the file does not exist or TOML support
-    is unavailable.
-    """
+    """Load a TOML file, returning an empty dict on missing file or no TOML support."""
     if not path.is_file():
         log.debug("Config file not found: %s", path)
         return {}
@@ -51,90 +49,59 @@ def _load_toml(path: Path) -> Dict[str, Any]:
         return tomllib.load(fh)
 
 
-@dataclass
-class IshfilesConfig:
-    """Resolved configuration for the ishfiles tool.
+def _toml_to_namespace(file_data: Dict[str, Any]) -> SimpleNamespace:
+    """Flatten the ``[ishfiles]`` and ``[ignore]`` TOML sections into a namespace.
 
-    Resolution priority (highest to lowest):
-    1. CLI arguments
-    2. Config file (``~/.config/ishfiles/config.toml``)
-    3. Built-in defaults
-
-    Attributes:
-        source_dir:   Root of the dotfile repository.
-        target_dir:   Where dotfiles are installed (typically ``$HOME``).
-        config_file:  Path to the TOML configuration file.
-        ignore_patterns: Extra ignore patterns from the config file.
-        dry_run:      When True, show what would be done without making changes.
-        log_level:    Logging verbosity.
+    The resulting namespace has attributes ``source``, ``target``, and
+    ``ignore_patterns`` that :class:`IshConfig` can resolve via
+    ``__getattr__``.
     """
+    ishfiles_section = file_data.get("ishfiles", {})
+    ignore_section = file_data.get("ignore", {})
 
-    source_dir: Path = field(default_factory=lambda: DEFAULT_SOURCE_DIR)
-    target_dir: Path = field(default_factory=lambda: DEFAULT_TARGET_DIR)
-    config_file: Path = field(default_factory=lambda: DEFAULT_CONFIG_FILE)
-    ignore_patterns: List[str] = field(default_factory=list)
-    dry_run: bool = False
-    log_level: int = field(default=logging.WARNING)
+    attrs: Dict[str, Any] = {}
+    if "source" in ishfiles_section:
+        attrs["source"] = str(Path(ishfiles_section["source"]).expanduser())
+    if "target" in ishfiles_section:
+        attrs["target"] = str(Path(ishfiles_section["target"]).expanduser())
 
-    @classmethod
-    def load(
-        cls,
-        config_file: Optional[Path] = None,
-        args: Optional[Any] = None,
-    ) -> "IshfilesConfig":
-        """Build an :class:`IshfilesConfig` by merging all sources.
+    attrs["ignore_patterns"] = list(ignore_section.get("patterns", []))
 
-        Args:
-            config_file: Override path to the TOML config file.
-            args:        An argparse namespace with CLI overrides.
-        """
-        cfg_path = config_file or DEFAULT_CONFIG_FILE
-        if args is not None and getattr(args, "config", None) is not None:
-            cfg_path = Path(args.config)
+    return SimpleNamespace(**attrs)
 
-        file_data = _load_toml(cfg_path)
-        ishfiles_section = file_data.get("ishfiles", {})
-        ignore_section = file_data.get("ignore", {})
 
-        # --- resolve source_dir ---
-        if args is not None and getattr(args, "source", None) is not None:
-            source_dir = Path(args.source).expanduser()
-        elif "source" in ishfiles_section:
-            source_dir = Path(ishfiles_section["source"]).expanduser()
-        else:
-            source_dir = DEFAULT_SOURCE_DIR
+def load_config(
+    args: Optional[Any] = None,
+    config_file: Optional[Path] = None,
+) -> IshConfig:
+    """Build an :class:`IshConfig` for ishfiles.
 
-        # --- resolve target_dir ---
-        if args is not None and getattr(args, "target", None) is not None:
-            target_dir = Path(args.target).expanduser()
-        elif "target" in ishfiles_section:
-            target_dir = Path(ishfiles_section["target"]).expanduser()
-        else:
-            target_dir = DEFAULT_TARGET_DIR
+    Resolution priority: CLI *args* > TOML config file > built-in defaults.
 
-        # --- resolve ignore patterns from config file ---
-        ignore_patterns: List[str] = list(ignore_section.get("patterns", []))
+    Args:
+        args:        An argparse namespace with CLI overrides.
+        config_file: Override path to the TOML config file (for testing).
+    """
+    cfg_path = DEFAULT_CONFIG_FILE
+    if config_file is not None:
+        cfg_path = config_file
+    elif args is not None and getattr(args, "config", None) is not None:
+        cfg_path = Path(args.config)
 
-        # --- resolve log level ---
-        log_level = logging.WARNING
-        if args is not None:
-            if getattr(args, "debug", False):
-                log_level = logging.DEBUG
-            elif getattr(args, "verbose", False):
-                log_level = logging.INFO
-            elif getattr(args, "quiet", False):
-                log_level = logging.ERROR
+    file_data = _load_toml(cfg_path)
+    conf = _toml_to_namespace(file_data) if file_data else None
 
-        # --- resolve dry_run ---
-        dry_run = False
-        if args is not None:
-            dry_run = getattr(args, "dry_run", False)
+    # Filter out None-valued args so they don't shadow conf/defaults in
+    # IshConfig's resolution chain (hasattr returns True for None attrs).
+    filtered_args = None
+    if args is not None:
+        non_none = {k: v for k, v in vars(args).items() if v is not None}
+        filtered_args = SimpleNamespace(**non_none)
 
-        return cls(
-            source_dir=source_dir,
-            target_dir=target_dir,
-            config_file=cfg_path,
-            ignore_patterns=ignore_patterns,
-            dry_run=dry_run,
-            log_level=log_level,
-        )
+    defaults = {
+        "source": str(DEFAULT_SOURCE_DIR),
+        "target": str(DEFAULT_TARGET_DIR),
+        "ignore_patterns": [],
+    }
+
+    return IshConfig.from_args(args=filtered_args, conf=conf, defaults=defaults)
