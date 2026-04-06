@@ -1,38 +1,38 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "title": "ishfiles configuration",
-  "description": "Schema for ~/.config/ishfiles/config.toml",
-  "type": "object",
   "additionalProperties": false,
+  "description": "Schema for ~/.config/ishfiles/config.toml",
   "properties": {
-    "ishfiles": {
-      "type": "object",
-      "description": "Core ishfiles settings.",
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "Path to the ishfiles source folder (default: ~/.local/share/ishfiles)."
-        },
-        "target": {
-          "type": "string",
-          "description": "Target directory for dotfile installation (default: $HOME)."
-        }
-      }
-    },
     "ignore": {
-      "type": "object",
-      "description": "Additional ignore rules (on top of .ishignore and hardcoded defaults).",
       "additionalProperties": false,
+      "description": "Additional ignore rules (on top of .ishignore and hardcoded defaults).",
       "properties": {
         "patterns": {
-          "type": "array",
           "description": "List of fnmatch-style glob patterns to ignore.",
           "items": {
             "type": "string"
-          }
+          },
+          "type": "array"
         }
-      }
+      },
+      "type": "object"
+    },
+    "ishfiles": {
+      "additionalProperties": false,
+      "description": "Core ishfiles settings.",
+      "properties": {
+        "source": {
+          "description": "Path to the ishfiles source folder (default: ~/.local/share/ishfiles).",
+          "type": "string"
+        },
+        "target": {
+          "description": "Target directory for dotfile installation (default: $HOME).",
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
-  }
+  },
+  "title": "ishfiles configuration",
+  "type": "object"
 }
