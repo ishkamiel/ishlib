@@ -25,7 +25,6 @@ from pyishlib.dotfile_ignore import (
     DotfileIgnore,
     ISHFILES_IGNORE_DIRS,
     ISHIGNORE_FILE,
-    build_ignore,
 )
 from pyishlib.ishfiles.config import (
     DEFAULT_SOURCE_DIR,
@@ -85,8 +84,8 @@ class TestLoadConfig:
 
             assert cfg.get_opt("source") == "/tmp/my-dotfiles"
             assert cfg.get_opt("target") == "/tmp/my-home"
-            assert "*.bak" in cfg.get_opt("ignore_patterns")
-            assert "temp_*" in cfg.get_opt("ignore_patterns")
+            assert "*.bak" in cfg.get_opt("patterns")
+            assert "temp_*" in cfg.get_opt("patterns")
 
     def test_args_override_config_file(self):
         with tempfile.TemporaryDirectory() as d:
@@ -177,9 +176,9 @@ class TestDotfileIgnore:
             assert di.is_ignored("file.ish")
             assert di.is_ignored(".git")
 
-    def test_build_ignore_returns_instance(self):
+    def test_constructor(self):
         with tempfile.TemporaryDirectory() as d:
-            di = build_ignore(Path(d))
+            di = DotfileIgnore(Path(d))
             assert isinstance(di, DotfileIgnore)
             assert di.is_ignored(".git")
 

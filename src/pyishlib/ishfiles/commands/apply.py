@@ -40,7 +40,7 @@ def run(cfg: IshConfig) -> int:
         source_dir=source_dir,
         ignore_file=ISHIGNORE_FILE,
         extra_names=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
-        extra_patterns=cfg.get_opt("ignore_patterns", []),
+        extra_patterns=cfg.get_opt("patterns", []),
     )
 
     applier = DotfileApplier(

@@ -6,6 +6,7 @@
 # Distributed under terms of the MIT license.
 """Shared configuration for pyishlib components."""
 
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,24 +53,65 @@ class IshConfig:
     # -- TOML loading ----------------------------------------------------------
 
     @staticmethod
+    def _flatten_from_schema(schema_path: Path) -> Dict[str, str]:
+        """Derive a flatten map from a JSON Schema file.
+
+        Walks the top-level ``properties`` of the schema.  For each
+        nested object section, maps ``section.key`` → ``key``.  For
+        top-level scalars, maps ``key`` → ``key``.
+        """
+        with open(schema_path, encoding="utf-8") as fh:
+            schema = json.load(fh)
+        flatten: Dict[str, str] = {}
+        for section, sdef in schema.get("properties", {}).items():
+            if sdef.get("type") == "object" and "properties" in sdef:
+                for key in sdef["properties"]:
+                    flatten[f"{section}.{key}"] = key
+            else:
+                flatten[section] = section
+        return flatten
+
+    @staticmethod
+    def _validate_toml(data: dict, schema_path: Path) -> None:
+        """Validate *data* against a JSON Schema file.
+
+        Only checks for unknown top-level sections and unknown keys
+        within known sections (mirrors ``additionalProperties: false``).
+        """
+        with open(schema_path, encoding="utf-8") as fh:
+            schema = json.load(fh)
+        allowed_sections = set(schema.get("properties", {}).keys())
+        for key in data:
+            if key not in allowed_sections:
+                _log.warning("Unknown config section: %s", key)
+                continue
+            sdef = schema["properties"][key]
+            if sdef.get("type") == "object" and "properties" in sdef:
+                allowed_keys = set(sdef["properties"].keys())
+                for subkey in data[key]:
+                    if subkey not in allowed_keys:
+                        _log.warning("Unknown config key: %s.%s", key, subkey)
+
+    @staticmethod
     def load_toml(
         path: Path,
-        flatten: Optional[Dict[str, str]] = None,
+        schema: Optional[Path] = None,
     ) -> Optional[SimpleNamespace]:
         """Load a TOML file and return a :class:`SimpleNamespace`.
 
         The namespace can be used as the *conf* argument to
         :meth:`from_args`.
 
+        When *schema* is given (path to a JSON Schema file), the loaded
+        data is validated against it and the flatten map is derived
+        automatically from the schema structure.  Nested TOML sections
+        are flattened so that ``[section] key = …`` becomes ``ns.key``.
+
         Args:
-            path:    Path to the TOML file.  Returns *None* when the
-                     file does not exist or TOML support is unavailable.
-            flatten: Optional mapping of ``section.key`` → ``attr_name``
-                     used to flatten nested TOML sections into top-level
-                     namespace attributes.  For example
-                     ``{"ishfiles.source": "source"}`` maps
-                     ``[ishfiles] source = …`` to ``ns.source``.
-                     Keys without a dot are looked up at the top level.
+            path:   Path to the TOML file.  Returns *None* when the
+                    file does not exist or TOML support is unavailable.
+            schema: Optional path to a JSON Schema file used for
+                    validation and automatic flattening.
         """
         if not path.is_file():
             _log.debug("Config file not found: %s", path)
@@ -88,8 +130,11 @@ class IshConfig:
         if not data:
             return None
 
-        if flatten is None:
+        if schema is None:
             return SimpleNamespace(**data)
+
+        IshConfig._validate_toml(data, schema)
+        flatten = IshConfig._flatten_from_schema(schema)
 
         attrs: Dict[str, Any] = {}
         for toml_path, attr_name in flatten.items():
@@ -107,7 +152,7 @@ class IshConfig:
     def from_toml(
         cls,
         toml_path: Path,
-        flatten: Optional[Dict[str, str]] = None,
+        schema: Optional[Path] = None,
         args: Optional[Any] = None,
         defaults: Optional[dict] = None,
     ) -> "IshConfig":
@@ -118,11 +163,11 @@ class IshConfig:
 
         Args:
             toml_path: Path to the TOML configuration file.
-            flatten:   Flattening map passed to :meth:`load_toml`.
+            schema:    Optional JSON Schema path for validation/flattening.
             args:      Optional argparse namespace (highest priority).
             defaults:  Optional fallback dict (lowest priority).
         """
-        conf = cls.load_toml(toml_path, flatten=flatten)
+        conf = cls.load_toml(toml_path, schema=schema)
         return cls.from_args(args=args, conf=conf, defaults=defaults)
 
     # -- from_args -------------------------------------------------------------

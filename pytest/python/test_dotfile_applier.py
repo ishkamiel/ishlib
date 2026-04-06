@@ -27,9 +27,11 @@ from pyishlib.dotfile import (
     DotFile,
     translate_name,
     translate_path,
-    load_ignore_file,
-    is_ignored,
+)
+from pyishlib.dotfile_ignore import (
     DEFAULT_IGNORE,
+    DotfileIgnore,
+    load_ignore_file,
 )
 from pyishlib.command_runner import CommandRunner
 from pyishlib.ish_config import IshConfig
@@ -179,13 +181,21 @@ class TestIgnore:
         assert load_ignore_file(Path("/nonexistent/.dotfileignore")) == []
 
     def test_is_ignored_by_set(self):
-        assert is_ignored(".git", frozenset({".git"}), [])
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(Path(d), extra_names=frozenset({".git"}))
+            assert di.is_ignored(".git")
 
     def test_is_ignored_by_pattern(self):
-        assert is_ignored("file.bak", frozenset(), ["*.bak"])
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(Path(d), extra_patterns=["*.bak"])
+            assert di.is_ignored("file.bak")
 
     def test_not_ignored(self):
-        assert not is_ignored("dot_bashrc", frozenset({".git"}), ["*.bak"])
+        with tempfile.TemporaryDirectory() as d:
+            di = DotfileIgnore(
+                Path(d), extra_names=frozenset({".git"}), extra_patterns=["*.bak"]
+            )
+            assert not di.is_ignored("dot_bashrc")
 
 
 # ---------------------------------------------------------------------------
