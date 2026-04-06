@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-
 from pathlib import Path
 
 from ...dotfile_applier import DotfileApplier
-from ...dotfile_ignore import ISHFILES_IGNORE_DIRS, ISHIGNORE_FILE
+from ...dotfile_ignore import DotfileIgnore, ISHFILES_IGNORE_DIRS, ISHIGNORE_FILE
 from ...ish_config import IshConfig
 
 log = logging.getLogger(__name__)
@@ -37,13 +36,18 @@ def run(cfg: IshConfig) -> int:
     source_dir = Path(cfg.get_opt("source")).expanduser()
     target_dir = Path(cfg.get_opt("target")).expanduser()
 
+    di = DotfileIgnore(
+        source_dir=source_dir,
+        ignore_file=ISHIGNORE_FILE,
+        extra_names=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
+        extra_patterns=cfg.get_opt("ignore_patterns", []),
+    )
+
     applier = DotfileApplier(
         source_dir=source_dir,
         target_dir=target_dir,
         cfg=cfg,
-        ignore=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
-        ignore_file=ISHIGNORE_FILE,
-        ignore_patterns=cfg.get_opt("ignore_patterns", []),
+        dotfile_ignore=di,
     )
 
     applied = applier.apply()

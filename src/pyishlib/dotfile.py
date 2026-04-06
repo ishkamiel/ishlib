@@ -25,6 +25,7 @@ from .dotfile_ignore import (  # noqa: F401
     DEFAULT_IGNORE,
     DEFAULT_IGNORE_PATTERNS,
     DOTFILEIGNORE,
+    DotfileIgnore,
     is_ignored,
     load_ignore_file,
 )

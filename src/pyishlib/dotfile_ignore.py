@@ -5,12 +5,12 @@
 # Distributed under terms of the MIT license.
 """Ignore-list handling for dotfile management.
 
-Provides constants, file-loading utilities, and a factory function for
-building the complete set of names and patterns to skip during dotfile
-discovery.  Used by :class:`~pyishlib.dotfile_applier.DotfileApplier`
-and the ``ishfiles`` CLI tool.
+Provides the :class:`DotfileIgnore` class that encapsulates the full
+set of names and patterns to skip during dotfile discovery.  Used by
+:class:`~pyishlib.dotfile_applier.DotfileApplier` and the ``ishfiles``
+CLI tool.
 
-Ignore sources (merged by :func:`build_ignore`):
+Ignore sources (merged by the constructor):
 
 1. **Hardcoded names** -- VCS directories, build artifacts, and
    (for ishfiles) reserved directories like ``ishconfig`` / ``ishscripts``.
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Sequence
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -68,20 +68,76 @@ def load_ignore_file(path: Path) -> List[str]:
     return patterns
 
 
+# ---------------------------------------------------------------------------
+# DotfileIgnore
+# ---------------------------------------------------------------------------
+
+
+class DotfileIgnore:
+    """Encapsulates the complete set of ignore rules for dotfile discovery.
+
+    Merges hardcoded defaults, an ignore file from the source directory,
+    and any caller-supplied extras into a single object whose
+    :meth:`is_ignored` method can be called during directory traversal.
+
+    Args:
+        source_dir:      Root of the dotfile/ishfiles folder.
+        ignore_file:     Name of the ignore file to load from *source_dir*
+                         (default ``.dotfileignore``).
+        extra_names:     Additional exact names to ignore (merged with
+                         :data:`DEFAULT_IGNORE`).
+        extra_patterns:  Additional fnmatch-style patterns (merged with
+                         :data:`DEFAULT_IGNORE_PATTERNS` and the ignore file).
+    """
+
+    def __init__(
+        self,
+        source_dir: Path,
+        ignore_file: str = DOTFILEIGNORE,
+        extra_names: frozenset = frozenset(),
+        extra_patterns: Sequence[str] = (),
+    ) -> None:
+        self._names: frozenset = DEFAULT_IGNORE | extra_names
+
+        self._patterns: List[str] = list(DEFAULT_IGNORE_PATTERNS)
+        self._patterns.extend(load_ignore_file(source_dir / ignore_file))
+        self._patterns.extend(extra_patterns)
+
+    @property
+    def names(self) -> frozenset:
+        """The set of exact names that are ignored."""
+        return self._names
+
+    @property
+    def patterns(self) -> List[str]:
+        """The list of fnmatch-style patterns that are ignored."""
+        return list(self._patterns)
+
+    def is_ignored(self, name: str) -> bool:
+        """Return *True* if *name* should be skipped during discovery."""
+        if name in self._names:
+            return True
+        return any(fnmatch.fnmatch(name, pat) for pat in self._patterns)
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatible helpers
+# ---------------------------------------------------------------------------
+
+
 def is_ignored(
     name: str,
     ignore_set: frozenset,
     ignore_patterns: Sequence[str],
 ) -> bool:
-    """Return *True* if *name* matches the ignore set or any pattern."""
+    """Return *True* if *name* matches the ignore set or any pattern.
+
+    .. deprecated::
+        Prefer :meth:`DotfileIgnore.is_ignored` for new code.
+    """
     if name in ignore_set:
         return True
     return any(fnmatch.fnmatch(name, pat) for pat in ignore_patterns)
-
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
 
 
 def build_ignore(
@@ -89,26 +145,15 @@ def build_ignore(
     ignore_file: str = DOTFILEIGNORE,
     extra_names: frozenset = frozenset(),
     extra_patterns: Sequence[str] = (),
-) -> Tuple[frozenset, List[str]]:
-    """Build the complete ignore set and pattern list for a source directory.
+) -> DotfileIgnore:
+    """Build a :class:`DotfileIgnore` for a source directory.
 
-    Args:
-        source_dir:      Root of the dotfile/ishfiles folder.
-        ignore_file:     Name of the ignore file to load from *source_dir*.
-        extra_names:     Additional exact names to ignore (merged with
-                         :data:`DEFAULT_IGNORE`).
-        extra_patterns:  Additional fnmatch-style patterns (merged with
-                         :data:`DEFAULT_IGNORE_PATTERNS` and the ignore file).
-
-    Returns:
-        A ``(names, patterns)`` tuple ready to pass to
-        :class:`~pyishlib.dotfile_applier.DotfileApplier` or
-        :func:`is_ignored`.
+    This is a convenience wrapper around the :class:`DotfileIgnore`
+    constructor.
     """
-    names = DEFAULT_IGNORE | extra_names
-
-    patterns: List[str] = list(DEFAULT_IGNORE_PATTERNS)
-    patterns.extend(load_ignore_file(source_dir / ignore_file))
-    patterns.extend(extra_patterns)
-
-    return names, patterns
+    return DotfileIgnore(
+        source_dir=source_dir,
+        ignore_file=ignore_file,
+        extra_names=extra_names,
+        extra_patterns=extra_patterns,
+    )
