@@ -21,7 +21,7 @@ Single dotfile representation and path-translation helpers.
 - `ChangeType` -- Type of change to apply.
 - `DotFile` -- Represents a single dotfile managed by the applier.
 
-Functions: `translate_name`, `translate_path`
+Functions: `translate_name`, `translate_path`, `reverse_translate_name`, `reverse_translate_path`
 
 ## [`dotfile_applier`](dotfile_applier.md)
 
@@ -36,6 +36,12 @@ Functions: `register_cli`
 Dotfile context for preprocessing variable tracking and expression evaluation.
 
 - `DotfileContext` -- Context object for dotfile preprocessing.
+
+## [`dotfile_finder`](dotfile_finder.md)
+
+Dotfile path resolution and lookup.
+
+- `DotfileFinder` -- Resolve arbitrary file paths to `DotFile` objects.
 
 ## [`dotfile_ignore`](dotfile_ignore.md)
 
