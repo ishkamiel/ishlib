@@ -29,7 +29,6 @@ from pyishlib.dotfile import (
     translate_path,
 )
 from pyishlib.dotfile_ignore import (
-    DEFAULT_IGNORE,
     DotfileIgnore,
     load_ignore_file,
 )
@@ -180,9 +179,9 @@ class TestIgnore:
     def test_load_ignore_file_missing(self):
         assert load_ignore_file(Path("/nonexistent/.dotfileignore")) == []
 
-    def test_is_ignored_by_set(self):
+    def test_is_ignored_default(self):
         with tempfile.TemporaryDirectory() as d:
-            di = DotfileIgnore(Path(d), extra_names=frozenset({".git"}))
+            di = DotfileIgnore(Path(d))
             assert di.is_ignored(".git")
 
     def test_is_ignored_by_pattern(self):
@@ -192,9 +191,7 @@ class TestIgnore:
 
     def test_not_ignored(self):
         with tempfile.TemporaryDirectory() as d:
-            di = DotfileIgnore(
-                Path(d), extra_names=frozenset({".git"}), extra_patterns=["*.bak"]
-            )
+            di = DotfileIgnore(Path(d), extra_patterns=["*.bak"])
             assert not di.is_ignored("dot_bashrc")
 
 
@@ -242,10 +239,11 @@ class TestDiscover:
             _make_file(Path(src) / "dot_bashrc")
             _make_file(Path(src) / "SKIPME")
 
+            di = DotfileIgnore(Path(src), extra_patterns=["SKIPME"])
             applier = DotfileApplier(
                 source_dir=Path(src),
                 target_dir=Path(tgt),
-                ignore=frozenset({"SKIPME"}),
+                dotfile_ignore=di,
             )
             dotfiles = applier.discover()
 

@@ -20,12 +20,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
-from pyishlib.dotfile_ignore import (
-    DEFAULT_IGNORE,
-    DotfileIgnore,
-    ISHFILES_IGNORE_DIRS,
-    ISHIGNORE_FILE,
-)
+from pyishlib.dotfile_ignore import DotfileIgnore
+from pyishlib.ishfiles.ignore import ISHFILES_PATTERNS, ISHIGNORE_FILE, build_ignore
 from pyishlib.ishfiles.config import (
     DEFAULT_SOURCE_DIR,
     DEFAULT_TARGET_DIR,
@@ -126,9 +122,9 @@ class TestLoadConfig:
 
 class TestDotfileIgnore:
 
-    def test_hardcoded_dirs(self):
-        assert "ishconfig" in ISHFILES_IGNORE_DIRS
-        assert "ishscripts" in ISHFILES_IGNORE_DIRS
+    def test_ishfiles_patterns(self):
+        assert "ishconfig" in ISHFILES_PATTERNS
+        assert "ishscripts" in ISHFILES_PATTERNS
 
     def test_default_ignore(self):
         with tempfile.TemporaryDirectory() as d:
@@ -137,13 +133,13 @@ class TestDotfileIgnore:
             assert di.is_ignored("__pycache__")
             assert not di.is_ignored("dot_bashrc")
 
-    def test_extra_names(self):
+    def test_build_ignore_includes_ishfiles_patterns(self):
         with tempfile.TemporaryDirectory() as d:
-            di = DotfileIgnore(Path(d), extra_names=ISHFILES_IGNORE_DIRS)
+            di = build_ignore(Path(d))
             assert di.is_ignored("ishconfig")
             assert di.is_ignored("ishscripts")
-            for name in DEFAULT_IGNORE:
-                assert di.is_ignored(name)
+            assert di.is_ignored(ISHIGNORE_FILE)
+            assert di.is_ignored(".git")
 
     def test_ignore_file(self):
         with tempfile.TemporaryDirectory() as d:
@@ -176,17 +172,11 @@ class TestDotfileIgnore:
             assert di.is_ignored("file.ish")
             assert di.is_ignored(".git")
 
-    def test_constructor(self):
+    def test_build_ignore_returns_dotfileignore(self):
         with tempfile.TemporaryDirectory() as d:
-            di = DotfileIgnore(Path(d))
+            di = build_ignore(Path(d))
             assert isinstance(di, DotfileIgnore)
             assert di.is_ignored(".git")
-
-    def test_names_property(self):
-        with tempfile.TemporaryDirectory() as d:
-            di = DotfileIgnore(Path(d), extra_names=frozenset({"foo"}))
-            assert "foo" in di.names
-            assert ".git" in di.names
 
     def test_patterns_property(self):
         with tempfile.TemporaryDirectory() as d:

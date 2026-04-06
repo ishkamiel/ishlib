@@ -56,27 +56,19 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         cfg: Shared :class:`IshConfig` (created automatically if *None*).
         runner: Optional :class:`CommandRunner` (created automatically
                 if *None*).
-        dotfile_ignore: Pre-built :class:`DotfileIgnore` instance.  When
-                   given, *ignore*, *ignore_file*, and *ignore_patterns*
-                   are ignored.
-        ignore: Extra exact names to add to the default ignore set.
-        ignore_file: Name of the ignore file to load from *source_dir*
-                   (default ``.dotfileignore``).
-        ignore_patterns: Extra fnmatch-style patterns to ignore.
+        dotfile_ignore: :class:`DotfileIgnore` controlling which files
+                   to skip during discovery.
         variables: Optional dictionary of preprocessing variables
                    available for ``${__ish_<name>}`` substitution.
     """
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(
         self,
         source_dir: Path,
         target_dir: Optional[Path] = None,
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
         dotfile_ignore: Optional[DotfileIgnore] = None,
-        ignore: Optional[frozenset] = None,
-        ignore_file: Optional[str] = None,
-        ignore_patterns: Optional[Sequence[str]] = None,
         variables: Optional[dict] = None,
     ) -> None:
         if runner is not None:
@@ -92,14 +84,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         if dotfile_ignore is not None:
             self._dotfile_ignore = dotfile_ignore
         else:
-            _kw: dict = {
-                "source_dir": self._source_dir,
-                "extra_names": ignore or frozenset(),
-                "extra_patterns": ignore_patterns or (),
-            }
-            if ignore_file is not None:
-                _kw["ignore_file"] = ignore_file
-            self._dotfile_ignore = DotfileIgnore(**_kw)
+            self._dotfile_ignore = DotfileIgnore(self._source_dir)
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
         self._variables: dict = dict(variables) if variables else {}
 
@@ -363,7 +348,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 def _build_applier(args: argparse.Namespace) -> DotfileApplier:
     """Construct a DotfileApplier from parsed CLI arguments."""
-    extra_ignore = frozenset(args.ignore) if args.ignore else frozenset()
+    extra_patterns = list(args.ignore) if args.ignore else []
 
     log_level = logging.INFO if getattr(args, "verbose", False) else logging.WARNING
     cfg = IshConfig(
@@ -372,11 +357,15 @@ def _build_applier(args: argparse.Namespace) -> DotfileApplier:
     )
     setup_logging(cfg.log_level)
 
+    di = DotfileIgnore(
+        source_dir=args.source,
+        extra_patterns=extra_patterns,
+    )
     return DotfileApplier(
         source_dir=args.source,
         target_dir=args.target,
         cfg=cfg,
-        ignore=extra_ignore,
+        dotfile_ignore=di,
     )
 
 
