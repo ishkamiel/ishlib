@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 
