@@ -11,8 +11,8 @@ development tasks.
 
 - **Shell library** (`ishlib.sh`): A compiled, self-documenting POSIX/Bash
   function library built from modular sources in `src/sh/` and `src/bash/`.
-  See the [shell library documentation](docs/ishlib.md) for the full function
-  reference.
+  See the [shell library documentation](docs/ishlib_shell.md) for the full
+  function reference.
 
 - **Python library** (`src/pyishlib/`): Installer framework with backends for
   apt, brew, cargo, and pip.
@@ -41,7 +41,7 @@ make all
 make ishlib.sh
 
 # Regenerate shell docs
-make docs/ishlib.md
+make docs/ishlib_shell.md
 ```
 
 ## Repository structure
