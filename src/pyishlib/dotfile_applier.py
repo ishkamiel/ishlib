@@ -1,6 +1,6 @@
 #
 # Author: Hans Liljestrand <hans@liljestrand.dev>
-# Copyright (C) 2025-2026 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
 """Dotfile applier for managing dotfile repositories.
