@@ -417,7 +417,8 @@ class TestInstallerCustomIntegration:
             runner = CommandRunner(cfg=IshConfig(dry_run=True))
             custom = InstallerCustom(runner, dotfiles_dir=Path(tmpdir))
             pkg = {"name": "mytool", "custom": "mytool"}
-            assert custom.install_custom_pkg(pkg) is False
+            with pytest.raises(FileNotFoundError):
+                custom.install_custom_pkg(pkg)
 
     def test_install_multiple_pkgs(self):
         with tempfile.TemporaryDirectory() as tmpdir:

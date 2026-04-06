@@ -154,23 +154,28 @@ class InstallerCustom:
         Each package is installed individually by preprocessing and
         executing its corresponding script.
         """
-        assert isinstance(pkgs, Iterable) and all(
+        pkgs = list(pkgs)
+        assert all(
             isinstance(pkg, dict) for pkg in pkgs
         ), "pkgs should be an iterable of dictionaries"
 
-        success = True
         for pkg in pkgs:
-            if not self._install_one(pkg):
-                success = False
-        return success
+            self._install_one(pkg)
+        return True
 
-    def _install_one(self, pkg: dict) -> bool:
-        """Install a single package via its custom script."""
+    def _install_one(self, pkg: dict) -> None:
+        """Install a single package via its custom script.
+
+        Raises:
+            FileNotFoundError: If no install script is found.
+            subprocess.CalledProcessError: If the script exits non-zero.
+        """
         pkg_name = pkg["custom"]
         script_path = self._find_script(pkg_name)
         if script_path is None:
-            log.error("No install script found for %s", pkg_name)
-            return False
+            raise FileNotFoundError(
+                f"No install script found for {pkg_name} " f"in {self.installers_dir}"
+            )
 
         log.info("Installing %s via custom script: %s", pkg["name"], script_path)
 
@@ -180,7 +185,7 @@ class InstallerCustom:
             preprocessor=preprocessor,
             runner=self.runner,
         )
-        return script.execute()
+        script.execute()
 
     def install_custom_pkg(self, pkg: dict) -> bool:
         """Install a single package."""

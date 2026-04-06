@@ -123,22 +123,20 @@ class DotfileScript:
                 script_env.update(env)
 
             log.info("Executing custom script: %s", self._path.name)
-            result = self._runner.run(
+            self._runner.run(
                 cmd,
-                check=False,
+                check=True,
                 env=script_env,
             )
-            if result.returncode != 0:
-                log.error(
-                    "Script %s failed with exit code %d",
-                    self._path.name,
-                    result.returncode,
-                )
-                return False
             return True
         except subprocess.CalledProcessError as e:
-            log.error("Script %s failed: %s", self._path.name, e)
-            return False
+            log.error(
+                "Script %s failed with exit code %d: %s",
+                self._path.name,
+                e.returncode,
+                e,
+            )
+            raise
         finally:
             tmp_path.unlink(missing_ok=True)
 
