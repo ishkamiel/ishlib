@@ -1,21 +1,21 @@
 
-SRC_FILES = $(wildcard src/sh/*.sh) $(wildcard src/bash/*.bash) src/readme_src.md
+SHELL_SRC_FILES = $(wildcard src/sh/*.sh) $(wildcard src/bash/*.bash) src/readme_src.md
 
 PYTEST_ARGS = -d -n$(shell nproc)
 
 all: docs/ishlib.md ishlib.sh verify
 
 .PHONY: verify
-verify: ishlib.sh $(SRC_FILES)
+verify: ishlib.sh $(SHELL_SRC_FILES)
 	$(info === Running tests)
 	pytest $(PYTEST_ARGS)
 
-ishlib.sh: $(SRC_FILES) $(BUILD_SCRIPT)
+ishlib.sh: $(SHELL_SRC_FILES) $(BUILD_SCRIPT)
 	$(info === Updating $@)
 	./build_ishlib.py
 	chmod +x $@
 
-docs/ishlib.md: ishlib.sh $(SRC_FILES) | docs
+docs/ishlib.md: ishlib.sh $(SHELL_SRC_FILES) | docs
 	$(info === Updating $@)
 	./ishlib.sh -h --markdown | head -n -1 > $@
 
