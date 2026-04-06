@@ -296,5 +296,309 @@ class TestCli:
         assert ret == 0  # notes.bak ignored, dot_bashrc unchanged
 
 
+# ---------------------------------------------------------------------------
+# reverse translation
+# ---------------------------------------------------------------------------
+
+
+class TestReverseTranslation:
+
+    def test_reverse_translate_name(self):
+        from pyishlib.dotfile import reverse_translate_name
+
+        assert reverse_translate_name(".bashrc") == "dot_bashrc"
+        assert reverse_translate_name("readme") == "readme"
+        assert reverse_translate_name(".") == "."  # bare dot stays
+
+    def test_reverse_translate_path(self):
+        from pyishlib.dotfile import reverse_translate_path
+
+        result = reverse_translate_path(Path(".config") / "fish" / ".extra")
+        assert result == Path("dot_config") / "fish" / "dot_extra"
+
+    def test_round_trip(self):
+        from pyishlib.dotfile import translate_path, reverse_translate_path
+
+        original = Path("dot_config") / "fish" / "dot_extra"
+        assert reverse_translate_path(translate_path(original)) == original
+
+
+# ---------------------------------------------------------------------------
+# resolve
+# ---------------------------------------------------------------------------
+
+
+class TestResolveFileArgs:
+
+    def test_resolve_source_path(self):
+        from pyishlib.ishfiles.resolve import resolve_file_arg
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            result = resolve_file_arg("dot_bashrc", Path(src), Path(tgt))
+            assert result == Path("dot_bashrc")
+
+    def test_resolve_target_name(self):
+        from pyishlib.ishfiles.resolve import resolve_file_arg
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            result = resolve_file_arg(".bashrc", Path(src), Path(tgt))
+            assert result == Path("dot_bashrc")
+
+    def test_resolve_absolute_source(self):
+        from pyishlib.ishfiles.resolve import resolve_file_arg
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            result = resolve_file_arg(
+                str(Path(src) / "dot_bashrc"), Path(src), Path(tgt)
+            )
+            assert result == Path("dot_bashrc")
+
+    def test_resolve_absolute_target(self):
+        from pyishlib.ishfiles.resolve import resolve_file_arg
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            result = resolve_file_arg(str(Path(tgt) / ".bashrc"), Path(src), Path(tgt))
+            assert result == Path("dot_bashrc")
+
+    def test_resolve_unresolvable(self):
+        from pyishlib.ishfiles.resolve import resolve_file_arg
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            result = resolve_file_arg(
+                "/completely/unrelated/path", Path(src), Path(tgt)
+            )
+            assert result is None
+
+
+# ---------------------------------------------------------------------------
+# git subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestGitCommand:
+
+    def test_git_status(self):
+        """Running 'git status' in a git-initialised source dir succeeds."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            import subprocess
+
+            subprocess.run(["git", "init", src], check=True, capture_output=True)
+            ret = cli_main(["--source", src, "--target", tgt, "git", "status"])
+            assert ret == 0
+
+    def test_git_nonexistent_source(self):
+        with tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(
+                ["--source", "/nonexistent/dir", "--target", tgt, "git", "status"]
+            )
+            assert ret == 1
+
+
+# ---------------------------------------------------------------------------
+# add subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestAddCommand:
+
+    def test_add_new_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            target_file = _make_file(Path(tgt) / ".bashrc", "my config\n")
+
+            ret = cli_main(["--source", src, "--target", tgt, "add", str(target_file)])
+
+            assert ret == 0
+            source_file = Path(src) / "dot_bashrc"
+            assert source_file.exists()
+            assert source_file.read_text() == "my config\n"
+
+    def test_add_duplicate_identical(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".bashrc", "same\n")
+            _make_file(Path(src) / "dot_bashrc", "same\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 0
+            captured = capsys.readouterr()
+            assert "already tracked" in captured.out
+
+    def test_add_dirty_refuses(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".bashrc", "new content\n")
+            _make_file(Path(src) / "dot_bashrc", "old content\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 1
+            captured = capsys.readouterr()
+            assert "dirty" in captured.err.lower() or "Refusing" in captured.err
+
+    def test_add_dirty_with_force(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".bashrc", "new content\n")
+            _make_file(Path(src) / "dot_bashrc", "old content\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "--force",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "new content\n"
+
+    def test_add_dry_run(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".bashrc", "content\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "--dry-run",
+                    "add",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert not (Path(src) / "dot_bashrc").exists()
+
+    def test_add_nonexistent_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    str(Path(tgt) / ".nonexistent"),
+                ]
+            )
+            assert ret == 1
+
+    def test_add_nested_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            target_file = _make_file(
+                Path(tgt) / ".config" / "fish" / "config.fish", "fish cfg\n"
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "add", str(target_file)])
+
+            assert ret == 0
+            source_file = Path(src) / "dot_config" / "fish" / "config.fish"
+            assert source_file.exists()
+            assert source_file.read_text() == "fish cfg\n"
+
+
+# ---------------------------------------------------------------------------
+# diff/apply with file arguments
+# ---------------------------------------------------------------------------
+
+
+class TestDiffWithFiles:
+
+    def test_diff_restrict_to_file_by_source_name(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_vimrc", "vim\n")
+
+            # Only diff dot_bashrc
+            ret = cli_main(["--source", src, "--target", tgt, "diff", "dot_bashrc"])
+            assert ret == 1  # one change
+
+    def test_diff_restrict_to_file_by_target_name(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_vimrc", "vim\n")
+
+            # Use target name .bashrc
+            ret = cli_main(["--source", src, "--target", tgt, "diff", ".bashrc"])
+            assert ret == 1
+
+    def test_diff_restrict_to_file_no_changes(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "same\n")
+            _make_file(Path(tgt) / ".bashrc", "same\n")
+            _make_file(Path(src) / "dot_vimrc", "vim\n")
+
+            ret = cli_main(["--source", src, "--target", tgt, "diff", ".bashrc"])
+            assert ret == 0  # .bashrc unchanged
+
+    def test_diff_restrict_absolute_target_path(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_vimrc", "vim\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "diff",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+            assert ret == 1
+
+
+class TestApplyWithFiles:
+
+    def test_apply_restrict_to_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_vimrc", "vim\n")
+
+            from pyishlib.ish_comp import Choice
+
+            with patch(
+                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                return_value=Choice.YES,
+            ):
+                ret = cli_main(
+                    ["--source", src, "--target", tgt, "apply", "dot_bashrc"]
+                )
+
+            assert ret == 0
+            assert (Path(tgt) / ".bashrc").exists()
+            assert not (Path(tgt) / ".vimrc").exists()
+
+    def test_apply_restrict_by_target_name(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "bash\n")
+            _make_file(Path(src) / "dot_vimrc", "vim\n")
+
+            from pyishlib.ish_comp import Choice
+
+            with patch(
+                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                return_value=Choice.YES,
+            ):
+                ret = cli_main(["--source", src, "--target", tgt, "apply", ".bashrc"])
+
+            assert ret == 0
+            assert (Path(tgt) / ".bashrc").exists()
+            assert not (Path(tgt) / ".vimrc").exists()
+
+
 if __name__ == "__main__":
     pytest.main()

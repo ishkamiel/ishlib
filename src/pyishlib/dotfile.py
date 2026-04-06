@@ -53,6 +53,25 @@ def translate_path(rel_path: Path) -> Path:
     return Path(*parts) if parts else rel_path
 
 
+def reverse_translate_name(name: str) -> str:
+    """Reverse-translate a single path component to dotfile repo naming.
+
+    Converts a leading ``.`` to the ``dot_`` prefix.
+    """
+    if name.startswith(".") and len(name) > 1:
+        return DOT_PREFIX + name[1:]
+    return name
+
+
+def reverse_translate_path(rel_path: Path) -> Path:
+    """Reverse-translate all components of a relative path.
+
+    Each component is passed through :func:`reverse_translate_name`.
+    """
+    parts = [reverse_translate_name(part) for part in rel_path.parts]
+    return Path(*parts) if parts else rel_path
+
+
 # ---------------------------------------------------------------------------
 # DotFile
 # ---------------------------------------------------------------------------
