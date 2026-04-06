@@ -33,6 +33,7 @@ from .dotfile_ignore import DotfileIgnore
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
+from .os_info import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
 
@@ -145,16 +146,21 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         variable references are substituted.  Binary files that cannot
         be decoded as UTF-8 are copied verbatim.
 
+        Files whose metadata contains ``only_on`` or ``ignore_on`` keys
+        that exclude the current platform are silently skipped.
+
         Args:
             dotfiles: Files from :meth:`discover`.
 
         Returns:
-            The same list, with each :attr:`DotFile.staged` set.
+            The list of staged dotfiles (excluding OS-skipped ones),
+            with each :attr:`DotFile.staged` set.
         """
         self._staging_dir = tempfile.TemporaryDirectory()  # pylint: disable=R1732
         staging_root = Path(self._staging_dir.name)
         preprocessor = DotFilePreprocessor(variables=self.cfg.context.as_dict())
 
+        kept: List[DotFile] = []
         for dotfile in dotfiles:
             staged_path = staging_root / dotfile.translated
             staged_path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,10 +172,18 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
                 log.debug("Binary file, copying verbatim: %s", dotfile.source)
                 shutil.copy2(dotfile.source, staged_path)
 
+            # Check OS rules in metadata after preprocessing has extracted it
+            if should_skip_for_os_from_metadata(dotfile.metadata):
+                log.debug(
+                    "Skipping %s (OS rules in metadata)", dotfile.source
+                )
+                continue
+
             dotfile.staged = staged_path
             log.debug("Staged %s -> %s", dotfile.source, staged_path)
+            kept.append(dotfile)
 
-        return dotfiles
+        return kept
 
     # -- Stage 3: Apply ------------------------------------------------------
 
