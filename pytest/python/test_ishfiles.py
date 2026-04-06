@@ -921,9 +921,7 @@ class TestRunscriptsCommand:
                 f"#!/bin/sh\necho b > {marker_b}\n",
             )
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "runscripts", "a.sh"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts", "a.sh"])
 
             assert ret == 0
             assert marker_a.exists()
