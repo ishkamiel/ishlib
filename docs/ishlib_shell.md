@@ -1,4 +1,4 @@
-# ishlib 2026-04-06.0354
+# ishlib 2026-04-06.0555
 
 This is a collection of various scripts and tricks collected along the years.
 
@@ -36,8 +36,8 @@ likely misbehave in other contexts.
 ```text
     file          - the file to read for here-documents
     --markdown    - Attempt to produce markdown
-    --text-only   - Attempt to produce texst-only
-    --tag TAG     - use the given TAG for docstrings (default is DOCSTIRNG)
+    --text-only   - Attempt to produce text-only
+    --tag TAG     - use the given TAG for docstrings (default is DOCSTRING)
     --no-newlines - prevent insertion of newlines
 ```
 
@@ -49,10 +49,10 @@ likely misbehave in other contexts.
 
 #### Print and debug helpers
 
-The print functions all follow the same pattern, i.e, they print a short tag
-followed by the all arguments colorized as specified by global color tags.
-At present, all printouts are to sdtderr. All functions return 0, or in
-case of failure, never returns.
+The print functions all follow the same pattern, i.e., they print a short tag
+followed by all arguments colorized as specified by global color tags.
+At present, all printouts are to stderr. All functions return 0, or, in
+case of failure, do not return.
 
 #### `ish_say ...`
 
@@ -95,7 +95,7 @@ Print a debug message if ISHLIB_DEBUG and DEBUG are set to 1.
       ISHLIB_DEBUG - does nothing unless this is 1
 ```
 
-#### `has_prefix str prefx`
+#### `has_prefix str prefix`
 
 Source:
 
@@ -154,7 +154,7 @@ function. Returns 0 if found, 1 otherwise. No output.
       2 - if argument was missing
 ```
 
-substr string start [end] [--var result_var]
+#### `substr string start [end] [--var result_var]`
 
 #### `strlen string [--var result_var]`
 
@@ -192,7 +192,7 @@ position of the found variable into ${!pos_var}.
 ```text
         haystack - the string to look in
         needle - the string to search for
-        pos_var - name of a variable for positionli
+        pos_var - name of a variable for position
 ```
 
 Side-effects:
@@ -216,7 +216,7 @@ applicable.
 ```text
       var       - Indirect reference to command
       installer - Optional installer function
-      args      - Additional argumednts to installer function
+      args      - Additional arguments to installer function
 ```
 
 Side effects:
@@ -333,10 +333,10 @@ Execute a command with optional dry-run, quiet, and sudo support.
 
 ```text
       url                   - the git remote URL
-      dir                   - The destianation directory
+      dir                   - The destination directory
       --update_submodules   - Run submodule update after clone
       -b|--branch branch      - Specify branch to checkout / update
-      -c|--commit           - Also checkokut specific commit
+      -c|--commit           - Also checkout specific commit
 ```
 
 ##### Globals:

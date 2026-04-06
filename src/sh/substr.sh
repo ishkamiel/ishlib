@@ -12,7 +12,7 @@ ish_SOURCED_strstr_bash=1 # source guard
 . "$ISHLIB/src/sh/common.sh"
 
 : <<'DOCSTRING'
-substr string start [end] [--var result_var]
+`substr string start [end] [--var result_var]`
 DOCSTRING
 substr() {
   _t="${ish_DebugTag}substr:"

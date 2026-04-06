@@ -21,7 +21,7 @@ applicable.
 Arguments:
   var       - Indirect reference to command
   installer - Optional installer function
-  args      - Additional argumednts to installer function
+  args      - Additional arguments to installer function
 
 Side effects:
   ${!var} - the variable named by var is set to the found or installed cmd
