@@ -12,7 +12,6 @@ and :func:`make_finder` for a standalone :class:`DotfileFinder`.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 from ..dotfile_applier import DotfileApplier

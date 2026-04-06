@@ -58,7 +58,7 @@ def reverse_translate_name(name: str) -> str:
 
     Converts a leading ``.`` to the ``dot_`` prefix.
     """
-    if name.startswith(".") and len(name) > 1:
+    if name.startswith(".") and name not in {".", ".."} and len(name) > 1:
         return DOT_PREFIX + name[1:]
     return name
 
