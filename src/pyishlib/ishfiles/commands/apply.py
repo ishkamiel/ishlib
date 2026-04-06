@@ -13,6 +13,7 @@ import argparse
 
 from ...ish_config import IshConfig
 from ..applier import make_applier, make_finder
+from ..installer_helper import run_install
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -45,4 +46,9 @@ def run(cfg: IshConfig) -> int:
     applied = applier.apply(files=rel_files)
     if applied and not cfg.quiet:
         print(f"Applied {applied} file(s).")
+
+    ret = run_install(cfg)
+    if ret != 0:
+        return ret
+
     return 0
