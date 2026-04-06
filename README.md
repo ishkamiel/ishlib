@@ -18,10 +18,9 @@ development tasks.
   apt, brew, cargo, pip, and winget.
   See the [Python library documentation](docs/pyishlib/index.md) for details.
 
-- **ishfiles** (planned): CLI tool built on `pyishlib` for managing system
-  configuration and dotfiles.
-  <!-- TODO: Add ishfiles quick start and usage documentation here once the
-       CLI tool is implemented. -->
+- **ishfiles**: CLI tool built on `pyishlib` for managing dotfiles and
+  package installations.
+  See the [ishfiles documentation](docs/ishfiles.md) for usage details.
 
 ## Quick start
 
