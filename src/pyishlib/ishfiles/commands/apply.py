@@ -8,11 +8,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from ...ish_config import IshConfig
-from ..applier import make_applier
-from ..resolve import resolve_file_args
+from ..applier import make_applier, make_finder
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -36,14 +34,11 @@ def run(cfg: IshConfig) -> int:
     Returns:
         0 always (the applier handles user prompts internally).
     """
-    applier = make_applier(cfg)
+    finder = make_finder(cfg)
+    applier = make_applier(cfg, finder=finder)
 
     files = cfg.get_opt("files") or None
-    rel_files = None
-    if files:
-        source_dir = Path(cfg.get_opt("source")).expanduser()
-        target_dir = Path(cfg.get_opt("target")).expanduser()
-        rel_files = resolve_file_args(files, source_dir, target_dir)
+    rel_files = finder.get_rel_paths(files) if files else None
 
     applied = applier.apply(files=rel_files)
     if applied and not cfg.quiet:

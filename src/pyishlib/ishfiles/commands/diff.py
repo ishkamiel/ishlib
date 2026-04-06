@@ -8,13 +8,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
 from ...ish_config import IshConfig
-from ..applier import make_applier
-from ..resolve import resolve_file_args
+from ..applier import make_applier, make_finder
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -38,14 +36,11 @@ def run(cfg: IshConfig) -> int:
     Returns:
         0 when there are no changes, 1 when there are differences.
     """
-    applier = make_applier(cfg)
+    finder = make_finder(cfg)
+    applier = make_applier(cfg, finder=finder)
 
     files = cfg.get_opt("files") or None
-    rel_files = None
-    if files:
-        source_dir = Path(cfg.get_opt("source")).expanduser()
-        target_dir = Path(cfg.get_opt("target")).expanduser()
-        rel_files = resolve_file_args(files, source_dir, target_dir)
+    rel_files = finder.get_rel_paths(files) if files else None
 
     dotfiles = applier.discover(files=rel_files)
     if not dotfiles:
