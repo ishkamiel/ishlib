@@ -9,10 +9,9 @@ Loads the TOML config file (``~/.config/ishfiles/config.toml``) and
 merges it with CLI arguments and built-in defaults through
 :class:`~pyishlib.ish_config.IshConfig`.
 
-All reserved directory and file names used by the ishfiles tool are
-defined here as module-level constants and registered as read-only
-config options so that every component resolves them from the
-:class:`IshConfig` instance.
+Reserved directory and file names are registered as read-only constants
+on :class:`IshConfig` so that every component resolves them via
+``cfg.get_opt()``.
 """
 
 from __future__ import annotations
@@ -28,35 +27,23 @@ DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()
 DEFAULT_CONFIG_FILE = Path.home() / ".config" / "ishfiles" / "config.toml"
 
-#: Reserved directory for package configuration files.
-CONFIG_DIR: str = "ishconfig"
-
-#: Reserved directory for user scripts executed on apply/runscripts.
-SCRIPTS_DIR: str = "ishscripts"
-
-#: Reserved directory for custom installer scripts (re-exported from
-#: :mod:`~pyishlib.installer_custom`).
-INSTALLERS_DIR: str = INSTALLERS_DIR_NAME
-
-#: Name of the per-repo ignore file.
-IGNORE_FILE: str = ".ishignore"
-
-#: Package config filenames recognised inside :data:`CONFIG_DIR`.
-PACKAGE_FILES: list = ["packages.toml", "packages.json"]
-
 _SCHEMA: Path = (
     Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
 )
 
-#: Read-only config options registered on every IshConfig built by
-#: :func:`load_config`.  These cannot be overridden by CLI args or
-#: TOML config.
+# Read-only config options registered on every IshConfig built by
+# load_config().  These cannot be overridden by CLI args or TOML config.
 _CONSTANTS = {
-    "config_dir": CONFIG_DIR,
-    "scripts_dir": SCRIPTS_DIR,
-    "installers_dir": INSTALLERS_DIR,
-    "ignore_file": IGNORE_FILE,
-    "package_files": PACKAGE_FILES,
+    # Reserved directory for package configuration files
+    "config_dir": "ishconfig",
+    # Reserved directory for user scripts executed on apply/runscripts
+    "scripts_dir": "ishscripts",
+    # Reserved directory for custom per-package install scripts
+    "installers_dir": INSTALLERS_DIR_NAME,
+    # Name of the per-repo ignore file
+    "ignore_file": ".ishignore",
+    # Package config filenames recognised inside config_dir
+    "package_files": ["packages.toml", "packages.json"],
 }
 
 
