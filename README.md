@@ -66,7 +66,3 @@ pytest/       # Test suite (shell + python)
 t/            # Legacy Perl/TAP tests
 docs/         # Generated/served documentation (MkDocs site source)
 ```
-
-## Known bugs and issues
-
-- Documentation for `dry_run` is wrong.
