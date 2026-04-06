@@ -693,9 +693,7 @@ class TestInstallCommand:
                 '{"nonexistent-test-pkg": {"apt": "nonexistent-test-pkg", "cmd": "nonexistent_test_cmd_12345"}}'
             )
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "install"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -710,9 +708,7 @@ class TestInstallCommand:
                 '[nonexistent-toml-pkg]\napt = "nonexistent-toml-pkg"\ncmd = "nonexistent_toml_cmd_12345"\n'
             )
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "install"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -766,9 +762,7 @@ class TestInstallCommand:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
             # Use 'python3' as cmd which should exist in test env
-            (config_dir / "packages.json").write_text(
-                '{"python3": {"cmd": "python3"}}'
-            )
+            (config_dir / "packages.json").write_text('{"python3": {"cmd": "python3"}}')
 
             ret = cli_main(["--source", src, "--target", tgt, "install"])
 
@@ -788,9 +782,7 @@ class TestInstallCommand:
                 '{"json-only-pkg": {"cmd": "nonexistent_json_only_12345"}}'
             )
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "install"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -815,9 +807,7 @@ class TestApplyWithInstall:
                 '{"nonexistent-apply-pkg": {"apt": "nonexistent-apply-pkg", "cmd": "nonexistent_apply_cmd_12345"}}'
             )
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "apply"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -827,9 +817,7 @@ class TestApplyWithInstall:
         """apply works normally when no package config exists."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "apply"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
         assert ret == 0
 
 
