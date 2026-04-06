@@ -206,7 +206,7 @@ New ishfiles-specific directory or file name constants should be defined in `ish
 
 Preprocessing variables (used in `${__ish_<name>}` substitution and `@ish if` conditionals) are stored on `cfg.context`, a `DotfileContext` instance that is a field of `IshConfig`. Components that need preprocessing variables should read them from `cfg.context.as_dict()` — never accept a separate `variables` parameter.
 
-- `DotfileContext` is populated during config loading (`ishfiles/config.py:load_config()`) from platform detection and TOML config.
+- `DotfileContext` is auto-populated on construction with platform detection defaults. Additional variables can be set via `cfg.context.set(name, value)`.
 - Components access it via `cfg.context.as_dict()` when constructing a `FilePreprocessor` or `DotFilePreprocessor`.
 - In `@ish if` expressions, the context is exposed as the `ish` namespace (e.g., `ish.platform == 'linux'`).
 - The dotfiles source directory is read from `cfg.get_opt("source")`, not passed as a separate `dotfiles_dir` parameter.

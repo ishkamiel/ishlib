@@ -26,13 +26,14 @@ log = logging.getLogger(__name__)
 
 
 def find_scripts(cfg: IshConfig, source_dir: Path) -> List[Path]:
-    """Return all executable script files in the scripts directory.
+    """Return all script files in the scripts directory.
 
     Scripts are returned sorted by name so that execution order is
     predictable (e.g. ``00-setup.sh`` runs before ``10-install.sh``).
 
-    Only regular files are included; directories and hidden files
-    (starting with ``.``) are skipped.
+    All regular files are included; directories and hidden files
+    (starting with ``.``) are skipped.  Files need not be executable
+    as they are preprocessed and executed through the ``@ish`` pipeline.
     """
     scripts_dir_name = cfg.get_opt("scripts_dir")
     scripts_dir = Path(source_dir) / scripts_dir_name

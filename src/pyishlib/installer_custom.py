@@ -41,7 +41,7 @@ _DEFAULT_INSTALLERS_DIR = "ishinstallers"
 class InstallerCustom:
     """Installer backend that runs user-provided install scripts.
 
-    Scripts are looked up in ``<source>/ishinstallers/`` and named
+    Scripts are looked up in ``<source>/<installers_dir>/`` and named
     ``install_<pkg_name>`` (with optional extension).  Each script is
     preprocessed through the ``@ish`` directive pipeline before execution.
 
