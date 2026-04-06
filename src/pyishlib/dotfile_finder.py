@@ -10,6 +10,10 @@ a dotfile source repository and a target directory.  Given any path -- an
 absolute source or target path, a relative source name like ``dot_bashrc``,
 or a target name like ``.bashrc`` -- :meth:`DotfileFinder.get` returns a
 fully resolved :class:`~pyishlib.dotfile.DotFile` object.
+
+The finder also handles discovery (recursive scanning of the source
+directory and explicit file lookup), consolidating logic that was
+previously spread across multiple modules.
 """
 
 from __future__ import annotations
@@ -18,7 +22,8 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from .dotfile import DotFile, reverse_translate_path, translate_path
+from .dotfile import DotFile, reverse_translate_path
+from .dotfile_ignore import DotfileIgnore
 from .ish_config import IshConfig
 
 log = logging.getLogger(__name__)
@@ -108,7 +113,7 @@ class DotfileFinder:
         """Resolve multiple paths to relative source paths.
 
         Convenience wrapper that returns just the relative paths
-        (for feeding into :meth:`DotfileApplier.discover`).
+        (for feeding into :meth:`discover`).
         """
         results: List[Path] = []
         for p in paths:
@@ -133,6 +138,78 @@ class DotfileFinder:
         return arg
 
     # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
+
+    def discover(
+        self,
+        files: Optional[Sequence[Path]] = None,
+        dotfile_ignore: Optional[DotfileIgnore] = None,
+    ) -> List[DotFile]:
+        """Discover dotfiles to process.
+
+        When *files* is given, each path is treated as relative to the
+        source directory and looked up directly.  Otherwise the source
+        directory is scanned recursively, skipping entries matched by
+        *dotfile_ignore*.
+
+        Args:
+            files: Optional explicit list of relative paths inside the
+                   source directory.
+            dotfile_ignore: Ignore rules for the recursive scan.  Has no
+                            effect when *files* is given.  If *None* and
+                            no explicit files are provided, a default
+                            :class:`DotfileIgnore` for the source
+                            directory is used.
+
+        Returns:
+            Sorted list of :class:`DotFile` objects.
+        """
+        if files is not None:
+            return self._discover_explicit(files)
+        if dotfile_ignore is None:
+            dotfile_ignore = DotfileIgnore(self._source_dir)
+        return self._discover_scan(dotfile_ignore)
+
+    def _discover_scan(self, dotfile_ignore: DotfileIgnore) -> List[DotFile]:
+        """Recursively scan source_dir for dotfiles."""
+        dotfiles: List[DotFile] = []
+        self._scan_dir(self._source_dir, Path(), dotfiles, dotfile_ignore)
+        dotfiles.sort(key=lambda df: df.translated)
+        return dotfiles
+
+    def _scan_dir(
+        self,
+        current: Path,
+        rel_prefix: Path,
+        dotfiles: List[DotFile],
+        dotfile_ignore: DotfileIgnore,
+    ) -> None:
+        for entry in sorted(current.iterdir()):
+            if dotfile_ignore.is_ignored(entry.name):
+                log.debug("Ignoring %s", entry)
+                continue
+
+            rel = rel_prefix / entry.name if rel_prefix != Path() else Path(entry.name)
+
+            if entry.is_dir():
+                self._scan_dir(entry, rel, dotfiles, dotfile_ignore)
+            elif entry.is_file():
+                dotfiles.append(DotFile(entry, rel, self._target_dir))
+
+    def _discover_explicit(self, files: Sequence[Path]) -> List[DotFile]:
+        """Build DotFile objects for an explicit list of relative paths."""
+        dotfiles: List[DotFile] = []
+        for rel in files:
+            source = self._source_dir / rel
+            if not source.is_file():
+                log.warning("File not found, skipping: %s", source)
+                continue
+            dotfiles.append(DotFile(source, rel, self._target_dir))
+        dotfiles.sort(key=lambda df: df.translated)
+        return dotfiles
+
+    # ------------------------------------------------------------------
     # Internal resolution
     # ------------------------------------------------------------------
 
@@ -141,11 +218,11 @@ class DotfileFinder:
 
         Resolution order:
 
-        1. Absolute path under source_dir → relative to source.
-        2. Absolute path under target_dir → reverse-translate.
-        3. Relative path that exists under source_dir → as-is.
+        1. Absolute path under source_dir -> relative to source.
+        2. Absolute path under target_dir -> reverse-translate.
+        3. Relative path that exists under source_dir -> as-is.
         4. Relative path whose reverse-translation exists under
-           source_dir → reverse-translated.
+           source_dir -> reverse-translated.
         5. As a last resort return the reverse-translated form even if
            the file does not yet exist (useful for ``add``).
         """
@@ -181,7 +258,7 @@ class DotfileFinder:
         if (self._source_dir / p).exists():
             return p
 
-        # Target name → reverse translate
+        # Target name -> reverse translate
         reverse = reverse_translate_path(p)
         if (self._source_dir / reverse).exists():
             return reverse

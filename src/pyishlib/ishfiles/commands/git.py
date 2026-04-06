@@ -47,6 +47,8 @@ def run(cfg: IshConfig) -> int:
         return 1
 
     git_args = cfg.get_opt("git_args", [])
+    # translate_arg is safe for non-file arguments (flags, refs, etc.)
+    # -- it returns them unchanged when they don't resolve to a dotfile.
     translated = [finder.translate_arg(a) for a in git_args]
     cmd = ["git"] + translated
 
