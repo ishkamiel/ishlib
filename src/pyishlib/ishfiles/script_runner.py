@@ -5,9 +5,9 @@
 # Distributed under terms of the MIT license.
 """Script discovery and execution for the ``ishscripts`` folder.
 
-Finds scripts in the ``ishscripts/`` directory inside the ishfiles
-source folder, preprocesses them through the ``@ish`` directive
-pipeline, and executes them in sorted order.
+Finds scripts in the scripts directory inside the ishfiles source
+folder, preprocesses them through the ``@ish`` directive pipeline,
+and executes them in sorted order.
 """
 
 from __future__ import annotations
@@ -24,12 +24,9 @@ from ..ish_config import IshConfig
 
 log = logging.getLogger(__name__)
 
-#: Name of the scripts directory inside the ishfiles source folder.
-SCRIPTS_DIR = "ishscripts"
 
-
-def find_scripts(source_dir: Path) -> List[Path]:
-    """Return all executable script files in ``<source_dir>/ishscripts/``.
+def find_scripts(cfg: IshConfig, source_dir: Path) -> List[Path]:
+    """Return all executable script files in the scripts directory.
 
     Scripts are returned sorted by name so that execution order is
     predictable (e.g. ``00-setup.sh`` runs before ``10-install.sh``).
@@ -37,7 +34,8 @@ def find_scripts(source_dir: Path) -> List[Path]:
     Only regular files are included; directories and hidden files
     (starting with ``.``) are skipped.
     """
-    scripts_dir = Path(source_dir) / SCRIPTS_DIR
+    scripts_dir_name = cfg.get_opt("scripts_dir")
+    scripts_dir = Path(source_dir) / scripts_dir_name
     if not scripts_dir.is_dir():
         log.debug("No scripts directory found: %s", scripts_dir)
         return []
@@ -55,7 +53,7 @@ def run_scripts(
     cfg: IshConfig,
     scripts: Optional[Sequence[str]] = None,
 ) -> int:
-    """Discover and execute scripts from the ishscripts folder.
+    """Discover and execute scripts from the scripts directory.
 
     Args:
         cfg:     Resolved ishfiles configuration.
@@ -65,10 +63,11 @@ def run_scripts(
         0 on success or when no scripts are found, 1 on error.
     """
     source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
-    all_scripts = find_scripts(source_dir)
+    scripts_dir_name = cfg.get_opt("scripts_dir")
+    all_scripts = find_scripts(cfg, source_dir)
 
     if not all_scripts:
-        log.info("No scripts found in %s/%s/", source_dir, SCRIPTS_DIR)
+        log.info("No scripts found in %s/%s/", source_dir, scripts_dir_name)
         return 0
 
     # Filter to requested scripts if specified

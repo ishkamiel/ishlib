@@ -47,6 +47,7 @@ def make_applier(
         finder = make_finder(cfg)
 
     di = build_ignore(
+        cfg=cfg,
         source_dir=finder.source_dir,
         extra_patterns=cfg.get_opt("patterns", []),
     )
