@@ -8,12 +8,9 @@
 from __future__ import annotations
 
 import argparse
-import logging
 
 from ...ish_config import IshConfig
 from ..applier import make_applier
-
-log = logging.getLogger(__name__)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -29,7 +26,7 @@ def run(cfg: IshConfig) -> int:
     """Execute the apply command.
 
     Returns:
-        0 on success, 1 on failure.
+        0 always (the applier handles user prompts internally).
     """
     applier = make_applier(cfg)
     applied = applier.apply()

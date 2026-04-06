@@ -87,6 +87,9 @@ class IshConfig:
                 continue
             sdef = schema["properties"][key]
             if sdef.get("type") == "object" and "properties" in sdef:
+                if not isinstance(data[key], dict):
+                    _log.warning("Config section %r should be a table", key)
+                    continue
                 allowed_keys = set(sdef["properties"].keys())
                 for subkey in data[key]:
                     if subkey not in allowed_keys:
@@ -141,7 +144,8 @@ class IshConfig:
             parts = toml_path.split(".", 1)
             if len(parts) == 2:
                 section, key = parts
-                value = data.get(section, {}).get(key)
+                section_val = data.get(section)
+                value = section_val.get(key) if isinstance(section_val, dict) else None
             else:
                 value = data.get(parts[0])
             if value is not None:

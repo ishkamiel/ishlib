@@ -8,14 +8,11 @@
 from __future__ import annotations
 
 import argparse
-import logging
 
 from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
 from ...ish_config import IshConfig
 from ..applier import make_applier
-
-log = logging.getLogger(__name__)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
