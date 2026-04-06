@@ -671,5 +671,155 @@ class TestApplyWithFiles:
             assert not (Path(tgt) / ".vimrc").exists()
 
 
+# ---------------------------------------------------------------------------
+# install subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestInstallCommand:
+
+    def test_install_no_config_returns_0(self):
+        """install succeeds silently when no package config exists."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "install"])
+        assert ret == 0
+
+    def test_install_dry_run_shows_packages(self, capsys):
+        """Dry-run lists packages that would be installed without running anything."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            (config_dir / "packages.json").write_text(
+                '{"nonexistent-test-pkg": {"apt": "nonexistent-test-pkg", "cmd": "nonexistent_test_cmd_12345"}}'
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "nonexistent-test-pkg" in captured.out
+
+    def test_install_dry_run_toml(self, capsys):
+        """Dry-run works with TOML package config."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            (config_dir / "packages.toml").write_text(
+                '[nonexistent-toml-pkg]\napt = "nonexistent-toml-pkg"\ncmd = "nonexistent_toml_cmd_12345"\n'
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "nonexistent-toml-pkg" in captured.out
+
+    def test_install_specific_packages(self, capsys):
+        """Restricting to named packages only installs those."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            (config_dir / "packages.json").write_text(
+                '{"pkg-a": {"apt": "pkg-a", "cmd": "nonexistent_a_12345"}, '
+                '"pkg-b": {"apt": "pkg-b", "cmd": "nonexistent_b_12345"}}'
+            )
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "--dry-run", "install", "pkg-a"]
+            )
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "pkg-a" in captured.out
+        assert "pkg-b" not in captured.out
+
+    def test_install_unknown_package_returns_1(self):
+        """Requesting an unknown package name returns error."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            (config_dir / "packages.json").write_text(
+                '{"pkg-a": {"apt": "pkg-a", "cmd": "nonexistent_a_12345"}}'
+            )
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "--dry-run",
+                    "install",
+                    "no-such-pkg",
+                ]
+            )
+
+        assert ret == 1
+
+    def test_install_all_present_shows_message(self, capsys):
+        """When all packages are already installed, a message is shown."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            # Use 'python3' as cmd which should exist in test env
+            (config_dir / "packages.json").write_text('{"python3": {"cmd": "python3"}}')
+
+            ret = cli_main(["--source", src, "--target", tgt, "install"])
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "already installed" in captured.out
+
+    def test_install_toml_preferred_over_json(self, capsys):
+        """TOML config takes priority when both exist."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            (config_dir / "packages.toml").write_text(
+                '[toml-only-pkg]\ncmd = "nonexistent_toml_only_12345"\n'
+            )
+            (config_dir / "packages.json").write_text(
+                '{"json-only-pkg": {"cmd": "nonexistent_json_only_12345"}}'
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "toml-only-pkg" in captured.out
+        assert "json-only-pkg" not in captured.out
+
+
+# ---------------------------------------------------------------------------
+# apply + install integration
+# ---------------------------------------------------------------------------
+
+
+class TestApplyWithInstall:
+
+    def test_apply_runs_install(self, capsys):
+        """apply also triggers package installation."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            config_dir = Path(src) / "ishconfig"
+            config_dir.mkdir()
+            (config_dir / "packages.json").write_text(
+                '{"nonexistent-apply-pkg": {"apt": "nonexistent-apply-pkg", "cmd": "nonexistent_apply_cmd_12345"}}'
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "nonexistent-apply-pkg" in captured.out
+
+    def test_apply_no_packages_config_still_works(self):
+        """apply works normally when no package config exists."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+        assert ret == 0
+
+
 if __name__ == "__main__":
     pytest.main()
