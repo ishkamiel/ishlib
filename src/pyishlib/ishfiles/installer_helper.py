@@ -79,12 +79,8 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
     log.info("Loading packages from %s", config_file)
     all_pkgs = list(load_packages(config_file))
 
-    if not all_pkgs:
-        log.info("No packages defined in %s", config_file)
-        return 0
-
     # Filter to requested packages if specified
-    if packages:
+    if packages and all_pkgs:
         requested = set(packages)
         filtered = [p for p in all_pkgs if p["name"] in requested]
         unknown = requested - {p["name"] for p in filtered}
@@ -95,7 +91,6 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
 
     runner = CommandRunner(cfg=cfg)
     installer = Installer(cfg=cfg, runner=runner)
-
     missing = list(installer.get_missing_pkgs(all_pkgs))
 
     if not missing:
@@ -107,12 +102,10 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
         names = [p["name"] for p in missing]
         print(f"Packages to install ({len(missing)}): {', '.join(names)}")
 
-    if cfg.dry_run:
-        return 0
-
-    try:
-        installer.install_pkgs(missing)
-    except (subprocess.CalledProcessError, OSError) as exc:
-        log.error("Package installation failed: %s", exc)
-        return 1
+    if not cfg.dry_run:
+        try:
+            installer.install_pkgs(missing)
+        except (subprocess.CalledProcessError, OSError) as exc:
+            log.error("Package installation failed: %s", exc)
+            return 1
     return 0
