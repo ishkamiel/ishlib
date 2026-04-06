@@ -65,18 +65,20 @@ def print_binary_diff(old_label: str, new_label: str) -> None:
 # git diff backend
 # ---------------------------------------------------------------------------
 
-_git_available: bool | None = None
+_GIT_AVAILABLE: bool | None = None
 
 
 def _has_git() -> bool:
     """Check (and cache) whether git is on PATH."""
-    global _git_available  # noqa: PLW0603
-    if _git_available is None:
-        _git_available = shutil.which("git") is not None
-    return _git_available
+    global _GIT_AVAILABLE  # pylint: disable=global-statement
+    if _GIT_AVAILABLE is None:
+        _GIT_AVAILABLE = shutil.which("git") is not None
+    return _GIT_AVAILABLE
 
 
-def _git_diff(old: Path, new: Path, old_label: str, new_label: str) -> bool:
+def _git_diff(  # pylint: disable=unused-argument
+    old: Path, new: Path, old_label: str, new_label: str
+) -> bool:
     """Try ``git diff --no-index``.  Returns True on success."""
     if not _has_git():
         return False
@@ -130,7 +132,7 @@ def _python_diff(old: Path, new: Path, old_label: str, new_label: str) -> None:
 
 def _python_new_file(new: Path, new_label: str) -> None:
     """Show a new file as all-added lines."""
-    print(f"--- /dev/null")
+    print("--- /dev/null")
     print(f"+++ {new_label}")
     try:
         lines = new.read_text(encoding="utf-8").splitlines(keepends=True)

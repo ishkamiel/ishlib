@@ -32,11 +32,12 @@ Args:
     cfg: Shared `IshConfig` (created automatically if *None*).
     runner: Optional `CommandRunner` (created automatically
             if *None*).
-    ignore: Extra names to ignore on top of `DEFAULT_IGNORE`.
+    dotfile_ignore: `DotfileIgnore` controlling which files
+               to skip during discovery.
     variables: Optional dictionary of preprocessing variables
                available for `${__ish_<name>}` substitution.
 
-#### `__init__(source_dir: Path, target_dir: Optional[Path] = None, cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, ignore: Optional[frozenset] = None, variables: Optional[dict] = None)`
+#### `__init__(source_dir: Path, target_dir: Optional[Path] = None, cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfile_ignore: Optional[DotfileIgnore] = None, variables: Optional[dict] = None)`
 
 #### `source_dir`
 
