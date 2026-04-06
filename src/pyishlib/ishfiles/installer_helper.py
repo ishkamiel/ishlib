@@ -14,6 +14,7 @@ framework.
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -66,9 +67,9 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
         packages: Optional list of package names to install (default: all).
 
     Returns:
-        0 on success, 1 if no config file found or errors occurred.
+        0 on success or when no config file is found, 1 on errors.
     """
-    source_dir = Path(cfg.get_opt("source"))
+    source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
     config_file = find_package_config(source_dir)
 
     if config_file is None:
@@ -109,5 +110,9 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
     if cfg.dry_run:
         return 0
 
-    installer.install_pkgs(missing)
+    try:
+        installer.install_pkgs(missing)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        log.error("Package installation failed: %s", exc)
+        return 1
     return 0
