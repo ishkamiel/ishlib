@@ -21,6 +21,37 @@ Attributes:
     args:      Optional argparse namespace (highest priority in lookups).
     conf:      Optional configuration object (second priority).
 
+#### `load_toml(path: Path, schema: Optional[Path] = None)`
+
+Load a TOML file and return a `SimpleNamespace`.
+
+The namespace can be used as the *conf* argument to
+`from_args`.
+
+When *schema* is given (path to a JSON Schema file), the loaded
+data is validated against it and the flatten map is derived
+automatically from the schema structure.  Nested TOML sections
+are flattened so that `[section] key = …` becomes `ns.key`.
+
+Args:
+    path:   Path to the TOML file.  Returns *None* when the
+            file does not exist or TOML support is unavailable.
+    schema: Optional path to a JSON Schema file used for
+            validation and automatic flattening.
+
+#### `from_toml(toml_path: Path, schema: Optional[Path] = None, args: Optional[Any] = None, defaults: Optional[dict] = None)`
+
+Build an `IshConfig` from a TOML file, args, and defaults.
+
+Convenience wrapper that calls `load_toml` and feeds the
+result into `from_args`.
+
+Args:
+    toml_path: Path to the TOML configuration file.
+    schema:    Optional JSON Schema path for validation/flattening.
+    args:      Optional argparse namespace (highest priority).
+    defaults:  Optional fallback dict (lowest priority).
+
 #### `from_args(args: Optional[Any] = None, conf: Optional[Any] = None, defaults: Optional[dict] = None)`
 
 Build an `IshConfig` from argparse / conf objects.

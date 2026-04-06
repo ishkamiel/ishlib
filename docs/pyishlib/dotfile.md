@@ -6,7 +6,9 @@ Single dotfile representation and path-translation helpers.
 
 Provides the `DotFile` value object that tracks a managed dotfile
 through the discover / prepare / apply pipeline, along with chezmoi-style
-`dot_` name translation and ignore-file loading utilities.
+`dot_` name translation.
+
+Ignore-list constants and utilities live in :mod:`dotfile_ignore`.
 
 ### `ChangeType`
 
@@ -79,11 +81,3 @@ Converts the `dot_` prefix to a literal `.` prefix.
 Translate all components of a relative path.
 
 Each component is passed through `translate_name`.
-
-#### `load_ignore_file(path: Path)`
-
-Load gitignore-style patterns from *path*, skipping blanks/comments.
-
-#### `is_ignored(name: str, ignore_set: frozenset, ignore_patterns: Sequence[str])`
-
-Return True if *name* should be ignored.

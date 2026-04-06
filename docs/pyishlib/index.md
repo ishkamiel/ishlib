@@ -8,6 +8,12 @@ Helper commands for running commands and common shell tasks
 
 - `CommandRunner` -- Helper class for running commands and common shell tasks
 
+## [`diff`](diff.md)
+
+Diff utilities for comparing files.
+
+Functions: `print_diff`, `print_new_file`, `print_binary_diff`
+
 ## [`dotfile`](dotfile.md)
 
 Single dotfile representation and path-translation helpers.
@@ -15,7 +21,7 @@ Single dotfile representation and path-translation helpers.
 - `ChangeType` -- Type of change to apply.
 - `DotFile` -- Represents a single dotfile managed by the applier.
 
-Functions: `translate_name`, `translate_path`, `load_ignore_file`, `is_ignored`
+Functions: `translate_name`, `translate_path`
 
 ## [`dotfile_applier`](dotfile_applier.md)
 
@@ -30,6 +36,14 @@ Functions: `register_cli`
 Dotfile context for preprocessing variable tracking and expression evaluation.
 
 - `DotfileContext` -- Context object for dotfile preprocessing.
+
+## [`dotfile_ignore`](dotfile_ignore.md)
+
+Ignore-list handling for dotfile management.
+
+- `DotfileIgnore` -- Encapsulates the complete set of ignore rules for dotfile discovery.
+
+Functions: `load_ignore_file`
 
 ## [`dotfile_preprocessor`](dotfile_preprocessor.md)
 
@@ -101,3 +115,7 @@ Shared configuration for pyishlib components.
 Read embedded __ISH__ metadata from files.
 
 Functions: `merge_metadata`, `remove_metadata_blocks`, `read_metadata`, `scan_directory`, `register_cli`
+
+## [`ishfiles`](ishfiles.md)
+
+ishfiles -- dotfile manager built on pyishlib.
