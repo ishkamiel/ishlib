@@ -821,5 +821,216 @@ class TestApplyWithInstall:
         assert ret == 0
 
 
+# ---------------------------------------------------------------------------
+# runscripts subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestRunscriptsCommand:
+
+    def test_runscripts_no_scripts_dir(self):
+        """runscripts succeeds silently when no ishscripts dir exists."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+        assert ret == 0
+
+    def test_runscripts_empty_dir(self):
+        """runscripts succeeds when ishscripts dir is empty."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            (Path(src) / "ishscripts").mkdir()
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+        assert ret == 0
+
+    def test_runscripts_dry_run(self, capsys):
+        """Dry-run lists scripts without executing them."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            _make_file(scripts_dir / "setup.sh", "#!/bin/sh\necho hello\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "--dry-run", "runscripts"]
+            )
+
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "setup.sh" in captured.out
+
+    def test_runscripts_executes_script(self):
+        """Scripts are actually executed."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            marker = Path(tgt) / "marker.txt"
+            _make_file(
+                scripts_dir / "create-marker.sh",
+                f"#!/bin/sh\necho done > {marker}\n",
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+
+            assert ret == 0
+            assert marker.exists()
+            assert "done" in marker.read_text()
+
+    def test_runscripts_sorted_order(self):
+        """Scripts run in sorted filename order."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            log_file = Path(tgt) / "order.log"
+            _make_file(
+                scripts_dir / "02-second.sh",
+                f"#!/bin/sh\necho second >> {log_file}\n",
+            )
+            _make_file(
+                scripts_dir / "01-first.sh",
+                f"#!/bin/sh\necho first >> {log_file}\n",
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+
+            assert ret == 0
+            lines = log_file.read_text().strip().split("\n")
+            assert lines == ["first", "second"]
+
+    def test_runscripts_specific_script(self, capsys):
+        """Restricting to a named script runs only that one."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            marker_a = Path(tgt) / "a.txt"
+            marker_b = Path(tgt) / "b.txt"
+            _make_file(
+                scripts_dir / "a.sh",
+                f"#!/bin/sh\necho a > {marker_a}\n",
+            )
+            _make_file(
+                scripts_dir / "b.sh",
+                f"#!/bin/sh\necho b > {marker_b}\n",
+            )
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "runscripts", "a.sh"]
+            )
+
+            assert ret == 0
+            assert marker_a.exists()
+            assert not marker_b.exists()
+
+    def test_runscripts_unknown_script_returns_1(self):
+        """Requesting an unknown script name returns error."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            _make_file(scripts_dir / "real.sh", "#!/bin/sh\necho ok\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "runscripts", "no-such.sh"]
+            )
+
+        assert ret == 1
+
+    def test_runscripts_failing_script_returns_1(self):
+        """A script that exits non-zero causes a failure return."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            _make_file(scripts_dir / "fail.sh", "#!/bin/sh\nexit 1\n")
+
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+
+        assert ret == 1
+
+    def test_runscripts_with_preprocessing(self):
+        """Scripts undergo @ish directive preprocessing."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            marker = Path(tgt) / "preproc.txt"
+            _make_file(
+                scripts_dir / "preproc.sh",
+                f"#!/bin/sh\n#@ish set target={marker}\n"
+                f"echo preprocessed > ${{__ish_target}}\n",
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+
+            assert ret == 0
+            assert marker.exists()
+            assert "preprocessed" in marker.read_text()
+
+    def test_runscripts_hidden_files_skipped(self):
+        """Hidden files (starting with .) are skipped."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            marker = Path(tgt) / "hidden.txt"
+            _make_file(
+                scripts_dir / ".hidden.sh",
+                f"#!/bin/sh\necho hidden > {marker}\n",
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "runscripts"])
+
+            assert ret == 0
+            assert not marker.exists()
+
+
+# ---------------------------------------------------------------------------
+# apply + runscripts integration
+# ---------------------------------------------------------------------------
+
+
+class TestApplyWithRunscripts:
+
+    def test_apply_runs_scripts(self):
+        """apply also triggers script execution."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            marker = Path(tgt) / "apply_marker.txt"
+            _make_file(
+                scripts_dir / "setup.sh",
+                f"#!/bin/sh\necho applied > {marker}\n",
+            )
+
+            from pyishlib.ish_comp import Choice
+
+            with patch(
+                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                return_value=Choice.YES,
+            ):
+                ret = cli_main(["--source", src, "--target", tgt, "apply"])
+
+            assert ret == 0
+            assert marker.exists()
+            assert "applied" in marker.read_text()
+
+    def test_apply_dry_run_does_not_execute_scripts(self):
+        """In dry-run mode, scripts are listed but not executed."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            marker = Path(tgt) / "should_not_exist.txt"
+            _make_file(
+                scripts_dir / "setup.sh",
+                f"#!/bin/sh\necho oops > {marker}\n",
+            )
+
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+
+            assert ret == 0
+            assert not marker.exists()
+
+    def test_apply_no_scripts_dir_still_works(self):
+        """apply works normally when no ishscripts dir exists."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "content\n")
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+        assert ret == 0
+
+
 if __name__ == "__main__":
     pytest.main()
