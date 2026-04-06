@@ -19,13 +19,15 @@ pytest/
   shell/      # Shell function tests (parametrized across bash, dash, sh, zsh)
   python/     # Python unit tests
 t/            # Legacy Perl/TAP tests, run via `prove` by pytest/shell/test_legacy_prove.py
+docs/         # Generated documentation (e.g., docs/ishlib.md)
 ```
 
 Key root files:
 
 - `ishlib.sh` - **Generated file**. Do NOT edit directly; modify sources in `src/sh/` and `src/bash/` then rebuild.
 - `build_ishlib.py` - Build script that compiles modular sources into `ishlib.sh`
-- `README.md` - **Generated file**. Auto-generated from docstrings via `./ishlib.sh -h --markdown`
+- `README.md` - Project overview (hand-written)
+- `docs/ishlib.md` - **Generated file**. Auto-generated from docstrings via `./ishlib.sh -h --markdown`
 - `Makefile` - Build orchestration
 
 ## Build and Test Commands
@@ -37,8 +39,8 @@ make all
 # Build just ishlib.sh from sources
 make ishlib.sh
 
-# Regenerate README.md from docstrings
-make README.md
+# Regenerate shell library docs from docstrings
+make docs/ishlib.md
 
 # Run tests only
 make verify
@@ -112,6 +114,6 @@ The `pyishlib` installer framework supports loading package configuration from *
 
 ## Important Warnings
 
-- **Never edit `ishlib.sh` or `README.md` directly** - they are generated. Edit sources in `src/` and run `make`.
+- **Never edit `ishlib.sh` or `docs/ishlib.md` directly** - they are generated. Edit sources in `src/` and run `make`.
 - Shell tests are parametrized across multiple shells (bash, dash, sh, zsh). Ensure POSIX functions work in all of them.
 - The `t/` directory contains legacy Perl/TAP tests run via `prove` (invoked by `pytest/shell/test_legacy_prove.py`). Do not add new tests there; use `pytest/` instead.
