@@ -55,7 +55,19 @@ Functions: `load_ignore_file`
 
 Dotfile preprocessing: directive handling, variable substitution, metadata stripping.
 
-- `DotFilePreprocessor` -- Stateful preprocessor for dotfile sources.
+- `DotFilePreprocessor` -- Preprocessor specialised for `DotFile` objects.
+
+## [`dotfile_script`](dotfile_script.md)
+
+Executable script with `@ish` directive preprocessing.
+
+- `DotfileScript` -- A script file that is preprocessed and executed.
+
+## [`file_preprocessor`](file_preprocessor.md)
+
+Base file preprocessing: directive handling, variable substitution, metadata stripping.
+
+- `FilePreprocessor` -- Base preprocessor for files with `@ish` directives.
 
 ## [`installer`](installer.md)
 
@@ -88,6 +100,12 @@ Classes to manage installer configuration
 - `InstallerConfig` -- Class for handling installer configuration
 - `InstallerConfigJSON` -- Class for handling installer configuration from a JSON file
 - `InstallerConfigTOML` -- Class for handling installer configuration from a TOML file
+
+## [`installer_custom`](installer_custom.md)
+
+Custom script-based package installer.
+
+- `InstallerCustom` -- Installer backend that runs user-provided install scripts.
 
 ## [`installer_pip`](installer_pip.md)
 

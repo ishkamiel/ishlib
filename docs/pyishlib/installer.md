@@ -8,7 +8,7 @@ Helper library for package installing tasks
 
 Installer class for installing packages.
 
-#### `__init__(cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None)`
+#### `__init__(cfg: Optional[IshConfig] = None, runner: Optional[CommandRunner] = None, dotfiles_dir: Optional[Path] = None, variables: Optional[Dict[str, str]] = None)`
 
 #### `register_installer(backend: Any)`
 
