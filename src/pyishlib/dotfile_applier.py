@@ -28,6 +28,7 @@ from typing import List, Optional, Sequence
 
 from .command_runner import CommandRunner
 from .dotfile import ChangeType, DotFile
+from .dotfile_finder import DotfileFinder
 from .dotfile_ignore import DotfileIgnore
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
@@ -44,7 +45,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
     """Three-stage dotfile applier.
 
     1. :meth:`discover` -- find dotfiles in *source_dir* or from an
-       explicit list.
+       explicit list (delegated to :class:`DotfileFinder`).
     2. :meth:`prepare` -- stage files into a temporary directory with
        preprocessing (metadata extraction, variable substitution, etc.).
     3. :meth:`apply` -- compare staged files with *target_dir*, prompt
@@ -60,16 +61,19 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
                    to skip during discovery.
         variables: Optional dictionary of preprocessing variables
                    available for ``${__ish_<name>}`` substitution.
+        finder: Optional pre-built :class:`DotfileFinder`.  When given,
+                *source_dir* and *target_dir* are read from it.
     """
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        source_dir: Path,
+        source_dir: Optional[Path] = None,
         target_dir: Optional[Path] = None,
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
         dotfile_ignore: Optional[DotfileIgnore] = None,
         variables: Optional[dict] = None,
+        finder: Optional[DotfileFinder] = None,
     ) -> None:
         if runner is not None:
             self.cfg: IshConfig = cfg if cfg is not None else runner.cfg
@@ -77,35 +81,49 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         else:
             self.cfg = cfg if cfg is not None else IshConfig()
             self.runner = CommandRunner(cfg=self.cfg)
-        self._source_dir: Path = Path(source_dir)
-        self._target_dir: Path = (
-            Path(target_dir) if target_dir is not None else Path.home()
-        )
+
+        if finder is not None:
+            self._finder = finder
+        else:
+            sd = Path(source_dir) if source_dir is not None else None
+            td = Path(target_dir) if target_dir is not None else None
+            # When no explicit dirs, let DotfileFinder fall back to cfg
+            # or Path.home() for target.
+            if sd is None:
+                sd = Path.home()
+            if td is None:
+                td = Path.home()
+            self._finder = DotfileFinder(self.cfg, source_dir=sd, target_dir=td)
+
         if dotfile_ignore is not None:
             self._dotfile_ignore = dotfile_ignore
         else:
-            self._dotfile_ignore = DotfileIgnore(self._source_dir)
+            self._dotfile_ignore = DotfileIgnore(self._finder.source_dir)
         self._staging_dir: Optional[tempfile.TemporaryDirectory] = None
         self._variables: dict = dict(variables) if variables else {}
 
     @property
+    def finder(self) -> DotfileFinder:
+        """The :class:`DotfileFinder` used for path resolution."""
+        return self._finder
+
+    @property
     def source_dir(self) -> Path:
         """The source dotfile repository directory."""
-        return self._source_dir
+        return self._finder.source_dir
 
     @property
     def target_dir(self) -> Path:
         """The target directory (typically ``$HOME``)."""
-        return self._target_dir
+        return self._finder.target_dir
 
     # -- Stage 1: Discover ---------------------------------------------------
 
     def discover(self, files: Optional[Sequence[Path]] = None) -> List[DotFile]:
         """Discover dotfiles to process.
 
-        When *files* is given, each path is treated as relative to the
-        source directory and looked up directly.  Otherwise the source
-        directory is scanned recursively.
+        Delegates to :meth:`DotfileFinder.discover`, passing the
+        configured ignore rules for recursive scans.
 
         Args:
             files: Optional explicit list of relative paths inside the
@@ -114,46 +132,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         Returns:
             Sorted list of :class:`DotFile` objects.
         """
-        if files is not None:
-            return self._discover_explicit(files)
-        return self._discover_scan()
-
-    def _discover_scan(self) -> List[DotFile]:
-        """Recursively scan source_dir for dotfiles."""
-        dotfiles: List[DotFile] = []
-        self._scan_dir(self._source_dir, Path(), dotfiles)
-        dotfiles.sort(key=lambda df: df.translated)
-        return dotfiles
-
-    def _scan_dir(
-        self,
-        current: Path,
-        rel_prefix: Path,
-        dotfiles: List[DotFile],
-    ) -> None:
-        for entry in sorted(current.iterdir()):
-            if self._dotfile_ignore.is_ignored(entry.name):
-                log.debug("Ignoring %s", entry)
-                continue
-
-            rel = rel_prefix / entry.name if rel_prefix != Path() else Path(entry.name)
-
-            if entry.is_dir():
-                self._scan_dir(entry, rel, dotfiles)
-            elif entry.is_file():
-                dotfiles.append(DotFile(entry, rel, self._target_dir))
-
-    def _discover_explicit(self, files: Sequence[Path]) -> List[DotFile]:
-        """Build DotFile objects for an explicit list of relative paths."""
-        dotfiles: List[DotFile] = []
-        for rel in files:
-            source = self._source_dir / rel
-            if not source.is_file():
-                log.warning("File not found, skipping: %s", source)
-                continue
-            dotfiles.append(DotFile(source, rel, self._target_dir))
-        dotfiles.sort(key=lambda df: df.translated)
-        return dotfiles
+        return self._finder.discover(files=files, dotfile_ignore=self._dotfile_ignore)
 
     # -- Stage 2: Prepare ----------------------------------------------------
 

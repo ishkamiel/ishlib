@@ -53,8 +53,7 @@ def make_applier(
     )
 
     return DotfileApplier(
-        source_dir=finder.source_dir,
-        target_dir=finder.target_dir,
         cfg=cfg,
+        finder=finder,
         dotfile_ignore=di,
     )
