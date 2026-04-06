@@ -34,14 +34,16 @@ def run(cfg: IshConfig) -> int:
 
     dotfiles = applier.discover()
     if not dotfiles:
-        print("No dotfiles found.")
+        if not cfg.quiet:
+            print("No dotfiles found.")
         return 0
 
     dotfiles = applier.prepare(dotfiles)
     changes = applier.get_changes(dotfiles)
 
     if not changes:
-        print("Everything is up to date.")
+        if not cfg.quiet:
+            print("Everything is up to date.")
         return 0
 
     for dotfile in changes:
