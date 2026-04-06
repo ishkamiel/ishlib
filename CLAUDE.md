@@ -11,20 +11,23 @@
 
 ```text
 src/
-  sh/         # POSIX-compliant shell functions (sourced into ishlib.sh)
-  bash/       # Bash-only extensions (sourced into ishlib.sh)
-  pyishlib/   # Python installer framework
-  schema/     # Config schemas
-  docs/       # Documentation sources (e.g., shell library intro template)
+  sh/             # POSIX-compliant shell functions (sourced into ishlib.sh)
+  bash/           # Bash-only extensions (sourced into ishlib.sh)
+  pyishlib/       # Python installer framework
+    ishfiles/     # CLI tool subcommand modules
+  schema/         # Config schemas (JSON)
+  docs/           # Documentation sources (e.g., shell library intro template)
 pytest/
-  shell/      # Shell function tests (parametrized across bash, dash, sh, zsh)
-  python/     # Python unit tests
-t/            # Legacy Perl/TAP tests, run via `prove` by pytest/shell/test_legacy_prove.py
-scripts/      # Build scripts (build_ishlib.py, build_pydocs.py)
-docs/         # MkDocs site source and generated docs
-  ishlib_shell.md   # Generated shell function reference
-  pyishlib/         # Generated Python library reference (per-module pages)
-  ishfiles.md       # CLI tool docs (placeholder)
+  shell/          # Shell function tests (parametrized across bash, dash, sh, zsh)
+  python/         # Python unit tests
+t/                # Legacy Perl/TAP tests, run via `prove` by pytest/shell/test_legacy_prove.py
+scripts/          # Build scripts (build_ishlib.py, build_pydocs.py)
+bin/              # Executable scripts
+docs/             # MkDocs site source and generated docs
+  ishlib_shell.md     # Generated shell function reference
+  pyishlib/           # Generated Python library reference (per-module pages)
+  ishfiles.md         # CLI tool docs (placeholder)
+.github/workflows/   # CI workflows (pre-commit, pylint, pytest, docs)
 ```
 
 Key root files:
@@ -116,16 +119,22 @@ The repo uses pre-commit with: pylint, black, markdownlint, typos, license heade
 
 ## CI
 
-GitHub Actions runs four workflows on push and pull request:
+GitHub Actions runs four workflows:
 
-- **Pre-commit** (`.github/workflows/pre-commit.yml`): Runs all pre-commit hooks (on push and pull request)
-- **Pylint** (`.github/workflows/pylint.yml`): Runs pylint across Python 3.8-3.12 (on push)
+- **Pre-commit** (`.github/workflows/pre-commit.yml`): Runs all pre-commit hooks with Python 3.13 (on push and pull request)
+- **Pylint** (`.github/workflows/pylint.yml`): Runs pylint with Python 3.12 (on push only, not pull request)
 - **Pytest** (`.github/workflows/pytest.yml`): Runs the full test suite across Python 3.8-3.12 with shellcheck/dash/zsh for cross-shell testing (on push and pull request)
 - **Docs** (`.github/workflows/docs.yml`): Verifies generated docs (`docs/ishlib_shell.md`, `docs/pyishlib/`) are up to date (on push and pull request)
 
 ## Config File Support
 
 The `pyishlib` installer framework supports loading package configuration from **JSON** (`InstallerConfigJSON`) and **TOML** (`InstallerConfigTOML`) files. Both formats use the same Cerberus schema validation. TOML support uses `tomllib` (Python 3.11+ stdlib) with automatic fallback to the `tomli` package for older Python versions.
+
+## Python Version Support
+
+- Development environment uses Python 3.13.2 (`.python-version`)
+- CI tests against Python 3.8, 3.9, 3.10, 3.11, 3.12
+- TOML support uses `tomllib` (Python 3.11+ stdlib) with `tomli` fallback for older versions (declared in `requirements.txt`)
 
 ## Important Warnings
 
