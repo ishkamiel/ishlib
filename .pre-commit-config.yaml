@@ -47,6 +47,14 @@ repos:
           - --use-current-year
           - --license-filepath
           - .LICENSE_HEADER
+      - id: insert-license
+        exclude: vim-templates/.*
+        name: insert-license-makefile
+        files: (Makefile|\.mk)$
+        args:
+          - --use-current-year
+          - --license-filepath
+          - .LICENSE_HEADER
 -   repo: local
     hooks:
     -   id: pytest
