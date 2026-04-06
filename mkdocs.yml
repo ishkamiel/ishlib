@@ -1,0 +1,28 @@
+site_name: ishlib
+site_description: A modular shell scripting library and Python installer framework
+repo_url: https://github.com/ishkamiel/ishlib
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Shell Library: ishlib_shell.md
+  - Python Library: pyishlib/index.md
+  - "ishfiles CLI (TODO)": ishfiles.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - toc:
+      permalink: true

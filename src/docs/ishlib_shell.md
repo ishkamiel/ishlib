@@ -1,4 +1,4 @@
-# __ISHLIB_NAME__ __ISHLIB_VERSION__
+# __ISHLIB_NAME__
 
 This is a collection of various scripts and tricks collected along the years.
 

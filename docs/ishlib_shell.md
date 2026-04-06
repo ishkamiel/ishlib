@@ -1,4 +1,4 @@
-# ishlib 2026-04-06.0555
+# ishlib
 
 This is a collection of various scripts and tricks collected along the years.
 
