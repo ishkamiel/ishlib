@@ -90,7 +90,7 @@ def run_install(cfg: IshConfig, packages: Optional[Iterable[str]] = None) -> int
         all_pkgs = filtered
 
     runner = CommandRunner(cfg=cfg)
-    installer = Installer(cfg=cfg, runner=runner, dotfiles_dir=source_dir)
+    installer = Installer(cfg=cfg, runner=runner)
     missing = list(installer.get_missing_pkgs(all_pkgs))
 
     if not missing:

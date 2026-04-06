@@ -29,9 +29,11 @@ from pyishlib.file_preprocessor import FilePreprocessor
 from pyishlib.dotfile_script import DotfileScript
 
 
-def make_runner(which_returns=None):
+def make_runner(which_returns=None, cfg=None):
     """Create a CommandRunner with a mocked which method."""
-    runner = CommandRunner(cfg=IshConfig(dry_run=True))
+    if cfg is None:
+        cfg = IshConfig(dry_run=True)
+    runner = CommandRunner(cfg=cfg)
 
     def mock_which(cmd):
         if which_returns is None:
@@ -40,6 +42,14 @@ def make_runner(which_returns=None):
 
     runner.which = mock_which
     return runner
+
+
+def make_cfg(source=None, **kwargs):
+    """Create an IshConfig with source set for InstallerCustom tests."""
+    defaults = {}
+    if source is not None:
+        defaults["source"] = str(source)
+    return IshConfig(dry_run=True, defaults=defaults, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +64,7 @@ class TestInstallerCustom:
         assert custom.INSTALLER_NAME == "custom"
 
     def test_can_use_custom_no_dotfiles_dir(self):
-        custom = InstallerCustom(make_runner(), dotfiles_dir=None)
+        custom = InstallerCustom(make_runner())
         pkg = {"name": "test", "custom": "test"}
         assert custom.can_use_custom(pkg) is False
 
@@ -62,7 +72,8 @@ class TestInstallerCustom:
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "test", "apt": "test"}
             assert custom.can_use_custom(pkg) is False
 
@@ -70,7 +81,8 @@ class TestInstallerCustom:
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "test", "custom": "nonexistent"}
             assert custom.can_use_custom(pkg) is False
 
@@ -80,7 +92,8 @@ class TestInstallerCustom:
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             assert custom.can_use_custom(pkg) is True
 
@@ -90,7 +103,8 @@ class TestInstallerCustom:
             installers.mkdir()
             script = installers / "install_mytool.sh"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             assert custom.can_use_custom(pkg) is True
 
@@ -98,13 +112,15 @@ class TestInstallerCustom:
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             assert custom.can_use_custom() is True
 
     def test_can_use_custom_no_installers_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             # No ishinstallers subdir created
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             assert custom.can_use_custom() is False
 
     def test_is_custom_pkg_installed_with_cmd(self):
@@ -137,7 +153,8 @@ class TestInstallerCustom:
             installers.mkdir()
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
             assert found == script
 
@@ -147,7 +164,8 @@ class TestInstallerCustom:
             installers.mkdir()
             script = installers / "install_mytool.sh"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
             assert found == script
 
@@ -155,7 +173,8 @@ class TestInstallerCustom:
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             assert custom._find_script("nonexistent") is None
 
     def test_find_script_prefers_exact_name(self):
@@ -166,7 +185,8 @@ class TestInstallerCustom:
             exact.write_text("#!/bin/sh\necho exact\n", encoding="utf-8")
             with_ext = installers / "install_mytool.sh"
             with_ext.write_text("#!/bin/sh\necho ext\n", encoding="utf-8")
-            custom = InstallerCustom(make_runner(), dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
             assert found == exact
 
@@ -210,10 +230,14 @@ class TestInstallerCustomRegistration:
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
 
-            cfg = IshConfig(dry_run=True, log_level=logging.DEBUG)
+            cfg = IshConfig(
+                dry_run=True,
+                log_level=logging.DEBUG,
+                defaults={"source": tmpdir},
+            )
             runner = CommandRunner(cfg=cfg)
             runner.which = lambda cmd: None
-            installer = Installer(cfg=cfg, runner=runner, dotfiles_dir=Path(tmpdir))
+            installer = Installer(cfg=cfg, runner=runner)
             pkg = {"name": "mytool", "custom": "mytool"}
             result = installer.get_installer(pkg)
             assert result == "custom"
@@ -370,8 +394,8 @@ class TestInstallerCustomIntegration:
             script = installers / "install_mytool"
             script.write_text("#!/bin/sh\necho installing mytool\n", encoding="utf-8")
 
-            runner = CommandRunner(cfg=IshConfig(dry_run=True))
-            custom = InstallerCustom(runner, dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             assert custom.install_custom_pkg(pkg) is True
 
@@ -385,12 +409,12 @@ class TestInstallerCustomIntegration:
                 encoding="utf-8",
             )
 
-            runner = CommandRunner(cfg=IshConfig(dry_run=True))
-            custom = InstallerCustom(runner, dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             assert custom.install_custom_pkg(pkg) is True
 
-    def test_install_pkg_with_variables(self):
+    def test_install_pkg_with_context_variables(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
@@ -400,12 +424,9 @@ class TestInstallerCustomIntegration:
                 encoding="utf-8",
             )
 
-            runner = CommandRunner(cfg=IshConfig(dry_run=True))
-            custom = InstallerCustom(
-                runner,
-                dotfiles_dir=Path(tmpdir),
-                variables={"prefix": "/opt"},
-            )
+            cfg = make_cfg(source=tmpdir)
+            cfg.context.set("prefix", "/opt")
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             assert custom.install_custom_pkg(pkg) is True
 
@@ -414,8 +435,8 @@ class TestInstallerCustomIntegration:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
 
-            runner = CommandRunner(cfg=IshConfig(dry_run=True))
-            custom = InstallerCustom(runner, dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             with pytest.raises(FileNotFoundError):
                 custom.install_custom_pkg(pkg)
@@ -430,8 +451,8 @@ class TestInstallerCustomIntegration:
                     f"#!/bin/sh\necho installing {name}\n", encoding="utf-8"
                 )
 
-            runner = CommandRunner(cfg=IshConfig(dry_run=True))
-            custom = InstallerCustom(runner, dotfiles_dir=Path(tmpdir))
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkgs = [
                 {"name": "tool1", "custom": "tool1"},
                 {"name": "tool2", "custom": "tool2"},

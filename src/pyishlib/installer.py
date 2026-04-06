@@ -6,8 +6,7 @@
 """Helper library for package installing tasks"""
 
 import logging
-from pathlib import Path
-from typing import Any, Dict, Optional, Iterable, Mapping
+from typing import Any, Optional, Iterable, Mapping
 
 from .ish_config import IshConfig
 from .command_runner import CommandRunner
@@ -22,14 +21,19 @@ log = logging.getLogger(__name__)
 
 
 class Installer:
-    """Installer class for installing packages."""
+    """Installer class for installing packages.
+
+    Args:
+        cfg: Shared :class:`IshConfig`.  The ``source`` option is used
+             to locate the dotfiles directory (for custom install scripts),
+             and ``cfg.context`` provides preprocessing variables.
+        runner: Optional :class:`CommandRunner`.
+    """
 
     def __init__(
         self,
         cfg: Optional[IshConfig] = None,
         runner: Optional[CommandRunner] = None,
-        dotfiles_dir: Optional[Path] = None,
-        variables: Optional[Dict[str, str]] = None,
     ) -> None:
         self.cfg: IshConfig = cfg if cfg is not None else IshConfig()
         self._backends: dict = {}
@@ -41,14 +45,7 @@ class Installer:
         self.register_installer(InstallerPip(self.runner))
         self.register_installer(InstallerBrew(self.runner))
         self.register_installer(InstallerWinget(self.runner))
-        self.register_installer(
-            InstallerCustom(
-                self.runner,
-                cfg=self.cfg,
-                dotfiles_dir=dotfiles_dir,
-                variables=variables,
-            )
-        )
+        self.register_installer(InstallerCustom(self.runner, cfg=self.cfg))
 
     def register_installer(self, backend: Any) -> None:
         """Register an installer backend.

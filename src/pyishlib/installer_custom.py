@@ -26,7 +26,7 @@ This will look for a script named ``install_my-tool`` (or
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from .command_runner import CommandRunner
 from .dotfile_script import DotfileScript
@@ -41,21 +41,18 @@ _DEFAULT_INSTALLERS_DIR = "ishinstallers"
 class InstallerCustom:
     """Installer backend that runs user-provided install scripts.
 
-    Scripts are looked up in ``<dotfiles_dir>/ishinstallers/`` and named
+    Scripts are looked up in ``<source>/ishinstallers/`` and named
     ``install_<pkg_name>`` (with optional extension).  Each script is
     preprocessed through the ``@ish`` directive pipeline before execution.
 
-    The directory name is read from the ``installers_dir`` option on
-    *cfg*, falling back to ``ishinstallers`` when the option is not set.
+    The dotfiles directory is resolved from ``cfg.get_opt("source")``.
+    The directory name is read from ``cfg.get_opt("installers_dir")``.
+    Preprocessing variables come from ``cfg.context``.
 
     Args:
         runner: :class:`CommandRunner` for executing scripts.
-        cfg: :class:`IshConfig` providing the ``installers_dir`` option.
-             If *None*, a default is created.
-        dotfiles_dir: Path to the dotfiles directory containing the
-                      installers folder.  If *None*, the custom
-                      installer will report that it cannot install anything.
-        variables: Optional preprocessing variables to pass to scripts.
+        cfg: :class:`IshConfig` providing ``source``, ``installers_dir``,
+             and ``context``.  If *None*, a default is created.
     """
 
     INSTALLER_NAME: str = "custom"
@@ -64,21 +61,26 @@ class InstallerCustom:
         self,
         runner: CommandRunner,
         cfg: Optional[IshConfig] = None,
-        dotfiles_dir: Optional[Path] = None,
-        variables: Optional[Dict[str, str]] = None,
     ) -> None:
         self.runner: CommandRunner = runner
         self._cfg: IshConfig = cfg if cfg is not None else IshConfig()
-        self._dotfiles_dir: Optional[Path] = dotfiles_dir
-        self._variables: Dict[str, str] = dict(variables) if variables else {}
+
+    @property
+    def _dotfiles_dir(self) -> Optional[Path]:
+        """The dotfiles source directory from config, or None."""
+        source = self._cfg.get_opt("source")
+        if source is None:
+            return None
+        return Path(source).expanduser().resolve()
 
     @property
     def installers_dir(self) -> Optional[Path]:
         """The installers directory, or None if not configured."""
-        if self._dotfiles_dir is None:
+        dotfiles_dir = self._dotfiles_dir
+        if dotfiles_dir is None:
             return None
         name = self._cfg.get_opt("installers_dir", _DEFAULT_INSTALLERS_DIR)
-        d = self._dotfiles_dir / name
+        d = dotfiles_dir / name
         return d if d.is_dir() else None
 
     @property
@@ -102,13 +104,13 @@ class InstallerCustom:
         """Check if custom installer is available for a package.
 
         Returns True when the package has a ``custom`` key and a matching
-        install script exists in the ishinstallers directory.
+        install script exists in the installers directory.
         """
         if pkg is not None and "custom" not in pkg:
             log.debug("custom not specified for %s", pkg.get("name", "?"))
             return False
         if self.installers_dir is None:
-            log.debug("No ishinstallers directory configured or found")
+            log.debug("No installers directory configured or found")
             return False
         if pkg is not None:
             script = self._find_script(pkg["custom"])
@@ -125,7 +127,7 @@ class InstallerCustom:
         """Find the install script for a package.
 
         Looks for ``install_<pkg_name>`` with any extension (or none)
-        in the ishinstallers directory.
+        in the installers directory.
 
         Returns:
             Path to the script, or None if not found.
@@ -187,7 +189,7 @@ class InstallerCustom:
 
         log.info("Installing %s via custom script: %s", pkg["name"], script_path)
 
-        preprocessor = FilePreprocessor(variables=dict(self._variables))
+        preprocessor = FilePreprocessor(variables=self._cfg.context.as_dict())
         script = DotfileScript(
             path=script_path,
             preprocessor=preprocessor,
