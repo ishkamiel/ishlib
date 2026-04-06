@@ -7,24 +7,29 @@
 
 Provides the :class:`DotFile` value object that tracks a managed dotfile
 through the discover / prepare / apply pipeline, along with chezmoi-style
-``dot_`` name translation and ignore-file loading utilities.
+``dot_`` name translation.
+
+Ignore-list constants and utilities live in :mod:`dotfile_ignore` and are
+re-exported here for backwards compatibility.
 """
 
 from __future__ import annotations
 
 import filecmp
-import fnmatch
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+# Re-export ignore utilities so existing ``from .dotfile import …`` still works.
+from .dotfile_ignore import (  # noqa: F401
+    DEFAULT_IGNORE,
+    DEFAULT_IGNORE_PATTERNS,
+    DOTFILEIGNORE,
+    is_ignored,
+    load_ignore_file,
+)
+
 DOT_PREFIX = "dot_"
-
-DEFAULT_IGNORE = frozenset({".git", ".github", ".gitignore", "__pycache__"})
-
-DEFAULT_IGNORE_PATTERNS = ["*.ish"]
-
-DOTFILEIGNORE = ".dotfileignore"
 
 
 # ---------------------------------------------------------------------------
@@ -56,34 +61,6 @@ def translate_path(rel_path: Path) -> Path:
     """
     parts = [translate_name(part) for part in rel_path.parts]
     return Path(*parts) if parts else rel_path
-
-
-# ---------------------------------------------------------------------------
-# Ignore handling
-# ---------------------------------------------------------------------------
-
-
-def load_ignore_file(path: Path) -> List[str]:
-    """Load gitignore-style patterns from *path*, skipping blanks/comments."""
-    patterns: List[str] = []
-    if not path.is_file():
-        return patterns
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            patterns.append(stripped)
-    return patterns
-
-
-def is_ignored(
-    name: str,
-    ignore_set: frozenset,
-    ignore_patterns: Sequence[str],
-) -> bool:
-    """Return True if *name* should be ignored."""
-    if name in ignore_set:
-        return True
-    return any(fnmatch.fnmatch(name, pat) for pat in ignore_patterns)
 
 
 # ---------------------------------------------------------------------------

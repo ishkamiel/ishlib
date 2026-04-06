@@ -15,8 +15,8 @@ from typing import List
 
 from ...dotfile import DotFile, ChangeType
 from ...dotfile_applier import DotfileApplier
+from ...dotfile_ignore import ISHFILES_IGNORE_DIRS, ISHIGNORE_FILE
 from ...ish_config import IshConfig
-from ..ignore import build_ignore
 
 log = logging.getLogger(__name__)
 
@@ -38,16 +38,14 @@ def run(cfg: IshConfig) -> int:
     """
     source_dir = Path(cfg.get_opt("source")).expanduser()
     target_dir = Path(cfg.get_opt("target")).expanduser()
-    ignore_names, ignore_patterns = build_ignore(
-        source_dir, cfg.get_opt("ignore_patterns", [])
-    )
 
     applier = DotfileApplier(
         source_dir=source_dir,
         target_dir=target_dir,
         cfg=cfg,
-        ignore=ignore_names,
-        ignore_patterns=ignore_patterns,
+        ignore=ISHFILES_IGNORE_DIRS | frozenset({ISHIGNORE_FILE}),
+        ignore_file=ISHIGNORE_FILE,
+        ignore_patterns=cfg.get_opt("ignore_patterns", []),
     )
 
     dotfiles = applier.discover()
