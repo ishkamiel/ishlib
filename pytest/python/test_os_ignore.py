@@ -26,6 +26,7 @@ from pyishlib.command_runner import (
     should_skip_for_os_from_metadata,
     normalise_os,
     _read_os_release,
+    _match_distro_family,
 )
 from pyishlib.dotfile_ignore import (
     DotfileIgnore,
@@ -135,6 +136,87 @@ class TestReadOsRelease:
             assert result == {}
 
 
+class TestMatchDistroFamily:
+    """Test the pattern matching against real-world os-release tokens."""
+
+    def test_debian_itself(self):
+        assert _match_distro_family(["debian"]) == "debian"
+
+    def test_ubuntu_id_like(self):
+        # Ubuntu: ID=ubuntu, ID_LIKE=debian
+        assert _match_distro_family(["debian"]) == "debian"
+
+    def test_mint_id_like(self):
+        # Mint: ID=linuxmint, ID_LIKE="ubuntu debian"
+        assert _match_distro_family(["ubuntu", "debian"]) == "debian"
+
+    def test_pop_os_id_like(self):
+        # Pop!_OS: ID=pop-os, ID_LIKE="ubuntu debian"
+        assert _match_distro_family(["ubuntu", "debian"]) == "debian"
+
+    def test_elementary_id_like(self):
+        # elementary OS: ID=elementary, ID_LIKE=ubuntu
+        assert _match_distro_family(["ubuntu"]) == "debian"
+
+    def test_kali_id_like(self):
+        # Kali: ID=kali, ID_LIKE=debian
+        assert _match_distro_family(["debian"]) == "debian"
+
+    def test_raspbian_id(self):
+        # Raspbian: ID=raspbian, ID_LIKE=debian
+        # Also test that raspbian matches via ID as a fallback
+        assert _match_distro_family(["raspbian"]) == "debian"
+
+    def test_fedora_itself(self):
+        assert _match_distro_family(["fedora"]) == "fedora"
+
+    def test_rhel_id_like(self):
+        # RHEL: ID=rhel, ID_LIKE=fedora
+        assert _match_distro_family(["fedora"]) == "fedora"
+
+    def test_rhel_id_fallback(self):
+        # RHEL without ID_LIKE (older versions)
+        assert _match_distro_family(["rhel"]) == "fedora"
+
+    def test_centos_stream_id_like(self):
+        # CentOS Stream: ID="centos", ID_LIKE="rhel centos fedora"
+        assert _match_distro_family(["rhel", "centos", "fedora"]) == "fedora"
+
+    def test_centos_id_fallback(self):
+        assert _match_distro_family(["centos"]) == "fedora"
+
+    def test_rocky_id_like(self):
+        # Rocky: ID="rocky", ID_LIKE="rhel centos fedora"
+        assert _match_distro_family(["rhel", "centos", "fedora"]) == "fedora"
+
+    def test_alma_id_like(self):
+        # AlmaLinux: ID="almalinux", ID_LIKE="rhel centos fedora"
+        assert _match_distro_family(["rhel", "centos", "fedora"]) == "fedora"
+
+    def test_fedora_asahi_remix_id(self):
+        # Fedora Asahi Remix: ID="fedora-asahi-remix", ID_LIKE=fedora
+        # startswith("fedora") matches the compound ID
+        assert _match_distro_family(["fedora"]) == "fedora"
+        # Also matches via ID as fallback
+        assert _match_distro_family(["fedora-asahi-remix"]) == "fedora"
+
+    def test_nobara_id_like(self):
+        # Nobara: ID=nobara, ID_LIKE=fedora
+        assert _match_distro_family(["fedora"]) == "fedora"
+
+    def test_amazon_linux_id_like(self):
+        # Amazon Linux 2023: ID=amzn, ID_LIKE=fedora
+        assert _match_distro_family(["fedora"]) == "fedora"
+
+    def test_unknown_distro(self):
+        assert _match_distro_family(["gentoo"]) is None
+        assert _match_distro_family(["arch"]) is None
+        assert _match_distro_family(["void"]) is None
+
+    def test_empty(self):
+        assert _match_distro_family([]) is None
+
+
 class TestDetectDistro:
 
     def test_not_linux(self):
@@ -143,7 +225,7 @@ class TestDetectDistro:
             assert detect_distro() is None
 
     def test_ubuntu(self):
-        os_release = 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID="22.04"\n'
+        # Real Ubuntu: ID=ubuntu, ID_LIKE=debian
         with patch("pyishlib.command_runner.sys") as mock_sys, \
              patch("pyishlib.command_runner._read_os_release") as mock_read:
             mock_sys.platform = "linux"
@@ -151,6 +233,7 @@ class TestDetectDistro:
             assert detect_distro() == "debian"
 
     def test_debian(self):
+        # Real Debian: ID=debian (no ID_LIKE)
         with patch("pyishlib.command_runner.sys") as mock_sys, \
              patch("pyishlib.command_runner._read_os_release") as mock_read:
             mock_sys.platform = "linux"
@@ -158,32 +241,86 @@ class TestDetectDistro:
             assert detect_distro() == "debian"
 
     def test_fedora(self):
+        # Real Fedora: ID=fedora (no ID_LIKE)
         with patch("pyishlib.command_runner.sys") as mock_sys, \
              patch("pyishlib.command_runner._read_os_release") as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "fedora"}
             assert detect_distro() == "fedora"
 
-    def test_asahi_via_id_like(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
-            mock_sys.platform = "linux"
-            mock_read.return_value = {"ID": "asahi", "ID_LIKE": "fedora"}
-            assert detect_distro() == "fedora"
-
-    def test_rocky_via_id_like(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
-            mock_sys.platform = "linux"
-            mock_read.return_value = {"ID": "rocky", "ID_LIKE": "rhel centos fedora"}
-            assert detect_distro() == "fedora"
-
     def test_pop_os(self):
+        # Real Pop!_OS: ID=pop-os, ID_LIKE="ubuntu debian"
         with patch("pyishlib.command_runner.sys") as mock_sys, \
              patch("pyishlib.command_runner._read_os_release") as mock_read:
             mock_sys.platform = "linux"
-            mock_read.return_value = {"ID": "pop", "ID_LIKE": "ubuntu debian"}
+            mock_read.return_value = {"ID": "pop-os", "ID_LIKE": "ubuntu debian"}
             assert detect_distro() == "debian"
+
+    def test_fedora_asahi_remix(self):
+        # Real Asahi: ID=fedora-asahi-remix, ID_LIKE=fedora
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {
+                "ID": "fedora-asahi-remix", "ID_LIKE": "fedora"
+            }
+            assert detect_distro() == "fedora"
+
+    def test_rocky(self):
+        # Real Rocky: ID="rocky", ID_LIKE="rhel centos fedora"
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {
+                "ID": "rocky", "ID_LIKE": "rhel centos fedora"
+            }
+            assert detect_distro() == "fedora"
+
+    def test_almalinux(self):
+        # Real AlmaLinux: ID="almalinux", ID_LIKE="rhel centos fedora"
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {
+                "ID": "almalinux", "ID_LIKE": "rhel centos fedora"
+            }
+            assert detect_distro() == "fedora"
+
+    def test_linuxmint(self):
+        # Real Mint: ID=linuxmint, ID_LIKE="ubuntu debian"
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {
+                "ID": "linuxmint", "ID_LIKE": "ubuntu debian"
+            }
+            assert detect_distro() == "debian"
+
+    def test_kali(self):
+        # Real Kali: ID=kali, ID_LIKE=debian
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {"ID": "kali", "ID_LIKE": "debian"}
+            assert detect_distro() == "debian"
+
+    def test_centos_stream(self):
+        # Real CentOS Stream: ID="centos", ID_LIKE="rhel centos fedora"
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {
+                "ID": "centos", "ID_LIKE": "rhel centos fedora"
+            }
+            assert detect_distro() == "fedora"
+
+    def test_amazon_linux(self):
+        # Real Amazon Linux 2023: ID="amzn", ID_LIKE="fedora"
+        with patch("pyishlib.command_runner.sys") as mock_sys, \
+             patch("pyishlib.command_runner._read_os_release") as mock_read:
+            mock_sys.platform = "linux"
+            mock_read.return_value = {"ID": "amzn", "ID_LIKE": "fedora"}
+            assert detect_distro() == "fedora"
 
     def test_unknown_distro(self):
         with patch("pyishlib.command_runner.sys") as mock_sys, \
