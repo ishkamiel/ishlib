@@ -13,7 +13,7 @@ PYTEST_ARGS = -d -n$(shell nproc)
 
 all: docs/ishlib_shell.md docs/pyishlib/index.md ishlib.sh verify
 
-.PHONY: verify
+.PHONY: verify wiki
 verify: ishlib.sh $(SHELL_SRC_FILES)
 	$(info === Running tests)
 	pytest $(PYTEST_ARGS)
@@ -30,6 +30,10 @@ docs/ishlib_shell.md: ishlib.sh $(SHELL_SRC_FILES) $(DOC_SRC_FILES) | docs
 docs/pyishlib/index.md: $(PY_SRC_FILES) scripts/build_pydocs.py | docs
 	$(info === Updating $@)
 	./scripts/build_pydocs.py
+
+wiki: docs/ishlib_shell.md docs/pyishlib/index.md
+	$(info === Building wiki pages)
+	./scripts/build_wiki.py
 
 docs:
 	mkdir -p docs
