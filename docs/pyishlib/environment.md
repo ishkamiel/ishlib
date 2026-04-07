@@ -19,6 +19,49 @@ Key functions:
   `is_ubuntu`, `is_gnome`, `is_linux_desktop`
   — simple boolean environment checks
 
+### `EnvironmentNamespace`
+
+Thin namespace exposing environment checks as methods.
+
+Intended to be attached to a `DotfileContext` so that
+`@ish if` expressions can use `ish.env.is_linux()` etc.
+
+All methods are simple proxies to the module-level functions.
+
+#### `is_linux()`
+
+Return *True* if running on Linux.
+
+#### `is_macos()`
+
+Return *True* if running on macOS.
+
+#### `is_windows()`
+
+Return *True* if running on Windows.
+
+#### `is_ubuntu()`
+
+Return *True* if the system identifies as Ubuntu.
+
+#### `is_gnome()`
+
+Return *True* if the current desktop session is GNOME.
+
+#### `is_linux_desktop()`
+
+Return *True* if running on a Linux desktop (X11 or Wayland).
+
+#### `detect_os()`
+
+Return the current OS (`linux`, `macos`, or `windows`).
+
+#### `detect_distro()`
+
+Return the Linux distro family, or *None*.
+
+### Module Functions
+
 #### `detect_distro()`
 
 Detect the Linux distro family from `/etc/os-release`.

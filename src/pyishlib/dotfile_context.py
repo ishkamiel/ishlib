@@ -7,12 +7,18 @@
 
 Provides the :class:`DotfileContext` object that is exposed as ``ish`` inside
 ``@ish if`` expressions and tracks all preprocessing variables.
+
+An :class:`~pyishlib.environment.EnvironmentNamespace` is available as
+``ish.env``, giving expressions access to environment checks such as
+``ish.env.is_linux()``, ``ish.env.is_macos()``, etc.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Optional
+
+from .environment import EnvironmentNamespace
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +33,10 @@ class DotfileContext:
     dict-style lookup (``ish["hostname"]``).  Missing attributes return
     an empty string rather than raising ``AttributeError``, making
     conditional expressions forgiving.
+
+    An :attr:`env` attribute provides an
+    :class:`~pyishlib.environment.EnvironmentNamespace` for live
+    platform checks (e.g. ``ish.env.is_linux()``).
 
     The context is built in layers (lowest to highest precedence):
 
@@ -43,6 +53,7 @@ class DotfileContext:
         # Use object.__setattr__ to avoid triggering our custom __setattr__
         # before _vars exists.
         object.__setattr__(self, "_vars", dict(variables) if variables else {})
+        object.__setattr__(self, "env", EnvironmentNamespace())
 
     # -- dict-style access ---------------------------------------------------
 

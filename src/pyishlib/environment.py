@@ -337,3 +337,63 @@ def is_linux_desktop() -> bool:
         return False
     session_type = os.environ.get("XDG_SESSION_TYPE")
     return session_type in ("x11", "wayland")
+
+
+# ---------------------------------------------------------------------------
+# Namespace object for use in DotfileContext expressions
+# ---------------------------------------------------------------------------
+
+
+class EnvironmentNamespace:
+    """Thin namespace exposing environment checks as methods.
+
+    Intended to be attached to a :class:`DotfileContext` so that
+    ``@ish if`` expressions can use ``ish.env.is_linux()`` etc.
+
+    All methods are simple proxies to the module-level functions.
+    """
+
+    # pylint: disable=no-self-use
+
+    @staticmethod
+    def is_linux() -> bool:
+        """Return *True* if running on Linux."""
+        return is_linux()
+
+    @staticmethod
+    def is_macos() -> bool:
+        """Return *True* if running on macOS."""
+        return is_macos()
+
+    @staticmethod
+    def is_windows() -> bool:
+        """Return *True* if running on Windows."""
+        return is_windows()
+
+    @staticmethod
+    def is_ubuntu() -> bool:
+        """Return *True* if the system identifies as Ubuntu."""
+        return is_ubuntu()
+
+    @staticmethod
+    def is_gnome() -> bool:
+        """Return *True* if the current desktop session is GNOME."""
+        return is_gnome()
+
+    @staticmethod
+    def is_linux_desktop() -> bool:
+        """Return *True* if running on a Linux desktop (X11 or Wayland)."""
+        return is_linux_desktop()
+
+    @staticmethod
+    def detect_os() -> str:
+        """Return the current OS (``linux``, ``macos``, or ``windows``)."""
+        return detect_os()
+
+    @staticmethod
+    def detect_distro() -> Optional[str]:
+        """Return the Linux distro family, or *None*."""
+        return detect_distro()
+
+    def __repr__(self) -> str:
+        return "EnvironmentNamespace()"
