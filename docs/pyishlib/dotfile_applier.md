@@ -79,11 +79,15 @@ the translated relative path.  Each text file is preprocessed:
 variable references are substituted.  Binary files that cannot
 be decoded as UTF-8 are copied verbatim.
 
+Files whose metadata contains `only_on` or `ignore_on` keys
+that exclude the current platform are silently skipped.
+
 Args:
     dotfiles: Files from `discover`.
 
 Returns:
-    The same list, with each `DotFile.staged` set.
+    The list of staged dotfiles (excluding OS-skipped ones),
+    with each `DotFile.staged` set.
 
 #### `get_changes(dotfiles: List[DotFile])`
 
