@@ -72,7 +72,7 @@ Args:
 
 #### `__init__(variables: Optional[Dict[str, str]] = None)`
 
-#### `preprocess(dotfile: DotFile)`
+#### `preprocess(dotfile: DotFile, metadata: Optional[dict] = None)`
 
 Preprocess a single dotfile source.
 
@@ -86,6 +86,9 @@ The processing pipeline:
 
 Args:
     dotfile: The `DotFile` to preprocess.
+    metadata: Optional pre-extracted metadata dictionary.  When
+        provided, the file is still read for content but metadata
+        extraction is skipped (avoiding a redundant file read).
 
 Returns:
     The processed file content as a string.

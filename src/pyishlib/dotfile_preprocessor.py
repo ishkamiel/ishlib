@@ -95,7 +95,7 @@ class DotFilePreprocessor(FilePreprocessor):
 
     # -- public API ----------------------------------------------------------
 
-    def preprocess(self, dotfile: DotFile) -> str:
+    def preprocess(self, dotfile: DotFile, metadata: Optional[dict] = None) -> str:
         """Preprocess a single dotfile source.
 
         The processing pipeline:
@@ -108,6 +108,9 @@ class DotFilePreprocessor(FilePreprocessor):
 
         Args:
             dotfile: The :class:`DotFile` to preprocess.
+            metadata: Optional pre-extracted metadata dictionary.  When
+                provided, the file is still read for content but metadata
+                extraction is skipped (avoiding a redundant file read).
 
         Returns:
             The processed file content as a string.
@@ -116,7 +119,12 @@ class DotFilePreprocessor(FilePreprocessor):
             UnicodeDecodeError: If the file cannot be read as UTF-8 (the
                 caller should fall back to a raw copy).
         """
-        text, meta = self.preprocess_file(dotfile.source)
+        if metadata is not None:
+            text = dotfile.source.read_text(encoding="utf-8")
+            text = self.preprocess_text(text, meta=metadata)
+            meta = metadata
+        else:
+            text, meta = self.preprocess_file(dotfile.source)
 
         if meta is not None:
             dotfile.metadata = meta

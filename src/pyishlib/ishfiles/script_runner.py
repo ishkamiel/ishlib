@@ -21,6 +21,7 @@ from ..command_runner import CommandRunner
 from ..dotfile_script import DotfileScript
 from ..file_preprocessor import FilePreprocessor
 from ..ish_config import IshConfig
+from ..ish_metadata import read_metadata
 from ..environment import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
@@ -93,24 +94,25 @@ def run_scripts(  # pylint: disable=too-many-return-statements,too-many-branches
     preprocessor = FilePreprocessor(variables=cfg.context.as_dict())
 
     for script_path in all_scripts:
+        # Read metadata directly for OS filtering -- avoids running
+        # preprocess() (which can mutate the shared preprocessor
+        # context via @ish set directives) for scripts that will be
+        # skipped.
+        try:
+            meta = read_metadata(script_path)
+        except (ValueError, ImportError):
+            meta = None
+        if should_skip_for_os_from_metadata(meta):
+            log.debug("Skipping %s (OS rules in metadata)", script_path.name)
+            if not cfg.quiet:
+                print(f"  [skipped] {script_path.name} (OS rules)")
+            continue
+
         script = DotfileScript(
             path=script_path,
             preprocessor=preprocessor,
             runner=runner,
         )
-
-        # Preprocess to extract metadata for OS filtering
-        try:
-            script.preprocess()
-        except (UnicodeDecodeError, FileNotFoundError):
-            log.error("Cannot read script: %s", script_path)
-            return 1
-
-        if should_skip_for_os_from_metadata(script.metadata):
-            log.debug("Skipping %s (OS rules in metadata)", script_path.name)
-            if not cfg.quiet:
-                print(f"  [skipped] {script_path.name} (OS rules)")
-            continue
 
         if cfg.dry_run:
             log.info("Would run script: %s", script_path.name)
