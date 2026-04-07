@@ -51,7 +51,7 @@ def find_scripts(cfg: IshConfig, source_dir: Path) -> List[Path]:
     return scripts
 
 
-def run_scripts(
+def run_scripts(  # pylint: disable=too-many-return-statements,too-many-branches
     cfg: IshConfig,
     scripts: Optional[Sequence[str]] = None,
 ) -> int:
