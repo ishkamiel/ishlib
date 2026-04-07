@@ -233,7 +233,7 @@ The ishfiles source folder reserves these directories (ignored during dotfile ap
 - `normalise_os(name)` — canonicalises OS/distro aliases (e.g. `"ubuntu"` → `"debian"`, `"darwin"` → `"macos"`)
 - `should_skip_for_os(only_on, ignore_on, current_os)` — evaluates OS-conditional rules
 - `should_skip_for_os_from_metadata(metadata, current_os)` — checks `only_on`/`ignore_on` keys in `__ISH__` metadata
-- `is_windows()`, `is_ubuntu()`, `is_gnome()`, `is_linux_desktop()` — simple boolean environment checks
+- `is_linux()`, `is_macos()`, `is_windows()`, `is_ubuntu()`, `is_gnome()`, `is_linux_desktop()` — simple boolean environment checks
 
 New OS detection, platform-conditional logic, or environment helpers should be added to this module. `CommandRunner` (`src/pyishlib/command_runner.py`) handles command execution, file operations, and sudo — it delegates to `environment.py` for platform checks.
 

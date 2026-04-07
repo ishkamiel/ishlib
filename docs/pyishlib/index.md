@@ -67,7 +67,7 @@ Executable script with `@ish` directive preprocessing.
 
 OS, distro, and desktop environment detection utilities.
 
-Functions: `detect_distro`, `detect_os`, `detect_os_tags`, `normalise_os`, `should_skip_for_os`, `should_skip_for_os_from_metadata`, `is_windows`, `is_ubuntu`, `is_gnome`, `is_linux_desktop`
+Functions: `detect_distro`, `detect_os`, `detect_os_tags`, `normalise_os`, `should_skip_for_os`, `should_skip_for_os_from_metadata`, `is_linux`, `is_macos`, `is_windows`, `is_ubuntu`, `is_gnome`, `is_linux_desktop`
 
 ## [`file_preprocessor`](file_preprocessor.md)
 

@@ -16,8 +16,9 @@ Key functions:
 - :func:`normalise_os` — canonicalise aliases (``"ubuntu"`` → ``"debian"``)
 - :func:`should_skip_for_os` / :func:`should_skip_for_os_from_metadata`
   — OS-conditional filtering
-- :func:`is_windows`, :func:`is_ubuntu`, :func:`is_gnome`,
-  :func:`is_linux_desktop` — simple boolean environment checks
+- :func:`is_linux`, :func:`is_macos`, :func:`is_windows`,
+  :func:`is_ubuntu`, :func:`is_gnome`, :func:`is_linux_desktop`
+  — simple boolean environment checks
 """
 
 import logging
@@ -290,6 +291,16 @@ def should_skip_for_os_from_metadata(
 # ---------------------------------------------------------------------------
 
 
+def is_linux() -> bool:
+    """Return *True* if running on Linux."""
+    return sys.platform.startswith("linux")
+
+
+def is_macos() -> bool:
+    """Return *True* if running on macOS."""
+    return sys.platform == "darwin"
+
+
 def is_windows() -> bool:
     """Return *True* if running on Windows."""
     return sys.platform == "win32"
@@ -322,7 +333,7 @@ def is_linux_desktop() -> bool:
     Checks that the platform is Linux and ``XDG_SESSION_TYPE`` is
     ``"x11"`` or ``"wayland"``.
     """
-    if not sys.platform.startswith("linux"):
+    if not is_linux():
         return False
     session_type = os.environ.get("XDG_SESSION_TYPE")
     return session_type in ("x11", "wayland")
