@@ -15,8 +15,9 @@ Key functions:
 - `normalise_os` — canonicalise aliases (`"ubuntu"` → `"debian"`)
 - `should_skip_for_os` / `should_skip_for_os_from_metadata`
   — OS-conditional filtering
-- `is_windows`, `is_ubuntu`, `is_gnome`,
-  `is_linux_desktop` — simple boolean environment checks
+- `is_linux`, `is_macos`, `is_windows`,
+  `is_ubuntu`, `is_gnome`, `is_linux_desktop`
+  — simple boolean environment checks
 
 #### `detect_distro()`
 
@@ -97,6 +98,14 @@ Args:
 
 Returns:
     *True* if the item should be skipped on the current platform.
+
+#### `is_linux()`
+
+Return *True* if running on Linux.
+
+#### `is_macos()`
+
+Return *True* if running on macOS.
 
 #### `is_windows()`
 
