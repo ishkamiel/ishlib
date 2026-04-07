@@ -24,11 +24,83 @@ from .ish_comp import die, prompt_yes_no_always
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# OS detection utilities
+# OS / distro detection utilities
 # ---------------------------------------------------------------------------
 
-#: Recognised OS identifiers used in ``only_on`` / ``ignore_on`` rules.
-RECOGNISED_OS = ("linux", "macos", "windows")
+#: Recognised OS and distro identifiers for ``only_on`` / ``ignore_on``.
+#: Platform level: ``linux``, ``macos``, ``windows``.
+#: Distro families: ``debian`` (Ubuntu, Debian, …), ``fedora`` (Fedora,
+#: Asahi Remix, …).
+RECOGNISED_OS = ("linux", "macos", "windows", "debian", "fedora")
+
+# Distro IDs (from /etc/os-release ID_LIKE / ID) mapped to canonical
+# family names.  Extend this when adding new families.
+_DISTRO_FAMILY_MAP: Dict[str, str] = {
+    "debian": "debian",
+    "ubuntu": "debian",
+    "linuxmint": "debian",
+    "pop": "debian",
+    "elementary": "debian",
+    "zorin": "debian",
+    "kali": "debian",
+    "raspbian": "debian",
+    "fedora": "fedora",
+    "rhel": "fedora",
+    "centos": "fedora",
+    "rocky": "fedora",
+    "alma": "fedora",
+    "almalinux": "fedora",
+    "nobara": "fedora",
+    "asahi": "fedora",
+}
+
+
+def _read_os_release() -> Dict[str, str]:
+    """Parse ``/etc/os-release`` into a dict.
+
+    Returns an empty dict when the file does not exist or cannot be read.
+    """
+    result: Dict[str, str] = {}
+    try:
+        text = Path("/etc/os-release").read_text(encoding="utf-8")
+    except (FileNotFoundError, PermissionError):
+        return result
+    for line in text.splitlines():
+        line = line.strip()
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        # Strip optional quotes
+        value = value.strip('"').strip("'")
+        result[key] = value
+    return result
+
+
+def detect_distro() -> Optional[str]:
+    """Detect the Linux distro family from ``/etc/os-release``.
+
+    Returns:
+        ``"debian"`` for Debian-like distros (Ubuntu, Mint, Pop!_OS, …),
+        ``"fedora"`` for Fedora-like distros (Fedora, RHEL, Asahi Remix, …),
+        or *None* if the distro is unknown or not on Linux.
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+
+    info = _read_os_release()
+    if not info:
+        return None
+
+    # Check ID first, then each word in ID_LIKE
+    distro_id = info.get("ID", "").lower()
+    if distro_id in _DISTRO_FAMILY_MAP:
+        return _DISTRO_FAMILY_MAP[distro_id]
+
+    for like_id in info.get("ID_LIKE", "").lower().split():
+        if like_id in _DISTRO_FAMILY_MAP:
+            return _DISTRO_FAMILY_MAP[like_id]
+
+    return None
 
 
 def detect_os() -> str:
@@ -49,6 +121,24 @@ def detect_os() -> str:
     raise RuntimeError(f"Unrecognised platform: {sys.platform}")
 
 
+def detect_os_tags() -> list:
+    """Return all OS/distro tags that apply to the current platform.
+
+    The list always starts with the broad OS identifier (``linux``,
+    ``macos``, ``windows``) and may include a distro family tag
+    (``debian``, ``fedora``) when running on Linux.
+
+    This is used by :func:`should_skip_for_os` so that rules like
+    ``only_on = ["debian"]`` match on Ubuntu, and ``only_on = ["linux"]``
+    still matches on any Linux distro.
+    """
+    tags = [detect_os()]
+    distro = detect_distro()
+    if distro is not None:
+        tags.append(distro)
+    return tags
+
+
 def normalise_os(name: str) -> str:
     """Normalise an OS name to its canonical form.
 
@@ -66,6 +156,9 @@ def normalise_os(name: str) -> str:
         "windows": "windows",
         "win": "windows",
         "win32": "windows",
+        "debian": "debian",
+        "ubuntu": "debian",
+        "fedora": "fedora",
     }
     canonical = mapping.get(name.lower())
     if canonical is None:
@@ -83,26 +176,35 @@ def should_skip_for_os(
 ) -> bool:
     """Determine whether an item should be skipped based on OS rules.
 
+    Matching is hierarchical: a rule specifying ``linux`` matches any
+    Linux system, while ``debian`` matches only Debian-family distros.
+    Conversely, a system running Ubuntu matches rules for both
+    ``debian`` and ``linux``.
+
     Args:
         only_on:     If set, the item applies *only* on these OSes.
                      It is skipped on all others.
         ignore_on:   If set, the item is skipped on these OSes.
         current_os:  Override for the detected OS (for testing).
+                     Can be a single tag or comma-separated tags
+                     (e.g. ``"linux,debian"``).
 
     Returns:
         *True* if the item should be skipped on the current platform.
     """
-    if current_os is None:
-        current_os = detect_os()
+    if current_os is not None:
+        current_tags = [t.strip() for t in current_os.split(",")]
+    else:
+        current_tags = detect_os_tags()
 
     if only_on is not None:
         normalised = [normalise_os(o) for o in only_on]
-        if current_os not in normalised:
+        if not any(tag in normalised for tag in current_tags):
             return True
 
     if ignore_on is not None:
         normalised = [normalise_os(o) for o in ignore_on]
-        if current_os in normalised:
+        if any(tag in normalised for tag in current_tags):
             return True
 
     return False
