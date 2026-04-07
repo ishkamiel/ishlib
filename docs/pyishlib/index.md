@@ -4,9 +4,11 @@
 
 ## [`command_runner`](command_runner.md)
 
-Helper commands for running commands and common shell tasks
+Helper commands for running commands and common shell tasks.
 
 - `CommandRunner` -- Helper class for running commands and common shell tasks
+
+Functions: `detect_distro`, `detect_os`, `detect_os_tags`, `normalise_os`, `should_skip_for_os`, `should_skip_for_os_from_metadata`
 
 ## [`diff`](diff.md)
 

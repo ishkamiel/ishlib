@@ -17,6 +17,22 @@ Ignore sources (merged by the constructor):
 3. **Extra patterns** -- caller-supplied globs (e.g. from a config file
    or CLI `--ignore` flags).
 
+OS-conditional sections
+-----------------------
+
+Ignore files support `[only_on.<os>]` and `[ignore_on.<os>]`
+sections for platform-conditional ignore rules:
+
+- `[only_on.linux]` -- patterns listed here apply *only* on Linux;
+  on all other platforms they are ignored (i.e. the files are kept).
+- `[ignore_on.windows]` -- patterns listed here are ignored *on*
+  Windows; on other platforms they have no effect.
+
+Recognised OS names: `linux`, `macos`, `windows` (plus common
+aliases like `mac`, `darwin`, `win`).
+
+Lines before the first section header are unconditional (always active).
+
 ### `DotfileIgnore`
 
 Encapsulates the complete set of ignore rules for dotfile discovery.
@@ -25,18 +41,33 @@ All rules are stored as fnmatch-style patterns.  Exact names (e.g.
 `.git`) are simply patterns without wildcards — `fnmatch.fnmatch`
 matches them as literal strings.
 
+OS-conditional patterns from `[only_on.<os>]` and
+`[ignore_on.<os>]` sections are evaluated against the current
+platform (or an explicit *current_os* override).
+
 Args:
     source_dir:      Root of the dotfile/ishfiles folder.
     ignore_file:     Name of the ignore file to load from *source_dir*
                      (default `.dotfileignore`).
     extra_patterns:  Additional fnmatch-style patterns (merged with
                      `DEFAULT_PATTERNS` and the ignore file).
+    current_os:      Override the auto-detected OS tags (for testing).
+                     A single tag like `"linux"` or comma-separated
+                     tags like `"linux,debian"`.
 
-#### `__init__(source_dir: Path, ignore_file: str = DOTFILEIGNORE, extra_patterns: Sequence[str] = ())`
+#### `__init__(source_dir: Path, ignore_file: str = DOTFILEIGNORE, extra_patterns: Sequence[str] = (), current_os: Optional[str] = None)`
 
 #### `patterns`
 
-A copy of the full list of ignore patterns.
+A copy of all effective ignore patterns (unconditional + OS).
+
+#### `current_os`
+
+The primary OS identifier used for conditional evaluation.
+
+#### `os_tags`
+
+All OS/distro tags that apply to the current platform.
 
 #### `is_ignored(name: str)`
 
@@ -46,4 +77,17 @@ Return *True* if *name* should be skipped during discovery.
 
 #### `load_ignore_file(path: Path)`
 
-Load gitignore-style patterns from *path*, skipping blanks and comments.
+Load patterns from an ignore file, including OS-conditional sections.
+
+Returns a tuple of:
+
+- **global_patterns** -- unconditional patterns (lines before any
+  section header).
+- **only_on** -- `{os: [patterns]}` dict for `[only_on.<os>]`
+  sections.
+- **ignore_on** -- `{os: [patterns]}` dict for `[ignore_on.<os>]`
+  sections.
+
+Blank lines and comment lines (starting with `#`) are skipped.
+Unrecognised OS names in section headers produce a warning and the
+section is ignored.
