@@ -24,10 +24,10 @@ OS-conditional sections
 Ignore files support ``[only_on.<os>]`` and ``[ignore_on.<os>]``
 sections for platform-conditional ignore rules:
 
-- ``[only_on.linux]`` -- patterns listed here apply *only* on Linux;
-  on all other platforms they are ignored (i.e. the files are kept).
-- ``[ignore_on.windows]`` -- patterns listed here are ignored *on*
-  Windows; on other platforms they have no effect.
+- ``[only_on.linux]`` -- matching files are kept *only* on Linux;
+  on all other platforms they are skipped (ignored).
+- ``[ignore_on.windows]`` -- matching files are skipped *on*
+  Windows; on other platforms they are kept.
 
 Recognised OS names: ``linux``, ``macos``, ``windows`` (plus common
 aliases like ``mac``, ``darwin``, ``win``).

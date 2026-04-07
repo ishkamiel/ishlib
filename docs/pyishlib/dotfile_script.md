@@ -46,6 +46,9 @@ Metadata extracted during preprocessing, if any.
 
 Preprocess the script and return the processed text.
 
+Results are cached so that a subsequent `execute` call
+reuses the same text and metadata without re-running directives.
+
 Raises:
     UnicodeDecodeError: If the file cannot be read as UTF-8.
     FileNotFoundError: If the script file does not exist.

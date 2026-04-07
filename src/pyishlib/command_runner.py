@@ -224,12 +224,20 @@ def should_skip_for_os(
         current_tags = detect_os_tags()
 
     if only_on is not None:
-        normalised = [normalise_os(o) for o in only_on]
+        try:
+            normalised = [normalise_os(o) for o in only_on]
+        except ValueError as exc:
+            log.warning("Bad only_on value, skipping OS filter: %s", exc)
+            return False
         if not any(tag in normalised for tag in current_tags):
             return True
 
     if ignore_on is not None:
-        normalised = [normalise_os(o) for o in ignore_on]
+        try:
+            normalised = [normalise_os(o) for o in ignore_on]
+        except ValueError as exc:
+            log.warning("Bad ignore_on value, skipping OS filter: %s", exc)
+            return False
         if any(tag in normalised for tag in current_tags):
             return True
 
