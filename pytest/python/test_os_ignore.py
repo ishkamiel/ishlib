@@ -18,11 +18,11 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.os_info import (
+from pyishlib.command_runner import (
     detect_os,
     should_skip_for_os,
     should_skip_for_os_from_metadata,
-    _normalise_os,
+    normalise_os,
 )
 from pyishlib.dotfile_ignore import (
     DotfileIgnore,
@@ -51,53 +51,53 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 class TestDetectOs:
 
     def test_linux(self):
-        with patch("pyishlib.os_info.sys") as mock_sys:
+        with patch("pyishlib.command_runner.sys") as mock_sys:
             mock_sys.platform = "linux"
             assert detect_os() == "linux"
 
     def test_macos(self):
-        with patch("pyishlib.os_info.sys") as mock_sys:
+        with patch("pyishlib.command_runner.sys") as mock_sys:
             mock_sys.platform = "darwin"
             assert detect_os() == "macos"
 
     def test_windows(self):
-        with patch("pyishlib.os_info.sys") as mock_sys:
+        with patch("pyishlib.command_runner.sys") as mock_sys:
             mock_sys.platform = "win32"
             assert detect_os() == "windows"
 
     def test_unknown(self):
-        with patch("pyishlib.os_info.sys") as mock_sys:
+        with patch("pyishlib.command_runner.sys") as mock_sys:
             mock_sys.platform = "freebsd"
             with pytest.raises(RuntimeError):
                 detect_os()
 
 
 # ---------------------------------------------------------------------------
-# os_info: _normalise_os
+# os_info: normalise_os
 # ---------------------------------------------------------------------------
 
 
 class TestNormaliseOs:
 
     def test_canonical(self):
-        assert _normalise_os("linux") == "linux"
-        assert _normalise_os("macos") == "macos"
-        assert _normalise_os("windows") == "windows"
+        assert normalise_os("linux") == "linux"
+        assert normalise_os("macos") == "macos"
+        assert normalise_os("windows") == "windows"
 
     def test_aliases(self):
-        assert _normalise_os("mac") == "macos"
-        assert _normalise_os("darwin") == "macos"
-        assert _normalise_os("win") == "windows"
-        assert _normalise_os("win32") == "windows"
+        assert normalise_os("mac") == "macos"
+        assert normalise_os("darwin") == "macos"
+        assert normalise_os("win") == "windows"
+        assert normalise_os("win32") == "windows"
 
     def test_case_insensitive(self):
-        assert _normalise_os("Linux") == "linux"
-        assert _normalise_os("MACOS") == "macos"
-        assert _normalise_os("Windows") == "windows"
+        assert normalise_os("Linux") == "linux"
+        assert normalise_os("MACOS") == "macos"
+        assert normalise_os("Windows") == "windows"
 
     def test_unknown(self):
         with pytest.raises(ValueError):
-            _normalise_os("freebsd")
+            normalise_os("freebsd")
 
 
 # ---------------------------------------------------------------------------

@@ -33,7 +33,7 @@ from .dotfile_ignore import DotfileIgnore
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
-from .os_info import should_skip_for_os_from_metadata
+from .command_runner import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
 
