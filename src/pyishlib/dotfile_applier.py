@@ -30,6 +30,7 @@ from .command_runner import CommandRunner
 from .dotfile import ChangeType, DotFile
 from .dotfile_finder import DotfileFinder
 from .dotfile_ignore import DotfileIgnore
+from .ish_metadata import read_metadata
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
@@ -162,6 +163,17 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
 
         kept: List[DotFile] = []
         for dotfile in dotfiles:
+            # Check OS rules from metadata before staging to avoid
+            # unnecessary work and to handle binary files that cannot
+            # be preprocessed.
+            try:
+                meta = read_metadata(dotfile.source)
+            except (ValueError, ImportError):
+                meta = None
+            if should_skip_for_os_from_metadata(meta):
+                log.debug("Skipping %s (OS rules in metadata)", dotfile.source)
+                continue
+
             staged_path = staging_root / dotfile.translated
             staged_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -171,11 +183,6 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
             except UnicodeDecodeError:
                 log.debug("Binary file, copying verbatim: %s", dotfile.source)
                 shutil.copy2(dotfile.source, staged_path)
-
-            # Check OS rules in metadata after preprocessing has extracted it
-            if should_skip_for_os_from_metadata(dotfile.metadata):
-                log.debug("Skipping %s (OS rules in metadata)", dotfile.source)
-                continue
 
             dotfile.staged = staged_path
             log.debug("Staged %s -> %s", dotfile.source, staged_path)

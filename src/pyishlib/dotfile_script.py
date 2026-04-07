@@ -60,6 +60,7 @@ class DotfileScript:
         self._preprocessor = preprocessor or FilePreprocessor()
         self._runner = runner or CommandRunner()
         self._metadata: Optional[dict] = None
+        self._preprocessed_text: Optional[str] = None
 
     @property
     def path(self) -> Path:
@@ -74,15 +75,22 @@ class DotfileScript:
     def preprocess(self) -> str:
         """Preprocess the script and return the processed text.
 
+        Results are cached so that a subsequent :meth:`execute` call
+        reuses the same text and metadata without re-running directives.
+
         Raises:
             UnicodeDecodeError: If the file cannot be read as UTF-8.
             FileNotFoundError: If the script file does not exist.
         """
+        if self._preprocessed_text is not None:
+            return self._preprocessed_text
+
         if not self._path.is_file():
             raise FileNotFoundError(f"Script not found: {self._path}")
 
         text, meta = self._preprocessor.preprocess_file(self._path)
         self._metadata = meta
+        self._preprocessed_text = text
         return text
 
     def execute(self, env: Optional[Dict[str, str]] = None) -> bool:

@@ -461,6 +461,19 @@ class TestShouldSkipForOs:
             is False
         )
 
+    def test_bad_only_on_value_does_not_crash(self):
+        """A typo in only_on should warn and not skip (non-fatal)."""
+        assert (
+            should_skip_for_os(only_on=["linxu"], current_os="linux") is False
+        )
+
+    def test_bad_ignore_on_value_does_not_crash(self):
+        """A typo in ignore_on should warn and not skip (non-fatal)."""
+        assert (
+            should_skip_for_os(ignore_on=["winodws"], current_os="windows")
+            is False
+        )
+
 
 # ---------------------------------------------------------------------------
 # os_info: should_skip_for_os_from_metadata
