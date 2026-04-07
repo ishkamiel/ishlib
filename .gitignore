@@ -1,5 +1,7 @@
 .vscode
 README.html
 **/__pycache__
+docs/
+mkdocs.yml
 site/
 wiki/

@@ -11,7 +11,7 @@ BUILD_SCRIPT = scripts/build_ishlib.py
 
 PYTEST_ARGS = -d -n$(shell nproc)
 
-all: docs/ishlib_shell.md docs/pyishlib/index.md ishlib.sh verify
+all: ishlib.sh wiki verify
 
 .PHONY: verify wiki
 verify: ishlib.sh $(SHELL_SRC_FILES)

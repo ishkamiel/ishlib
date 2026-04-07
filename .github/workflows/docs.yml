@@ -20,6 +20,7 @@ jobs:
         pip install -r requirements.txt
     - name: Verify generated docs can be built
       run: |
+        mkdir -p docs
         ./ishlib.sh -h --markdown | head -n -1 > docs/ishlib_shell.md
         ./scripts/build_pydocs.py
     - name: Verify wiki pages can be built
