@@ -17,7 +17,7 @@ Key functions:
 - :func:`should_skip_for_os` / :func:`should_skip_for_os_from_metadata`
   — OS-conditional filtering
 - :func:`is_windows`, :func:`is_ubuntu`, :func:`is_gnome`,
-  :func:`is_ubuntu_desktop` — simple boolean environment checks
+  :func:`is_linux_desktop` — simple boolean environment checks
 """
 
 import logging
@@ -316,12 +316,13 @@ def is_gnome() -> bool:
     return cur_desk is not None and cur_desk.lower() == "gnome"
 
 
-def is_ubuntu_desktop() -> bool:
-    """Return *True* if running on an Ubuntu desktop (X11 or Wayland).
+def is_linux_desktop() -> bool:
+    """Return *True* if running on a Linux desktop (X11 or Wayland).
 
-    Combines :func:`is_ubuntu` with an ``XDG_SESSION_TYPE`` check.
+    Checks that the platform is Linux and ``XDG_SESSION_TYPE`` is
+    ``"x11"`` or ``"wayland"``.
     """
-    if not is_ubuntu():
+    if not sys.platform.startswith("linux"):
         return False
     session_type = os.environ.get("XDG_SESSION_TYPE")
     return session_type in ("x11", "wayland")

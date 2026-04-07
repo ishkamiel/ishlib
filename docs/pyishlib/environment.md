@@ -16,7 +16,7 @@ Key functions:
 - `should_skip_for_os` / `should_skip_for_os_from_metadata`
   — OS-conditional filtering
 - `is_windows`, `is_ubuntu`, `is_gnome`,
-  `is_ubuntu_desktop` — simple boolean environment checks
+  `is_linux_desktop` — simple boolean environment checks
 
 #### `detect_distro()`
 
@@ -114,8 +114,9 @@ Return *True* if the current desktop session is GNOME.
 
 Reads the `XDG_CURRENT_DESKTOP` environment variable.
 
-#### `is_ubuntu_desktop()`
+#### `is_linux_desktop()`
 
-Return *True* if running on an Ubuntu desktop (X11 or Wayland).
+Return *True* if running on a Linux desktop (X11 or Wayland).
 
-Combines `is_ubuntu` with an `XDG_SESSION_TYPE` check.
+Checks that the platform is Linux and `XDG_SESSION_TYPE` is
+`"x11"` or `"wayland"`.
