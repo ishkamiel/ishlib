@@ -353,8 +353,6 @@ class EnvironmentNamespace:
     All methods are simple proxies to the module-level functions.
     """
 
-    # pylint: disable=no-self-use
-
     @staticmethod
     def is_linux() -> bool:
         """Return *True* if running on Linux."""
