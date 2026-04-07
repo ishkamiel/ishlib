@@ -178,7 +178,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
             staged_path.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                processed = preprocessor.preprocess(dotfile)
+                processed = preprocessor.preprocess(dotfile, metadata=meta)
                 staged_path.write_text(processed, encoding="utf-8")
             except UnicodeDecodeError:
                 log.debug("Binary file, copying verbatim: %s", dotfile.source)
