@@ -35,7 +35,6 @@ from pyishlib.dotfile_ignore import (
 from pyishlib.dotfile_applier import DotfileApplier
 from pyishlib.ish_config import IshConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -226,112 +225,118 @@ class TestDetectDistro:
 
     def test_ubuntu(self):
         # Real Ubuntu: ID=ubuntu, ID_LIKE=debian
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "ubuntu", "ID_LIKE": "debian"}
             assert detect_distro() == "debian"
 
     def test_debian(self):
         # Real Debian: ID=debian (no ID_LIKE)
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "debian"}
             assert detect_distro() == "debian"
 
     def test_fedora(self):
         # Real Fedora: ID=fedora (no ID_LIKE)
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_pop_os(self):
         # Real Pop!_OS: ID=pop-os, ID_LIKE="ubuntu debian"
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "pop-os", "ID_LIKE": "ubuntu debian"}
             assert detect_distro() == "debian"
 
     def test_fedora_asahi_remix(self):
         # Real Asahi: ID=fedora-asahi-remix, ID_LIKE=fedora
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
-            mock_read.return_value = {
-                "ID": "fedora-asahi-remix", "ID_LIKE": "fedora"
-            }
+            mock_read.return_value = {"ID": "fedora-asahi-remix", "ID_LIKE": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_rocky(self):
         # Real Rocky: ID="rocky", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
-            mock_read.return_value = {
-                "ID": "rocky", "ID_LIKE": "rhel centos fedora"
-            }
+            mock_read.return_value = {"ID": "rocky", "ID_LIKE": "rhel centos fedora"}
             assert detect_distro() == "fedora"
 
     def test_almalinux(self):
         # Real AlmaLinux: ID="almalinux", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {
-                "ID": "almalinux", "ID_LIKE": "rhel centos fedora"
+                "ID": "almalinux",
+                "ID_LIKE": "rhel centos fedora",
             }
             assert detect_distro() == "fedora"
 
     def test_linuxmint(self):
         # Real Mint: ID=linuxmint, ID_LIKE="ubuntu debian"
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
-            mock_read.return_value = {
-                "ID": "linuxmint", "ID_LIKE": "ubuntu debian"
-            }
+            mock_read.return_value = {"ID": "linuxmint", "ID_LIKE": "ubuntu debian"}
             assert detect_distro() == "debian"
 
     def test_kali(self):
         # Real Kali: ID=kali, ID_LIKE=debian
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "kali", "ID_LIKE": "debian"}
             assert detect_distro() == "debian"
 
     def test_centos_stream(self):
         # Real CentOS Stream: ID="centos", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
-            mock_read.return_value = {
-                "ID": "centos", "ID_LIKE": "rhel centos fedora"
-            }
+            mock_read.return_value = {"ID": "centos", "ID_LIKE": "rhel centos fedora"}
             assert detect_distro() == "fedora"
 
     def test_amazon_linux(self):
         # Real Amazon Linux 2023: ID="amzn", ID_LIKE="fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "amzn", "ID_LIKE": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_unknown_distro(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "gentoo"}
             assert detect_distro() is None
 
     def test_no_os_release(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys, \
-             patch("pyishlib.command_runner._read_os_release") as mock_read:
+        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
+            "pyishlib.command_runner._read_os_release"
+        ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {}
             assert detect_distro() is None
@@ -345,18 +350,21 @@ class TestDetectDistro:
 class TestDetectOsTags:
 
     def test_linux_with_distro(self):
-        with patch("pyishlib.command_runner.detect_os", return_value="linux"), \
-             patch("pyishlib.command_runner.detect_distro", return_value="debian"):
+        with patch("pyishlib.command_runner.detect_os", return_value="linux"), patch(
+            "pyishlib.command_runner.detect_distro", return_value="debian"
+        ):
             assert detect_os_tags() == ["linux", "debian"]
 
     def test_linux_unknown_distro(self):
-        with patch("pyishlib.command_runner.detect_os", return_value="linux"), \
-             patch("pyishlib.command_runner.detect_distro", return_value=None):
+        with patch("pyishlib.command_runner.detect_os", return_value="linux"), patch(
+            "pyishlib.command_runner.detect_distro", return_value=None
+        ):
             assert detect_os_tags() == ["linux"]
 
     def test_macos(self):
-        with patch("pyishlib.command_runner.detect_os", return_value="macos"), \
-             patch("pyishlib.command_runner.detect_distro", return_value=None):
+        with patch("pyishlib.command_runner.detect_os", return_value="macos"), patch(
+            "pyishlib.command_runner.detect_distro", return_value=None
+        ):
             assert detect_os_tags() == ["macos"]
 
 
@@ -378,29 +386,21 @@ class TestShouldSkipForOs:
 
     def test_only_on_multiple(self):
         assert (
-            should_skip_for_os(only_on=["linux", "macos"], current_os="macos")
-            is False
+            should_skip_for_os(only_on=["linux", "macos"], current_os="macos") is False
         )
         assert (
-            should_skip_for_os(only_on=["linux", "macos"], current_os="windows")
-            is True
+            should_skip_for_os(only_on=["linux", "macos"], current_os="windows") is True
         )
 
     def test_ignore_on_match(self):
-        assert (
-            should_skip_for_os(ignore_on=["windows"], current_os="windows") is True
-        )
+        assert should_skip_for_os(ignore_on=["windows"], current_os="windows") is True
 
     def test_ignore_on_no_match(self):
-        assert (
-            should_skip_for_os(ignore_on=["windows"], current_os="linux") is False
-        )
+        assert should_skip_for_os(ignore_on=["windows"], current_os="linux") is False
 
     def test_ignore_on_multiple(self):
         assert (
-            should_skip_for_os(
-                ignore_on=["windows", "macos"], current_os="macos"
-            )
+            should_skip_for_os(ignore_on=["windows", "macos"], current_os="macos")
             is True
         )
 
@@ -419,60 +419,36 @@ class TestShouldSkipForOs:
     def test_distro_only_on_debian_on_ubuntu(self):
         """Ubuntu (linux,debian) should match only_on=["debian"]."""
         assert (
-            should_skip_for_os(
-                only_on=["debian"], current_os="linux,debian"
-            )
-            is False
+            should_skip_for_os(only_on=["debian"], current_os="linux,debian") is False
         )
 
     def test_distro_only_on_debian_on_fedora(self):
         """Fedora (linux,fedora) should NOT match only_on=["debian"]."""
-        assert (
-            should_skip_for_os(
-                only_on=["debian"], current_os="linux,fedora"
-            )
-            is True
-        )
+        assert should_skip_for_os(only_on=["debian"], current_os="linux,fedora") is True
 
     def test_distro_only_on_linux_on_ubuntu(self):
         """Ubuntu (linux,debian) should match only_on=["linux"]."""
-        assert (
-            should_skip_for_os(
-                only_on=["linux"], current_os="linux,debian"
-            )
-            is False
-        )
+        assert should_skip_for_os(only_on=["linux"], current_os="linux,debian") is False
 
     def test_distro_ignore_on_fedora_on_fedora(self):
         """Fedora (linux,fedora) should match ignore_on=["fedora"]."""
         assert (
-            should_skip_for_os(
-                ignore_on=["fedora"], current_os="linux,fedora"
-            )
-            is True
+            should_skip_for_os(ignore_on=["fedora"], current_os="linux,fedora") is True
         )
 
     def test_distro_ignore_on_debian_on_fedora(self):
         """Fedora (linux,fedora) should NOT match ignore_on=["debian"]."""
         assert (
-            should_skip_for_os(
-                ignore_on=["debian"], current_os="linux,fedora"
-            )
-            is False
+            should_skip_for_os(ignore_on=["debian"], current_os="linux,fedora") is False
         )
 
     def test_bad_only_on_value_does_not_crash(self):
         """A typo in only_on should warn and not skip (non-fatal)."""
-        assert (
-            should_skip_for_os(only_on=["linxu"], current_os="linux") is False
-        )
+        assert should_skip_for_os(only_on=["linxu"], current_os="linux") is False
 
     def test_bad_ignore_on_value_does_not_crash(self):
         """A typo in ignore_on should warn and not skip (non-fatal)."""
-        assert (
-            should_skip_for_os(ignore_on=["winodws"], current_os="windows")
-            is False
-        )
+        assert should_skip_for_os(ignore_on=["lindows"], current_os="windows") is False
 
 
 # ---------------------------------------------------------------------------
@@ -501,15 +477,11 @@ class TestShouldSkipFromMetadata:
     def test_ignore_on_list(self):
         meta = {"ignore_on": ["windows"]}
         assert should_skip_for_os_from_metadata(meta, current_os="linux") is False
-        assert (
-            should_skip_for_os_from_metadata(meta, current_os="windows") is True
-        )
+        assert should_skip_for_os_from_metadata(meta, current_os="windows") is True
 
     def test_ignore_on_string(self):
         meta = {"ignore_on": "windows"}
-        assert (
-            should_skip_for_os_from_metadata(meta, current_os="windows") is True
-        )
+        assert should_skip_for_os_from_metadata(meta, current_os="windows") is True
 
     def test_metadata_with_other_keys(self):
         meta = {"vars": {"foo": "bar"}, "only_on": ["linux"]}
@@ -518,23 +490,16 @@ class TestShouldSkipFromMetadata:
     def test_only_on_debian_on_ubuntu(self):
         meta = {"only_on": ["debian"]}
         assert (
-            should_skip_for_os_from_metadata(meta, current_os="linux,debian")
-            is False
+            should_skip_for_os_from_metadata(meta, current_os="linux,debian") is False
         )
 
     def test_only_on_debian_on_fedora(self):
         meta = {"only_on": ["debian"]}
-        assert (
-            should_skip_for_os_from_metadata(meta, current_os="linux,fedora")
-            is True
-        )
+        assert should_skip_for_os_from_metadata(meta, current_os="linux,fedora") is True
 
     def test_ignore_on_fedora_on_fedora(self):
         meta = {"ignore_on": "fedora"}
-        assert (
-            should_skip_for_os_from_metadata(meta, current_os="linux,fedora")
-            is True
-        )
+        assert should_skip_for_os_from_metadata(meta, current_os="linux,fedora") is True
 
 
 # ---------------------------------------------------------------------------
@@ -547,9 +512,7 @@ class TestIgnoreFileSections:
     def test_global_only(self):
         with tempfile.TemporaryDirectory() as d:
             _make_file(Path(d) / ".dotfileignore", "*.bak\ntemp_*\n")
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert pats == ["*.bak", "temp_*"]
             assert only_on == {}
             assert ignore_on == {}
@@ -558,9 +521,7 @@ class TestIgnoreFileSections:
         with tempfile.TemporaryDirectory() as d:
             content = "*.bak\n\n[only_on.linux]\nlinux-conf\n"
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert pats == ["*.bak"]
             assert only_on == {"linux": ["linux-conf"]}
             assert ignore_on == {}
@@ -569,9 +530,7 @@ class TestIgnoreFileSections:
         with tempfile.TemporaryDirectory() as d:
             content = "[ignore_on.windows]\nunix-tool\n"
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert pats == []
             assert only_on == {}
             assert ignore_on == {"windows": ["unix-tool"]}
@@ -585,9 +544,7 @@ class TestIgnoreFileSections:
                 "[ignore_on.windows]\nno-win\n"
             )
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert pats == ["*.bak"]
             assert only_on == {"linux": ["linux-only"], "macos": ["mac-only"]}
             assert ignore_on == {"windows": ["no-win"]}
@@ -602,9 +559,7 @@ class TestIgnoreFileSections:
                 "another-linux\n"
             )
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert pats == []
             assert only_on == {"linux": ["linux-conf", "another-linux"]}
 
@@ -612,9 +567,7 @@ class TestIgnoreFileSections:
         with tempfile.TemporaryDirectory() as d:
             content = "[only_on.freebsd]\nsome-pattern\n"
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert pats == []
             assert only_on == {}
             assert ignore_on == {}
@@ -623,9 +576,7 @@ class TestIgnoreFileSections:
         with tempfile.TemporaryDirectory() as d:
             content = "[only_on.mac]\nmac-conf\n[ignore_on.win]\nno-win\n"
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert only_on == {"macos": ["mac-conf"]}
             assert ignore_on == {"windows": ["no-win"]}
 
@@ -637,9 +588,7 @@ class TestIgnoreFileSections:
                 "[ignore_on.ubuntu]\nno-ubuntu\n"
             )
             _make_file(Path(d) / ".dotfileignore", content)
-            pats, only_on, ignore_on = load_ignore_file(
-                Path(d) / ".dotfileignore"
-            )
+            pats, only_on, ignore_on = load_ignore_file(Path(d) / ".dotfileignore")
             assert only_on == {
                 "debian": ["debian-pkg"],
                 "fedora": ["fedora-pkg"],
@@ -806,13 +755,16 @@ class TestApplierOsFiltering:
                 cfg=IshConfig(dry_run=True),
             )
             dotfiles = applier.discover()
-            with patch("pyishlib.dotfile_applier.should_skip_for_os_from_metadata") as mock_skip:
+            with patch(
+                "pyishlib.dotfile_applier.should_skip_for_os_from_metadata"
+            ) as mock_skip:
                 # First call for dot_bashrc -> don't skip
                 # Second call for dot_mac_conf -> skip
                 def side_effect(meta):
                     if meta and meta.get("only_on") == ["macos"]:
                         return True
                     return False
+
                 mock_skip.side_effect = side_effect
                 prepared = applier.prepare(dotfiles)
 
@@ -834,7 +786,10 @@ class TestApplierOsFiltering:
                 cfg=IshConfig(dry_run=True),
             )
             dotfiles = applier.discover()
-            with patch("pyishlib.dotfile_applier.should_skip_for_os_from_metadata", return_value=False):
+            with patch(
+                "pyishlib.dotfile_applier.should_skip_for_os_from_metadata",
+                return_value=False,
+            ):
                 prepared = applier.prepare(dotfiles)
 
             assert len(prepared) == 1
