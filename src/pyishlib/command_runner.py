@@ -33,25 +33,22 @@ log = logging.getLogger(__name__)
 #: Asahi Remix, …).
 RECOGNISED_OS = ("linux", "macos", "windows", "debian", "fedora")
 
-# Distro IDs (from /etc/os-release ID_LIKE / ID) mapped to canonical
-# family names.  Extend this when adding new families.
-_DISTRO_FAMILY_MAP: Dict[str, str] = {
-    "debian": "debian",
-    "ubuntu": "debian",
-    "linuxmint": "debian",
-    "pop": "debian",
-    "elementary": "debian",
-    "zorin": "debian",
-    "kali": "debian",
-    "raspbian": "debian",
-    "fedora": "fedora",
-    "rhel": "fedora",
-    "centos": "fedora",
-    "rocky": "fedora",
-    "alma": "fedora",
-    "almalinux": "fedora",
-    "nobara": "fedora",
-    "asahi": "fedora",
+# Distro family detection rules.  Each entry maps a canonical family name
+# to a set of patterns matched against os-release ``ID`` and ``ID_LIKE``
+# tokens.  Because derivative distros often use compound IDs containing
+# hyphens (e.g. ``pop-os``, ``fedora-asahi-remix``) or set ``ID_LIKE``
+# to one or more ancestor IDs (e.g. ``"rhel centos fedora"``), we check
+# whether any token *starts with* a pattern rather than requiring an
+# exact match.  This avoids having to enumerate every derivative.
+#
+# Patterns are checked against:
+#   1. Each space-separated word in ``ID_LIKE`` (preferred -- this is
+#      the canonical way distros declare their lineage).
+#   2. The ``ID`` value itself (fallback for root distros like ``debian``
+#      and ``fedora`` that don't set ``ID_LIKE``).
+_DISTRO_FAMILY_PATTERNS: Dict[str, list] = {
+    "debian": ["debian", "ubuntu", "raspbian"],
+    "fedora": ["fedora", "rhel", "centos"],
 }
 
 
@@ -76,8 +73,35 @@ def _read_os_release() -> Dict[str, str]:
     return result
 
 
+def _match_distro_family(tokens: list) -> Optional[str]:
+    """Match a list of os-release tokens against distro family patterns.
+
+    Each token is checked with :func:`str.startswith` against the
+    patterns in :data:`_DISTRO_FAMILY_PATTERNS`, so ``"fedora-asahi-remix"``
+    matches the ``"fedora"`` pattern and ``"pop-os"`` does not need to be
+    listed explicitly because ``ID_LIKE=ubuntu debian`` already covers it.
+
+    Args:
+        tokens: Lowercased ID / ID_LIKE tokens to match.
+
+    Returns:
+        The canonical family name, or *None*.
+    """
+    for family, patterns in _DISTRO_FAMILY_PATTERNS.items():
+        for token in tokens:
+            for pat in patterns:
+                if token.startswith(pat):
+                    return family
+    return None
+
+
 def detect_distro() -> Optional[str]:
     """Detect the Linux distro family from ``/etc/os-release``.
+
+    Detection uses ``ID_LIKE`` first (the canonical lineage declaration)
+    then falls back to ``ID``.  Tokens are matched with startswith so
+    that compound IDs like ``fedora-asahi-remix`` or ``pop-os`` are
+    handled automatically.
 
     Returns:
         ``"debian"`` for Debian-like distros (Ubuntu, Mint, Pop!_OS, …),
@@ -91,14 +115,16 @@ def detect_distro() -> Optional[str]:
     if not info:
         return None
 
-    # Check ID first, then each word in ID_LIKE
-    distro_id = info.get("ID", "").lower()
-    if distro_id in _DISTRO_FAMILY_MAP:
-        return _DISTRO_FAMILY_MAP[distro_id]
+    # Prefer ID_LIKE -- it's how distros declare their ancestry
+    id_like = info.get("ID_LIKE", "").lower().split()
+    result = _match_distro_family(id_like)
+    if result is not None:
+        return result
 
-    for like_id in info.get("ID_LIKE", "").lower().split():
-        if like_id in _DISTRO_FAMILY_MAP:
-            return _DISTRO_FAMILY_MAP[like_id]
+    # Fall back to ID (handles root distros like "debian", "fedora")
+    distro_id = info.get("ID", "").lower()
+    if distro_id:
+        return _match_distro_family([distro_id])
 
     return None
 
