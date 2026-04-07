@@ -43,7 +43,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .command_runner import RECOGNISED_OS, normalise_os, detect_os_tags
+from .command_runner import normalise_os, detect_os_tags
 
 log = logging.getLogger(__name__)
 
@@ -64,9 +64,7 @@ DEFAULT_PATTERNS: List[str] = [
 DOTFILEIGNORE: str = ".dotfileignore"
 
 #: Regex matching section headers: [only_on.linux], [ignore_on.windows], etc.
-_RE_SECTION = re.compile(
-    r"^\[\s*(only_on|ignore_on)\.(\w+)\s*\]$"
-)
+_RE_SECTION = re.compile(r"^\[\s*(only_on|ignore_on)\.(\w+)\s*\]$")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -114,9 +112,7 @@ def load_ignore_file(
             try:
                 canonical = normalise_os(os_name)
             except ValueError:
-                log.warning(
-                    "Ignoring unrecognised OS in section header: %s", stripped
-                )
+                log.warning("Ignoring unrecognised OS in section header: %s", stripped)
                 current_section = "invalid"
                 current_kind = None
                 current_os = None
@@ -174,17 +170,13 @@ class DotfileIgnore:
         current_os: Optional[str] = None,
     ) -> None:
         if current_os is not None:
-            self._os_tags: List[str] = [
-                t.strip() for t in current_os.split(",")
-            ]
+            self._os_tags: List[str] = [t.strip() for t in current_os.split(",")]
         else:
             self._os_tags = detect_os_tags()
 
         # Unconditional patterns
         self._patterns: List[str] = list(DEFAULT_PATTERNS)
-        global_pats, only_on, ignore_on = load_ignore_file(
-            source_dir / ignore_file
-        )
+        global_pats, only_on, ignore_on = load_ignore_file(source_dir / ignore_file)
         self._patterns.extend(global_pats)
         self._patterns.extend(extra_patterns)
 
@@ -219,10 +211,6 @@ class DotfileIgnore:
 
     def is_ignored(self, name: str) -> bool:
         """Return *True* if *name* should be skipped during discovery."""
-        return any(
-            fnmatch.fnmatch(name, pat)
-            for pat in self._patterns
-        ) or any(
-            fnmatch.fnmatch(name, pat)
-            for pat in self._os_patterns
+        return any(fnmatch.fnmatch(name, pat) for pat in self._patterns) or any(
+            fnmatch.fnmatch(name, pat) for pat in self._os_patterns
         )

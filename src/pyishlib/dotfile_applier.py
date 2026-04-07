@@ -174,9 +174,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
 
             # Check OS rules in metadata after preprocessing has extracted it
             if should_skip_for_os_from_metadata(dotfile.metadata):
-                log.debug(
-                    "Skipping %s (OS rules in metadata)", dotfile.source
-                )
+                log.debug("Skipping %s (OS rules in metadata)", dotfile.source)
                 continue
 
             dotfile.staged = staged_path
