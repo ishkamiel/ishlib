@@ -27,7 +27,9 @@ from pyishlib.environment import (
     normalise_os,
     _read_os_release,
     _match_distro_family,
+    EnvironmentNamespace,
 )
+from pyishlib.dotfile_context import DotfileContext
 from pyishlib.dotfile_ignore import (
     DotfileIgnore,
     load_ignore_file,
@@ -365,6 +367,60 @@ class TestDetectOsTags:
             "pyishlib.environment.detect_distro", return_value=None
         ):
             assert detect_os_tags() == ["macos"]
+
+
+# ---------------------------------------------------------------------------
+# EnvironmentNamespace and DotfileContext.env
+# ---------------------------------------------------------------------------
+
+
+class TestEnvironmentNamespace:
+
+    def test_namespace_has_all_checks(self):
+        ns = EnvironmentNamespace()
+        for name in (
+            "is_linux",
+            "is_macos",
+            "is_windows",
+            "is_ubuntu",
+            "is_gnome",
+            "is_linux_desktop",
+            "detect_os",
+            "detect_distro",
+        ):
+            assert callable(getattr(ns, name))
+
+    @patch("pyishlib.environment.sys")
+    def test_is_linux_via_namespace(self, mock_sys):
+        mock_sys.platform = "linux"
+        assert EnvironmentNamespace.is_linux() is True
+        mock_sys.platform = "darwin"
+        assert EnvironmentNamespace.is_linux() is False
+
+    @patch("pyishlib.environment.sys")
+    def test_is_macos_via_namespace(self, mock_sys):
+        mock_sys.platform = "darwin"
+        assert EnvironmentNamespace.is_macos() is True
+        mock_sys.platform = "linux"
+        assert EnvironmentNamespace.is_macos() is False
+
+    def test_context_env_attribute(self):
+        ctx = DotfileContext()
+        assert isinstance(ctx.env, EnvironmentNamespace)
+
+    @patch("pyishlib.environment.sys")
+    def test_context_env_is_linux(self, mock_sys):
+        """ish.env.is_linux() works in a DotfileContext."""
+        mock_sys.platform = "linux"
+        ctx = DotfileContext()
+        assert ctx.env.is_linux() is True
+
+    def test_context_env_survives_as_dict(self):
+        """env is not a string variable — it should not appear in as_dict()."""
+        ctx = DotfileContext({"platform": "linux"})
+        d = ctx.as_dict()
+        assert "env" not in d
+        assert "platform" in d
 
 
 # ---------------------------------------------------------------------------

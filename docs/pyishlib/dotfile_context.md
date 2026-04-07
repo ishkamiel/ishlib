@@ -7,6 +7,10 @@ Dotfile context for preprocessing variable tracking and expression evaluation.
 Provides the `DotfileContext` object that is exposed as `ish` inside
 `@ish if` expressions and tracks all preprocessing variables.
 
+An `pyishlib.environment.EnvironmentNamespace` is available as
+`ish.env`, giving expressions access to environment checks such as
+`ish.env.is_linux()`, `ish.env.is_macos()`, etc.
+
 ### `DotfileContext`
 
 Context object for dotfile preprocessing.
@@ -18,6 +22,10 @@ Variables can be accessed as attributes (`ish.hostname`) or via
 dict-style lookup (`ish["hostname"]`).  Missing attributes return
 an empty string rather than raising `AttributeError`, making
 conditional expressions forgiving.
+
+An `env` attribute provides an
+`pyishlib.environment.EnvironmentNamespace` for live
+platform checks (e.g. `ish.env.is_linux()`).
 
 The context is built in layers (lowest to highest precedence):
 
