@@ -43,7 +43,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .command_runner import RECOGNISED_OS, normalise_os, detect_os
+from .command_runner import RECOGNISED_OS, normalise_os, detect_os_tags
 
 log = logging.getLogger(__name__)
 
@@ -161,8 +161,9 @@ class DotfileIgnore:
                          (default ``.dotfileignore``).
         extra_patterns:  Additional fnmatch-style patterns (merged with
                          :data:`DEFAULT_PATTERNS` and the ignore file).
-        current_os:      Override the auto-detected OS (for testing).
-                         One of ``"linux"``, ``"macos"``, ``"windows"``.
+        current_os:      Override the auto-detected OS tags (for testing).
+                         A single tag like ``"linux"`` or comma-separated
+                         tags like ``"linux,debian"``.
     """
 
     def __init__(
@@ -172,7 +173,12 @@ class DotfileIgnore:
         extra_patterns: Sequence[str] = (),
         current_os: Optional[str] = None,
     ) -> None:
-        self._current_os = current_os or detect_os()
+        if current_os is not None:
+            self._os_tags: List[str] = [
+                t.strip() for t in current_os.split(",")
+            ]
+        else:
+            self._os_tags = detect_os_tags()
 
         # Unconditional patterns
         self._patterns: List[str] = list(DEFAULT_PATTERNS)
@@ -188,12 +194,12 @@ class DotfileIgnore:
         # [only_on.<os>] -- these patterns are ONLY for <os>; on all
         # OTHER platforms, the listed entries should be ignored.
         for os_name, pats in only_on.items():
-            if os_name != self._current_os:
+            if os_name not in self._os_tags:
                 self._os_patterns.extend(pats)
 
         # [ignore_on.<os>] -- ignore these entries ON <os>.
         for os_name, pats in ignore_on.items():
-            if os_name == self._current_os:
+            if os_name in self._os_tags:
                 self._os_patterns.extend(pats)
 
     @property
@@ -203,8 +209,13 @@ class DotfileIgnore:
 
     @property
     def current_os(self) -> str:
-        """The OS identifier used for conditional evaluation."""
-        return self._current_os
+        """The primary OS identifier used for conditional evaluation."""
+        return self._os_tags[0]
+
+    @property
+    def os_tags(self) -> List[str]:
+        """All OS/distro tags that apply to the current platform."""
+        return list(self._os_tags)
 
     def is_ignored(self, name: str) -> bool:
         """Return *True* if *name* should be skipped during discovery."""

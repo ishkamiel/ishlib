@@ -223,6 +223,37 @@ The ishfiles source folder reserves these directories (ignored during dotfile ap
 - `ishscripts/` — user scripts executed on `apply` and `runscripts`
 - `ishinstallers/` — custom per-package install scripts
 
+### CommandRunner and OS Abstractions
+
+`CommandRunner` (`src/pyishlib/command_runner.py`) is the home for **all OS abstractions, platform/distro detection, and OS interaction helpers**. This includes both the class itself (command execution, file operations, sudo handling) and module-level utility functions:
+
+- `detect_os()` — returns `"linux"`, `"macos"`, or `"windows"`
+- `detect_distro()` — returns distro family (`"debian"`, `"fedora"`) on Linux, or `None`
+- `detect_os_tags()` — returns all applicable tags (e.g. `["linux", "debian"]`)
+- `normalise_os(name)` — canonicalises OS/distro aliases (e.g. `"ubuntu"` → `"debian"`, `"darwin"` → `"macos"`)
+- `should_skip_for_os(only_on, ignore_on, current_os)` — evaluates OS-conditional rules
+- `should_skip_for_os_from_metadata(metadata, current_os)` — checks `only_on`/`ignore_on` keys in `__ISH__` metadata
+
+New OS detection, platform-conditional logic, or system interaction helpers should be added to this module rather than creating separate files.
+
+### OS-conditional Ignore Rules
+
+Ignore files (`.ishignore`, `.dotfileignore`) support OS-conditional sections:
+
+- `[only_on.<os>]` — patterns listed here apply *only* on `<os>`; they are ignored on all other platforms.
+- `[ignore_on.<os>]` — patterns listed here are ignored *on* `<os>`; they have no effect on other platforms.
+
+Recognised OS/distro names: `linux`, `macos`, `windows`, `debian` (includes Ubuntu, Mint, Pop!_OS, etc.), `fedora` (includes RHEL, CentOS, Asahi Remix, etc.). Common aliases (`mac`, `darwin`, `win`, `ubuntu`) are accepted and normalised.
+
+Matching is hierarchical: a system running Ubuntu matches both `debian` and `linux` rules.
+
+Files and scripts can also use `only_on` and `ignore_on` keys in their `__ISH__` metadata (TOML) to control per-file OS filtering:
+
+```toml
+only_on = ["linux", "macos"]
+ignore_on = ["fedora"]
+```
+
 ## Important Warnings
 
 - **Never edit `ishlib.sh`, `docs/ishlib_shell.md`, or `docs/pyishlib/` directly** - they are generated. Edit sources in `src/` and run `make`.
