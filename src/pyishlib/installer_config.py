@@ -7,10 +7,10 @@
 
 import json
 import logging
-import os
-import sys
 from pathlib import Path
 from typing import Any, Mapping, Iterable
+
+from .environment import is_windows, is_ubuntu, is_gnome
 
 try:
     import cerberus
@@ -80,9 +80,6 @@ class InstallerConfig:
             pkg["name"] = name
 
         self._config: Mapping[str, Any] = config
-        self._on_gnome = None
-        self._on_ubuntu = None
-        self._on_windows = None
 
     @property
     def config_file(self) -> Path:
@@ -92,28 +89,17 @@ class InstallerConfig:
     @property
     def on_windows(self):
         """True if running on Windows"""
-        if self._on_windows is None:
-            self._on_windows = sys.platform == "win32"
-        return self._on_windows
+        return is_windows()
 
     @property
     def on_gnome(self):
         """True if running Gnome"""
-        if self._on_gnome is None:
-            cur_desk = os.environ.get("XDG_CURRENT_DESKTOP")
-            self._on_gnome = cur_desk is not None and cur_desk.lower() == "gnome"
-        return self._on_gnome
+        return is_gnome()
 
     @property
     def on_ubuntu(self):
         """True if on Ubuntu"""
-        if self._on_ubuntu is None:
-            try:
-                with open("/etc/os-release", "r", encoding="utf-8") as f:
-                    self._on_ubuntu = "ubuntu" in f.read().lower()
-            except FileNotFoundError:
-                self._on_ubuntu = False
-        return self._on_ubuntu
+        return is_ubuntu()
 
     def get_pkgs(self) -> Iterable[dict]:
         """Get the packages from the configuration"""

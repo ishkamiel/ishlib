@@ -8,8 +8,6 @@ Helper commands for running commands and common shell tasks.
 
 - `CommandRunner` -- Helper class for running commands and common shell tasks
 
-Functions: `detect_distro`, `detect_os`, `detect_os_tags`, `normalise_os`, `should_skip_for_os`, `should_skip_for_os_from_metadata`
-
 ## [`diff`](diff.md)
 
 Diff utilities for comparing files.
@@ -64,6 +62,12 @@ Dotfile preprocessing: directive handling, variable substitution, metadata strip
 Executable script with `@ish` directive preprocessing.
 
 - `DotfileScript` -- A script file that is preprocessed and executed.
+
+## [`environment`](environment.md)
+
+OS, distro, and desktop environment detection utilities.
+
+Functions: `detect_distro`, `detect_os`, `detect_os_tags`, `normalise_os`, `should_skip_for_os`, `should_skip_for_os_from_metadata`, `is_windows`, `is_ubuntu`, `is_gnome`, `is_ubuntu_desktop`
 
 ## [`file_preprocessor`](file_preprocessor.md)
 
