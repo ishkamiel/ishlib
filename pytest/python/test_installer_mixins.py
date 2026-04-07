@@ -558,47 +558,23 @@ class TestInstallerPipWindowsSupport:
 
 class TestCommandRunnerWindowsSupport:
 
-    @patch("pyishlib.command_runner.sys")
-    def test_run_sudo_raises_on_windows(self, mock_sys):
+    @patch("pyishlib.command_runner.is_windows", return_value=True)
+    def test_run_sudo_raises_on_windows(self, _mock):
         """run_sudo raises OSError on Windows."""
-        mock_sys.platform = "win32"
         runner = CommandRunner(cfg=IshConfig(dry_run=True))
         with pytest.raises(OSError, match="sudo is not available on Windows"):
             runner.run_sudo(["apt", "update"])
 
-    @patch("pyishlib.command_runner.sys")
-    def test_on_ubuntu_false_on_windows(self, mock_sys):
-        """on_ubuntu() returns False on Windows without calling uname."""
-        mock_sys.platform = "win32"
-        runner = CommandRunner(cfg=IshConfig(dry_run=True))
-        assert runner.on_ubuntu() is False
-
-    @patch("pyishlib.command_runner.sys")
-    def test_on_ubuntu_desktop_false_on_windows(self, mock_sys):
-        """on_ubuntu_desktop() returns False on Windows."""
-        mock_sys.platform = "win32"
-        runner = CommandRunner(cfg=IshConfig(dry_run=True))
-        assert runner.on_ubuntu_desktop() is False
-
-    def test_on_ubuntu_dry_run_no_type_error(self):
-        """on_ubuntu() handles dry-run mode without TypeError from bytes/str mismatch."""
-        runner = CommandRunner(cfg=IshConfig(dry_run=True))
-        # In dry-run mode, run() returns stdout=b"", which must not cause
-        # a TypeError when checking 'in' against a string.
-        result = runner.on_ubuntu()
-        assert result is False
-
 
 class TestInstallerConfigIntegration:
 
-    def test_installer_config_on_ubuntu_check(self):
-        """Test that on_ubuntu in InstallerConfig uses the correct cached field."""
+    @patch("pyishlib.installer_config.is_ubuntu", return_value=True)
+    def test_installer_config_on_ubuntu_check(self, _mock):
+        """Test that on_ubuntu in InstallerConfig delegates to environment."""
         from pyishlib.installer_config import InstallerConfig
 
         config = {"pkg1": {"apt": "pkg1"}}
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
-        # Manually set _on_ubuntu to test the caching logic
-        ic._on_ubuntu = True
         assert ic.on_ubuntu is True
 
     def test_installer_config_get_pkg(self):
@@ -618,7 +594,8 @@ class TestInstallerConfigIntegration:
         with pytest.raises(ValueError):
             ic.get_pkg("nonexistent")
 
-    def test_installer_config_get_pkgs_filters_ubuntu(self):
+    @patch("pyishlib.installer_config.is_ubuntu", return_value=False)
+    def test_installer_config_get_pkgs_filters_ubuntu(self, _mock):
         from pyishlib.installer_config import InstallerConfig
 
         config = {
@@ -626,35 +603,30 @@ class TestInstallerConfigIntegration:
             "pkg2": {"apt": "pkg2", "ubuntu": True},
         }
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
-        ic._on_ubuntu = False
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1
         assert pkgs[0]["name"] == "pkg1"
 
-    @patch("pyishlib.installer_config.sys")
-    def test_installer_config_on_windows(self, mock_sys):
-        """Test that on_windows is detected and cached correctly."""
+    @patch("pyishlib.installer_config.is_windows", return_value=True)
+    def test_installer_config_on_windows(self, _mock):
+        """Test that on_windows delegates to environment."""
         from pyishlib.installer_config import InstallerConfig
 
-        mock_sys.platform = "win32"
         config = {"pkg1": {"apt": "pkg1"}}
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         assert ic.on_windows is True
-        # Verify caching: change platform, should still return cached value
-        mock_sys.platform = "linux"
-        assert ic.on_windows is True
 
-    @patch("pyishlib.installer_config.sys")
-    def test_installer_config_not_on_windows(self, mock_sys):
+    @patch("pyishlib.installer_config.is_windows", return_value=False)
+    def test_installer_config_not_on_windows(self, _mock):
         """Test that on_windows is False on Linux."""
         from pyishlib.installer_config import InstallerConfig
 
-        mock_sys.platform = "linux"
         config = {"pkg1": {"apt": "pkg1"}}
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         assert ic.on_windows is False
 
-    def test_installer_config_get_pkgs_filters_gnome(self):
+    @patch("pyishlib.installer_config.is_gnome", return_value=False)
+    def test_installer_config_get_pkgs_filters_gnome(self, _mock):
         from pyishlib.installer_config import InstallerConfig
 
         config = {
@@ -662,7 +634,6 @@ class TestInstallerConfigIntegration:
             "pkg2": {"apt": "pkg2", "gnome": True},
         }
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
-        ic._on_gnome = False
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1
         assert pkgs[0]["name"] == "pkg1"

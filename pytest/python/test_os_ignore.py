@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.command_runner import (
+from pyishlib.environment import (
     detect_os,
     detect_distro,
     detect_os_tags,
@@ -54,22 +54,22 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 class TestDetectOs:
 
     def test_linux(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys:
+        with patch("pyishlib.environment.sys") as mock_sys:
             mock_sys.platform = "linux"
             assert detect_os() == "linux"
 
     def test_macos(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys:
+        with patch("pyishlib.environment.sys") as mock_sys:
             mock_sys.platform = "darwin"
             assert detect_os() == "macos"
 
     def test_windows(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys:
+        with patch("pyishlib.environment.sys") as mock_sys:
             mock_sys.platform = "win32"
             assert detect_os() == "windows"
 
     def test_unknown(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys:
+        with patch("pyishlib.environment.sys") as mock_sys:
             mock_sys.platform = "freebsd"
             with pytest.raises(RuntimeError):
                 detect_os()
@@ -118,9 +118,10 @@ class TestReadOsRelease:
 
     def test_parses_standard_format(self):
         content = 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID="22.04"\nNAME="Ubuntu"\n'
-        with patch("pyishlib.command_runner.Path") as mock_path_cls:
-            mock_path = mock_path_cls.return_value
-            mock_path.read_text.return_value = content
+        with patch("builtins.open", create=True) as mock_open:
+            mock_open.return_value.__enter__ = lambda s: s
+            mock_open.return_value.__exit__ = lambda s, *a: None
+            mock_open.return_value.read.return_value = content
             result = _read_os_release()
             assert result["ID"] == "ubuntu"
             assert result["ID_LIKE"] == "debian"
@@ -128,9 +129,7 @@ class TestReadOsRelease:
             assert result["NAME"] == "Ubuntu"
 
     def test_file_not_found(self):
-        with patch("pyishlib.command_runner.Path") as mock_path_cls:
-            mock_path = mock_path_cls.return_value
-            mock_path.read_text.side_effect = FileNotFoundError
+        with patch("builtins.open", side_effect=FileNotFoundError):
             result = _read_os_release()
             assert result == {}
 
@@ -219,14 +218,14 @@ class TestMatchDistroFamily:
 class TestDetectDistro:
 
     def test_not_linux(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys:
+        with patch("pyishlib.environment.sys") as mock_sys:
             mock_sys.platform = "darwin"
             assert detect_distro() is None
 
     def test_ubuntu(self):
         # Real Ubuntu: ID=ubuntu, ID_LIKE=debian
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "ubuntu", "ID_LIKE": "debian"}
@@ -234,8 +233,8 @@ class TestDetectDistro:
 
     def test_debian(self):
         # Real Debian: ID=debian (no ID_LIKE)
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "debian"}
@@ -243,8 +242,8 @@ class TestDetectDistro:
 
     def test_fedora(self):
         # Real Fedora: ID=fedora (no ID_LIKE)
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "fedora"}
@@ -252,8 +251,8 @@ class TestDetectDistro:
 
     def test_pop_os(self):
         # Real Pop!_OS: ID=pop-os, ID_LIKE="ubuntu debian"
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "pop-os", "ID_LIKE": "ubuntu debian"}
@@ -261,8 +260,8 @@ class TestDetectDistro:
 
     def test_fedora_asahi_remix(self):
         # Real Asahi: ID=fedora-asahi-remix, ID_LIKE=fedora
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "fedora-asahi-remix", "ID_LIKE": "fedora"}
@@ -270,8 +269,8 @@ class TestDetectDistro:
 
     def test_rocky(self):
         # Real Rocky: ID="rocky", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "rocky", "ID_LIKE": "rhel centos fedora"}
@@ -279,8 +278,8 @@ class TestDetectDistro:
 
     def test_almalinux(self):
         # Real AlmaLinux: ID="almalinux", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {
@@ -291,8 +290,8 @@ class TestDetectDistro:
 
     def test_linuxmint(self):
         # Real Mint: ID=linuxmint, ID_LIKE="ubuntu debian"
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "linuxmint", "ID_LIKE": "ubuntu debian"}
@@ -300,8 +299,8 @@ class TestDetectDistro:
 
     def test_kali(self):
         # Real Kali: ID=kali, ID_LIKE=debian
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "kali", "ID_LIKE": "debian"}
@@ -309,8 +308,8 @@ class TestDetectDistro:
 
     def test_centos_stream(self):
         # Real CentOS Stream: ID="centos", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "centos", "ID_LIKE": "rhel centos fedora"}
@@ -318,24 +317,24 @@ class TestDetectDistro:
 
     def test_amazon_linux(self):
         # Real Amazon Linux 2023: ID="amzn", ID_LIKE="fedora"
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "amzn", "ID_LIKE": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_unknown_distro(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "gentoo"}
             assert detect_distro() is None
 
     def test_no_os_release(self):
-        with patch("pyishlib.command_runner.sys") as mock_sys, patch(
-            "pyishlib.command_runner._read_os_release"
+        with patch("pyishlib.environment.sys") as mock_sys, patch(
+            "pyishlib.environment._read_os_release"
         ) as mock_read:
             mock_sys.platform = "linux"
             mock_read.return_value = {}
@@ -350,20 +349,20 @@ class TestDetectDistro:
 class TestDetectOsTags:
 
     def test_linux_with_distro(self):
-        with patch("pyishlib.command_runner.detect_os", return_value="linux"), patch(
-            "pyishlib.command_runner.detect_distro", return_value="debian"
+        with patch("pyishlib.environment.detect_os", return_value="linux"), patch(
+            "pyishlib.environment.detect_distro", return_value="debian"
         ):
             assert detect_os_tags() == ["linux", "debian"]
 
     def test_linux_unknown_distro(self):
-        with patch("pyishlib.command_runner.detect_os", return_value="linux"), patch(
-            "pyishlib.command_runner.detect_distro", return_value=None
+        with patch("pyishlib.environment.detect_os", return_value="linux"), patch(
+            "pyishlib.environment.detect_distro", return_value=None
         ):
             assert detect_os_tags() == ["linux"]
 
     def test_macos(self):
-        with patch("pyishlib.command_runner.detect_os", return_value="macos"), patch(
-            "pyishlib.command_runner.detect_distro", return_value=None
+        with patch("pyishlib.environment.detect_os", return_value="macos"), patch(
+            "pyishlib.environment.detect_distro", return_value=None
         ):
             assert detect_os_tags() == ["macos"]
 

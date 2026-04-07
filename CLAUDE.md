@@ -223,9 +223,9 @@ The ishfiles source folder reserves these directories (ignored during dotfile ap
 - `ishscripts/` — user scripts executed on `apply` and `runscripts`
 - `ishinstallers/` — custom per-package install scripts
 
-### CommandRunner and OS Abstractions
+### Environment Detection (`environment.py`)
 
-`CommandRunner` (`src/pyishlib/command_runner.py`) is the home for **all OS abstractions, platform/distro detection, and OS interaction helpers**. This includes both the class itself (command execution, file operations, sudo handling) and module-level utility functions:
+`src/pyishlib/environment.py` is the single home for **all OS/distro detection, platform-conditional logic, and environment checks**. Key functions:
 
 - `detect_os()` — returns `"linux"`, `"macos"`, or `"windows"`
 - `detect_distro()` — returns distro family (`"debian"`, `"fedora"`) on Linux, or `None`
@@ -233,8 +233,9 @@ The ishfiles source folder reserves these directories (ignored during dotfile ap
 - `normalise_os(name)` — canonicalises OS/distro aliases (e.g. `"ubuntu"` → `"debian"`, `"darwin"` → `"macos"`)
 - `should_skip_for_os(only_on, ignore_on, current_os)` — evaluates OS-conditional rules
 - `should_skip_for_os_from_metadata(metadata, current_os)` — checks `only_on`/`ignore_on` keys in `__ISH__` metadata
+- `is_windows()`, `is_ubuntu()`, `is_gnome()`, `is_ubuntu_desktop()` — simple boolean environment checks
 
-New OS detection, platform-conditional logic, or system interaction helpers should be added to this module rather than creating separate files.
+New OS detection, platform-conditional logic, or environment helpers should be added to this module. `CommandRunner` (`src/pyishlib/command_runner.py`) handles command execution, file operations, and sudo — it delegates to `environment.py` for platform checks.
 
 ### OS-conditional Ignore Rules
 
