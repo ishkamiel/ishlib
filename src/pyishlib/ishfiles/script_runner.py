@@ -21,7 +21,7 @@ from ..command_runner import CommandRunner
 from ..dotfile_script import DotfileScript
 from ..file_preprocessor import FilePreprocessor
 from ..ish_config import IshConfig
-from ..os_info import should_skip_for_os_from_metadata
+from ..command_runner import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
 

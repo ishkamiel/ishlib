@@ -43,7 +43,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .os_info import RECOGNISED_OS, _normalise_os, detect_os
+from .command_runner import RECOGNISED_OS, normalise_os, detect_os
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def load_ignore_file(
         if m:
             kind, os_name = m.group(1), m.group(2)
             try:
-                canonical = _normalise_os(os_name)
+                canonical = normalise_os(os_name)
             except ValueError:
                 log.warning(
                     "Ignoring unrecognised OS in section header: %s", stripped
