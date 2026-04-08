@@ -52,6 +52,10 @@ class TestCommandRunnerProperties:
         assert runner.always_sudo is True
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="tests use Unix shell builtins (echo, false, pwd)",
+)
 class TestCommandRunnerRun:
 
     def test_run_captures_output(self):
@@ -60,19 +64,16 @@ class TestCommandRunnerRun:
         assert result.returncode == 0
         assert b"hello" in result.stdout
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no 'false' command on Windows")
     def test_run_check_true_by_default(self):
         runner = CommandRunner()
         with pytest.raises(subprocess.CalledProcessError):
             runner.run(["false"])
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no 'false' command on Windows")
     def test_run_check_false(self):
         runner = CommandRunner()
         result = runner.run(["false"], check=False)
         assert result.returncode != 0
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no 'false' command on Windows")
     def test_run_dry_run_returns_zero(self):
         runner = CommandRunner(cfg=IshConfig(dry_run=True))
         result = runner.run(["false"])
@@ -85,7 +86,6 @@ class TestCommandRunnerRun:
         result = runner.run(["echo", "hello"], quiet=True)
         assert result.returncode == 0
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no 'pwd' command on Windows")
     def test_run_with_work_dir(self):
         runner = CommandRunner()
         original_dir = os.getcwd()
@@ -97,7 +97,6 @@ class TestCommandRunnerRun:
         # Verify we restored the original directory
         assert os.getcwd() == original_dir
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no 'false' command on Windows")
     def test_run_with_work_dir_restores_on_error(self):
         runner = CommandRunner()
         original_dir = os.getcwd()
@@ -229,7 +228,8 @@ class TestCommandRunnerWhich:
 
     def test_which_existing_command(self):
         runner = CommandRunner()
-        result = runner.which("echo")
+        cmd = "cmd" if sys.platform == "win32" else "echo"
+        result = runner.which(cmd)
         assert result is not None
 
     def test_which_nonexistent_command(self):
