@@ -238,6 +238,7 @@ class TestCommandRunnerWhich:
         assert result is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="sudo not available on Windows")
 class TestCommandRunnerSudo:
 
     def test_run_sudo_aborts_on_user_decline(self):
