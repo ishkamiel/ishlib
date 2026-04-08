@@ -83,6 +83,7 @@ def build_link_rewrite_map(pages):
 
 def rewrite_links(content, rewrites, source_in_pyishlib):
     """Rewrite markdown links to point to wiki page names."""
+
     def replace_link(match):
         prefix = match.group(1)
         target = match.group(2)
@@ -105,7 +106,7 @@ def rewrite_links(content, rewrites, source_in_pyishlib):
         return match.group(0)
 
     return re.sub(
-        r'(\[(?:[^\]]*)\]\()([^)]+?)(\))',
+        r"(\[(?:[^\]]*)\]\()([^)]+?)(\))",
         replace_link,
         content,
     )
@@ -175,6 +176,7 @@ def build_sidebar(pages):
 
 
 def main():
+    """Parse arguments and build wiki pages."""
     parser = argparse.ArgumentParser(description="Build wiki pages from docs")
     parser.add_argument(
         "--out",
