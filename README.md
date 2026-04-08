@@ -11,16 +11,16 @@ development tasks.
 
 - **Shell library** (`ishlib.sh`): A compiled, self-documenting POSIX/Bash
   function library built from modular sources in `src/sh/` and `src/bash/`.
-  See the [shell library documentation](docs/ishlib_shell.md) for the full
+  See the [shell library documentation](../../wiki/ishlib_shell) for the full
   function reference.
 
 - **Python library** (`src/pyishlib/`): Installer framework with backends for
   apt, brew, cargo, pip, and winget.
-  See the [Python library documentation](docs/pyishlib/index.md) for details.
+  See the [Python library documentation](../../wiki/pyishlib) for details.
 
 - **ishfiles**: CLI tool built on `pyishlib` for managing dotfiles and
   package installations.
-  See the [ishfiles documentation](docs/ishfiles.md) for usage details.
+  See the [ishfiles documentation](../../wiki/ishfiles) for usage details.
 
 ## Quick start
 
@@ -45,11 +45,8 @@ make all
 # Build just ishlib.sh from sources
 make ishlib.sh
 
-# Regenerate shell docs
-make docs/ishlib_shell.md
-
-# Serve documentation locally (MkDocs)
-mkdocs serve
+# Build wiki pages locally
+make wiki
 ```
 
 ## Repository structure
@@ -63,5 +60,4 @@ src/
   docs/       # Documentation sources
 pytest/       # Test suite (shell + python)
 t/            # Legacy Perl/TAP tests
-docs/         # Generated/served documentation (MkDocs site source)
 ```
