@@ -24,13 +24,13 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .command_runner import CommandRunner
 from .dotfile import ChangeType, DotFile
 from .dotfile_finder import DotfileFinder
 from .dotfile_ignore import DotfileIgnore
-from .ish_metadata import read_metadata
+from .ish_metadata import collect_metadata_packages, read_metadata
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .ish_comp import prompt_yes_no_always, setup_logging
@@ -135,6 +135,48 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         """
         return self._finder.discover(files=files, dotfile_ignore=self._dotfile_ignore)
 
+    # -- Stage 1b: Scan -------------------------------------------------------
+
+    def scan(
+        self, dotfiles: List[DotFile]
+    ) -> Tuple[List[DotFile], List[Dict[str, Any]]]:
+        """Read metadata from discovered dotfiles and collect embedded packages.
+
+        For each dotfile, reads ``__ISH__`` metadata and applies OS filtering.
+        Files that are excluded by OS rules are silently dropped.  For kept
+        files, any ``[packages]`` section in the metadata is extracted and
+        converted to the installer package-dict format.
+
+        This method should be called **before** :meth:`prepare` so that
+        package information from all files can be merged with the main
+        package list before installation begins.
+
+        Args:
+            dotfiles: Files from :meth:`discover`.
+
+        Returns:
+            A tuple of *(kept_dotfiles, packages)* where *kept_dotfiles*
+            have their :attr:`~DotFile.metadata` set, and *packages* is
+            a list of package dicts (``{"name": ..., ...}``).
+        """
+        kept: List[DotFile] = []
+        packages: List[Dict[str, Any]] = []
+
+        for dotfile in dotfiles:
+            try:
+                meta = read_metadata(dotfile.source)
+            except (ValueError, ImportError):
+                meta = None
+            if should_skip_for_os_from_metadata(meta):
+                log.debug("Skipping %s (OS rules in metadata)", dotfile.source)
+                continue
+
+            dotfile.metadata = meta
+            packages.extend(collect_metadata_packages(meta, source=str(dotfile.source)))
+            kept.append(dotfile)
+
+        return kept, packages
+
     # -- Stage 2: Prepare ----------------------------------------------------
 
     def prepare(self, dotfiles: List[DotFile]) -> List[DotFile]:
@@ -147,11 +189,12 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
         variable references are substituted.  Binary files that cannot
         be decoded as UTF-8 are copied verbatim.
 
-        Files whose metadata contains ``only_on`` or ``ignore_on`` keys
-        that exclude the current platform are silently skipped.
+        If :meth:`scan` has already been called, dotfiles will have their
+        metadata pre-populated and OS filtering already applied.  Otherwise,
+        this method reads metadata and performs OS filtering itself.
 
         Args:
-            dotfiles: Files from :meth:`discover`.
+            dotfiles: Files from :meth:`scan` or :meth:`discover`.
 
         Returns:
             The list of staged dotfiles (excluding OS-skipped ones),
@@ -163,16 +206,19 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
 
         kept: List[DotFile] = []
         for dotfile in dotfiles:
-            # Check OS rules from metadata before staging to avoid
-            # unnecessary work and to handle binary files that cannot
-            # be preprocessed.
-            try:
-                meta = read_metadata(dotfile.source)
-            except (ValueError, ImportError):
-                meta = None
-            if should_skip_for_os_from_metadata(meta):
-                log.debug("Skipping %s (OS rules in metadata)", dotfile.source)
-                continue
+            if dotfile.scanned:
+                # scan() already read metadata and applied OS filtering.
+                # Use the stored metadata, falling back to an empty dict
+                # so the preprocessor skips redundant metadata reads.
+                meta = dotfile.metadata if dotfile.metadata is not None else {}
+            else:
+                try:
+                    meta = read_metadata(dotfile.source)
+                except (ValueError, ImportError):
+                    meta = None
+                if should_skip_for_os_from_metadata(meta):
+                    log.debug("Skipping %s (OS rules in metadata)", dotfile.source)
+                    continue
 
             staged_path = staging_root / dotfile.translated
             staged_path.parent.mkdir(parents=True, exist_ok=True)

@@ -241,7 +241,7 @@ class TestCli:
             from pyishlib.ish_comp import Choice
 
             with patch(
-                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
                 return_value=Choice.YES,
             ):
                 ret = cli_main(["--source", src, "--target", tgt, "apply"])
@@ -256,7 +256,7 @@ class TestCli:
             from pyishlib.ish_comp import Choice
 
             with patch(
-                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
                 return_value=Choice.NO,
             ):
                 ret = cli_main(["--source", src, "--target", tgt, "apply"])
@@ -658,7 +658,7 @@ class TestApplyWithFiles:
             from pyishlib.ish_comp import Choice
 
             with patch(
-                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
                 return_value=Choice.YES,
             ):
                 ret = cli_main(
@@ -677,7 +677,7 @@ class TestApplyWithFiles:
             from pyishlib.ish_comp import Choice
 
             with patch(
-                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
                 return_value=Choice.YES,
             ):
                 ret = cli_main(["--source", src, "--target", tgt, "apply", ".bashrc"])
@@ -1018,7 +1018,7 @@ class TestApplyWithRunscripts:
             from pyishlib.ish_comp import Choice
 
             with patch(
-                "pyishlib.dotfile_applier.prompt_yes_no_always",
+                "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
                 return_value=Choice.YES,
             ):
                 ret = cli_main(["--source", src, "--target", tgt, "apply"])
