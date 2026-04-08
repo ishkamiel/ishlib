@@ -260,14 +260,14 @@ __ISH__
 
 echo "hello"
 """)
-            f.flush()
-            try:
-                meta = read_metadata(f.name)
-                assert meta is not None
-                assert meta["script"]["name"] == "test-script"
-                assert meta["script"]["schedule"] == "daily"
-            finally:
-                os.unlink(f.name)
+            fname = f.name
+        try:
+            meta = read_metadata(fname)
+            assert meta is not None
+            assert meta["script"]["name"] == "test-script"
+            assert meta["script"]["schedule"] == "daily"
+        finally:
+            os.unlink(fname)
 
     def test_read_python_file(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -278,14 +278,14 @@ name = "py-tool"
 tags = ["etl"]
 """
 ''')
-            f.flush()
-            try:
-                meta = read_metadata(f.name)
-                assert meta is not None
-                assert meta["script"]["name"] == "py-tool"
-                assert meta["script"]["tags"] == ["etl"]
-            finally:
-                os.unlink(f.name)
+            fname = f.name
+        try:
+            meta = read_metadata(fname)
+            assert meta is not None
+            assert meta["script"]["name"] == "py-tool"
+            assert meta["script"]["tags"] == ["etl"]
+        finally:
+            os.unlink(fname)
 
     def test_read_sidecar(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -302,12 +302,12 @@ tags = ["etl"]
     def test_read_no_metadata(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("just some text\n")
-            f.flush()
-            try:
-                meta = read_metadata(f.name)
-                assert meta is None
-            finally:
-                os.unlink(f.name)
+            fname = f.name
+        try:
+            meta = read_metadata(fname)
+            assert meta is None
+        finally:
+            os.unlink(fname)
 
     def test_sidecar_overrides_embedded_on_conflict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -334,12 +334,12 @@ __ISH__
 this is [not valid toml
 __ISH__
 """)
-            f.flush()
-            try:
-                with self.assertRaises(ValueError):
-                    read_metadata(f.name)
-            finally:
-                os.unlink(f.name)
+            fname = f.name
+        try:
+            with self.assertRaises(ValueError):
+                read_metadata(fname)
+        finally:
+            os.unlink(fname)
 
 
 @pytest.mark.skipif(
@@ -539,22 +539,22 @@ class TestCliMain(unittest.TestCase):
 name = "cli-test"
 __ISH__
 """)
-            f.flush()
-            try:
-                ret = _cli_main(["meta-read", f.name])
-                assert ret == 0
-            finally:
-                os.unlink(f.name)
+            fname = f.name
+        try:
+            ret = _cli_main(["meta-read", fname])
+            assert ret == 0
+        finally:
+            os.unlink(fname)
 
     def test_cli_read_no_metadata(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("no metadata\n")
-            f.flush()
-            try:
-                ret = _cli_main(["meta-read", f.name])
-                assert ret == 1
-            finally:
-                os.unlink(f.name)
+            fname = f.name
+        try:
+            ret = _cli_main(["meta-read", fname])
+            assert ret == 1
+        finally:
+            os.unlink(fname)
 
     def test_cli_scan(self):
         with tempfile.TemporaryDirectory() as tmpdir:

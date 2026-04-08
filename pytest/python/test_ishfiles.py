@@ -389,7 +389,8 @@ class TestDotfileFinder:
     def test_resolve_unresolvable(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             finder = self._make_finder(src, tgt)
-            df = finder.get("/completely/unrelated/path")
+            # Use a path that can't be under src or tgt on any platform
+            df = finder.get(str(Path(tgt).parent / "zzz_unrelated_12345" / "path"))
             assert df is None
 
     def test_get_all(self):

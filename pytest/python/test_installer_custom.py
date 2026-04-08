@@ -156,7 +156,7 @@ class TestInstallerCustom:
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
-            assert found == script
+            assert found.resolve() == script.resolve()
 
     def test_find_script_with_extension(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -167,7 +167,7 @@ class TestInstallerCustom:
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
-            assert found == script
+            assert found.resolve() == script.resolve()
 
     def test_find_script_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -188,7 +188,7 @@ class TestInstallerCustom:
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
-            assert found == exact
+            assert found.resolve() == exact.resolve()
 
     def test_update_custom_pkgs_noop(self):
         custom = InstallerCustom(make_runner())

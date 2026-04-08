@@ -127,7 +127,7 @@ class TestCommandRunnerGit:
             runner.git(["status"], work_dir=Path("/tmp"))
             args = mock_run.call_args[0][0]
             assert "-C" in args
-            assert "/tmp" in args
+            assert str(Path("/tmp")) in args
 
 
 class TestCommandRunnerFileOps:
@@ -139,7 +139,7 @@ class TestCommandRunnerFileOps:
             result = runner.chdir(Path(tmpdir))
             assert result is True
             assert os.getcwd() == tmpdir
-        os.chdir(original_dir)
+            os.chdir(original_dir)
 
     def test_chdir_same_dir(self):
         runner = CommandRunner()
