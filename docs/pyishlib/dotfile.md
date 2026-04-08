@@ -55,6 +55,10 @@ Absolute path to the staged (preprocessed) copy, if any.
 
 Extracted __ISH__ metadata, populated during preprocessing.
 
+#### `scanned`
+
+True if metadata has been read (even if no metadata was found).
+
 #### `effective_source`
 
 The file to compare / copy: staged copy if available, else source.

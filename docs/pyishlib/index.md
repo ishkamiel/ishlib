@@ -146,8 +146,14 @@ Shared configuration for pyishlib components.
 
 Read embedded __ISH__ metadata from files.
 
-Functions: `merge_metadata`, `remove_metadata_blocks`, `read_metadata`, `scan_directory`, `register_cli`
+Functions: `merge_metadata`, `extract_packages_from_metadata`, `collect_metadata_packages`, `remove_metadata_blocks`, `read_metadata`, `scan_directory`, `register_cli`
 
 ## [`ishfiles`](ishfiles.md)
 
 ishfiles -- dotfile manager built on pyishlib.
+
+## [`schema_validation`](schema_validation.md)
+
+Shared schema validation for installer configs and `__ISH__` metadata.
+
+Functions: `load_packages_schema`, `load_metadata_schema`, `validate_packages`, `validate_metadata`

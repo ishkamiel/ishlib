@@ -68,6 +68,27 @@ Args:
 Returns:
     Sorted list of `DotFile` objects.
 
+#### `scan(dotfiles: List[DotFile])`
+
+Read metadata from discovered dotfiles and collect embedded packages.
+
+For each dotfile, reads `__ISH__` metadata and applies OS filtering.
+Files that are excluded by OS rules are silently dropped.  For kept
+files, any `[packages]` section in the metadata is extracted and
+converted to the installer package-dict format.
+
+This method should be called **before** `prepare` so that
+package information from all files can be merged with the main
+package list before installation begins.
+
+Args:
+    dotfiles: Files from `discover`.
+
+Returns:
+    A tuple of *(kept_dotfiles, packages)* where *kept_dotfiles*
+    have their `DotFile.metadata` set, and *packages* is
+    a list of package dicts (`{"name": ..., ...}`).
+
 #### `prepare(dotfiles: List[DotFile])`
 
 Stage discovered dotfiles for installation.
@@ -79,11 +100,12 @@ the translated relative path.  Each text file is preprocessed:
 variable references are substituted.  Binary files that cannot
 be decoded as UTF-8 are copied verbatim.
 
-Files whose metadata contains `only_on` or `ignore_on` keys
-that exclude the current platform are silently skipped.
+If `scan` has already been called, dotfiles will have their
+metadata pre-populated and OS filtering already applied.  Otherwise,
+this method reads metadata and performs OS filtering itself.
 
 Args:
-    dotfiles: Files from `discover`.
+    dotfiles: Files from `scan` or `discover`.
 
 Returns:
     The list of staged dotfiles (excluding OS-skipped ones),

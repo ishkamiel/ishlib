@@ -34,6 +34,41 @@ Returns:
     A (merged_dict, conflicts) tuple.  *conflicts* is empty when the
     two dicts are compatible.
 
+#### `extract_packages_from_metadata(packages_section: Dict[str, Any])`
+
+Convert a `[packages]` metadata section to installer package dicts.
+
+The metadata `[packages]` section uses the same TOML table format as
+the main `packages.toml`::
+
+    [packages]
+    vim = {}
+    git = {pref = ["apt"]}
+
+This function converts each entry to a dict with a `"name"` key,
+matching the format expected by `pyishlib.installer.Installer`.
+
+Args:
+    packages_section: The parsed `[packages]` dict from metadata.
+
+Returns:
+    A list of package dicts, e.g. `[{"name": "vim"}, ...]`.
+
+#### `collect_metadata_packages(metadata: Optional[Dict[str, Any]], source: str = ...)`
+
+Safely extract packages from a metadata dict.
+
+Checks that *metadata* contains a `packages` key with a dict value,
+converts it to installer package dicts, and returns them.  Logs a
+warning and returns an empty list if the value is present but not a dict.
+
+Args:
+    metadata: Parsed `__ISH__` metadata (may be *None*).
+    source:   Human-readable label for warning messages.
+
+Returns:
+    A list of package dicts, or an empty list.
+
 #### `remove_metadata_blocks(text: str)`
 
 Remove all `__ISH__` metadata blocks from *text*.
@@ -48,7 +83,7 @@ Args:
 Returns:
     The text with all metadata blocks removed.
 
-#### `read_metadata(file_path: Union[str, Path])`
+#### `read_metadata(file_path: Union[str, Path], validate: bool = True)`
 
 Read __ISH__ metadata from a file.
 
@@ -56,8 +91,13 @@ Reads both embedded metadata and sidecar metadata when available.
 If both exist, they are merged with the sidecar taking precedence
 on conflicts (a warning is logged for each conflict).
 
+When *validate* is True (the default), the final metadata is checked
+against the `__ISH__` metadata schema.  Validation errors are logged
+as warnings but do **not** prevent the metadata from being returned.
+
 Args:
     file_path: Path to the file to read metadata from.
+    validate:  Whether to validate the metadata against the schema.
 
 Returns:
     Parsed TOML metadata as a dictionary, or None if no metadata found.

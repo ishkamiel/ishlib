@@ -11,13 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping, Iterable
 
 from .environment import is_windows, is_ubuntu, is_gnome
-
-try:
-    import cerberus
-
-    HAS_CERBERUS = True
-except ImportError:
-    HAS_CERBERUS = False
+from .schema_validation import validate_packages
 
 try:
     import jsonschema
@@ -25,13 +19,6 @@ try:
     HAS_JSONSCHEMA = True
 except ImportError:
     HAS_JSONSCHEMA = False
-
-try:
-    import yaml
-
-    HAS_YAML = True
-except ImportError:
-    HAS_YAML = False
 
 try:
     import tomllib  # Python 3.11+
@@ -51,30 +38,12 @@ log = logging.getLogger(__name__)
 class InstallerConfig:
     """Class for handling installer configuration"""
 
-    SCHEMA: Path = (
-        Path(__file__).parent.parent / "schema" / "installer_config_cerberus.json"
-    )
-
     def __init__(self, config: Mapping[str, Any], config_fn: Path) -> None:
         self._config_file: Path = config_fn
 
-        if HAS_CERBERUS:
-            # Load the schema file (JSON format, use yaml.safe_load if available
-            # for tolerance of comments/trailing commas, otherwise json.load)
-            with open(InstallerConfig.SCHEMA, "r", encoding="utf-8") as schema_fh:
-                if HAS_YAML:
-                    schema = yaml.safe_load(schema_fh)
-                else:
-                    schema = json.load(schema_fh)
-
-            validator = cerberus.Validator(schema)
-            if not validator.validate({"config": config}):
-                raise ValueError(f"Config data does not validate: {validator.errors}")
-        else:
-            log.debug(
-                "cerberus not available, skipping config validation for %s",
-                config_fn,
-            )
+        err = validate_packages(dict(config), source=str(config_fn))
+        if err is not None:
+            raise ValueError(err)
 
         for name, pkg in config.items():
             pkg["name"] = name
@@ -172,5 +141,4 @@ class InstallerConfigTOML(InstallerConfig):
         except tomllib.TOMLDecodeError as e:
             raise ValueError(f"Config file is not valid TOML: {e}") from e
 
-        # Cerberus validation is handled by the parent class
         super().__init__(config=config, config_fn=config_fn, **kwargs)
