@@ -358,7 +358,9 @@ class TestDotfileScript:
         result = DotfileScript._detect_interpreter("#!/usr/bin/env python3\nimport os")
         assert "python3" in result[-1]
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="default interpreter is /bin/sh")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="default interpreter is /bin/sh"
+    )
     def test_detect_interpreter_no_shebang(self):
         assert DotfileScript._detect_interpreter("echo hi") == ["/bin/sh"]
 
