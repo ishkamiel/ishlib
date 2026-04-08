@@ -48,11 +48,16 @@ jobs:
     - name: Run Python tests
       shell: bash
       run: |
-        python -m pytest pytest/python/ -v --tb=long -o addopts="" 2>&1 | tee test-output.txt; exit ${PIPESTATUS[0]}
-    - name: Post test output to summary
-      if: always()
-      shell: bash
-      run: |
-        echo '```' >> $GITHUB_STEP_SUMMARY
-        cat test-output.txt >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
+        python -m pytest pytest/python/ -v --tb=short -o addopts="" 2>&1 | tee test-output.txt
+        rc=${PIPESTATUS[0]}
+        if [ $rc -ne 0 ]; then
+          echo ""
+          echo "::group::Full test output"
+          cat test-output.txt
+          echo "::endgroup::"
+          # Surface failures as annotations
+          grep -A5 "FAILED\|ERROR\|short test summary" test-output.txt | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+        fi
+        exit $rc
