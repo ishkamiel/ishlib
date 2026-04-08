@@ -45,10 +45,11 @@ jobs:
         python -m pip install pytest pytest-xdist
         grep -v -E '^\s*(griffe|mkdocs)' requirements.txt > requirements-test.txt
         python -m pip install -r requirements-test.txt
-    - name: List collected tests
-      run: |
-        python -m pytest pytest/python/ --collect-only -q -o addopts="" 2>&1
-      continue-on-error: true
     - name: Run Python tests
+      shell: bash
       run: |
-        python -m pytest pytest/python/ -v --tb=long -o addopts=""
+        python -m pytest pytest/python/ -v --tb=long -o addopts="" 2>&1 | tee test-output.txt; exit ${PIPESTATUS[0]}
+    - name: Show test output on failure
+      if: failure()
+      shell: bash
+      run: cat test-output.txt
