@@ -49,7 +49,10 @@ jobs:
       shell: bash
       run: |
         python -m pytest pytest/python/ -v --tb=long -o addopts="" 2>&1 | tee test-output.txt; exit ${PIPESTATUS[0]}
-    - name: Show test output on failure
-      if: failure()
+    - name: Post test output to summary
+      if: always()
       shell: bash
-      run: cat test-output.txt
+      run: |
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat test-output.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
