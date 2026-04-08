@@ -1,0 +1,43 @@
+{
+  "keysrules": {
+    "type": "string"
+  },
+  "valuesrules": {
+    "schema": {
+      "apt": {
+        "type": "string"
+      },
+      "brew": {
+        "type": "string"
+      },
+      "cargo": {
+        "type": "string"
+      },
+      "cmd": {
+        "type": "string"
+      },
+      "custom": {
+        "type": "string"
+      },
+      "gnome": {
+        "type": "boolean"
+      },
+      "pip": {
+        "type": "string"
+      },
+      "pref": {
+        "type": "list"
+      },
+      "type": {
+        "type": "string"
+      },
+      "ubuntu": {
+        "type": "boolean"
+      },
+      "winget": {
+        "type": "string"
+      }
+    },
+    "type": "dict"
+  }
+}

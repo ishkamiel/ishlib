@@ -1,0 +1,32 @@
+{
+  "metadata": {
+    "allow_unknown": true,
+    "schema": {
+      "ignore_on": {
+        "schema": {
+          "type": "string"
+        },
+        "type": "list"
+      },
+      "only_on": {
+        "schema": {
+          "type": "string"
+        },
+        "type": "list"
+      },
+      "packages": {
+        "type": "dict"
+      },
+      "vars": {
+        "keysrules": {
+          "type": "string"
+        },
+        "type": "dict",
+        "valuesrules": {
+          "type": "string"
+        }
+      }
+    },
+    "type": "dict"
+  }
+}
