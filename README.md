@@ -11,16 +11,16 @@ development tasks.
 
 - **Shell library** (`ishlib.sh`): A compiled, self-documenting POSIX/Bash
   function library built from modular sources in `src/sh/` and `src/bash/`.
-  See the [shell library documentation](../../wiki/ishlib_shell) for the full
+  See the [shell library documentation](https://github.com/ishkamiel/ishlib/wiki/ishlib_shell) for the full
   function reference.
 
 - **Python library** (`src/pyishlib/`): Installer framework with backends for
   apt, brew, cargo, pip, and winget.
-  See the [Python library documentation](../../wiki/pyishlib) for details.
+  See the [Python library documentation](https://github.com/ishkamiel/ishlib/wiki/pyishlib) for details.
 
 - **ishfiles**: CLI tool built on `pyishlib` for managing dotfiles and
   package installations.
-  See the [ishfiles documentation](../../wiki/ishfiles) for usage details.
+  See the [ishfiles documentation](https://github.com/ishkamiel/ishlib/wiki/ishfiles) for usage details.
 
 ## Quick start
 
