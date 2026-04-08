@@ -777,8 +777,11 @@ class TestInstallCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
-            # Use 'python' as cmd which should exist in test env on all platforms
-            (config_dir / "packages.json").write_text('{"python": {"cmd": "python"}}')
+            # Use the running interpreter so the command is guaranteed to exist
+            exe = sys.executable.replace("\\", "/")
+            (config_dir / "packages.json").write_text(
+                f'{{"python": {{"cmd": "{exe}"}}}}'
+            )
 
             ret = cli_main(["--source", src, "--target", tgt, "install"])
 

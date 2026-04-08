@@ -134,13 +134,13 @@ class TestInstallerPip:
         pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         assert pip.has_pip is True
 
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="Windows fallback always sets has_pip=True via python -m pip",
-    )
     def test_has_pip_false(self):
         pip = InstallerPip(make_runner({}))
-        assert pip.has_pip is False
+        if sys.platform == "win32":
+            # Windows fallback always sets has_pip=True via python -m pip
+            assert pip.has_pip is True
+        else:
+            assert pip.has_pip is False
 
     def test_can_use_pip_no_pip_key(self):
         pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
