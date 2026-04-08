@@ -52,6 +52,10 @@ class TestCommandRunnerProperties:
         assert runner.always_sudo is True
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="tests use Unix shell builtins (echo, false, pwd)",
+)
 class TestCommandRunnerRun:
 
     def test_run_captures_output(self):
@@ -123,7 +127,7 @@ class TestCommandRunnerGit:
             runner.git(["status"], work_dir=Path("/tmp"))
             args = mock_run.call_args[0][0]
             assert "-C" in args
-            assert "/tmp" in args
+            assert str(Path("/tmp")) in args
 
 
 class TestCommandRunnerFileOps:
@@ -135,7 +139,7 @@ class TestCommandRunnerFileOps:
             result = runner.chdir(Path(tmpdir))
             assert result is True
             assert os.getcwd() == tmpdir
-        os.chdir(original_dir)
+            os.chdir(original_dir)
 
     def test_chdir_same_dir(self):
         runner = CommandRunner()
@@ -224,7 +228,8 @@ class TestCommandRunnerWhich:
 
     def test_which_existing_command(self):
         runner = CommandRunner()
-        result = runner.which("echo")
+        cmd = "cmd" if sys.platform == "win32" else "echo"
+        result = runner.which(cmd)
         assert result is not None
 
     def test_which_nonexistent_command(self):
@@ -233,6 +238,7 @@ class TestCommandRunnerWhich:
         assert result is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="sudo not available on Windows")
 class TestCommandRunnerSudo:
 
     def test_run_sudo_aborts_on_user_decline(self):

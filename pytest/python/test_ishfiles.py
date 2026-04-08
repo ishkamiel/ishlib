@@ -273,7 +273,11 @@ class TestCli:
             _make_file(src / "dot_bashrc", "content\n")
 
             cfg_path = Path(d) / "config.toml"
-            cfg_path.write_text(f'[ishfiles]\nsource = "{src}"\ntarget = "{tgt}"\n')
+            src_escaped = str(src).replace("\\", "/")
+            tgt_escaped = str(tgt).replace("\\", "/")
+            cfg_path.write_text(
+                f'[ishfiles]\nsource = "{src_escaped}"\ntarget = "{tgt_escaped}"\n'
+            )
 
             ret = cli_main(["--config", str(cfg_path), "--dry-run", "apply"])
 
@@ -385,7 +389,8 @@ class TestDotfileFinder:
     def test_resolve_unresolvable(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             finder = self._make_finder(src, tgt)
-            df = finder.get("/completely/unrelated/path")
+            # Use a path that can't be under src or tgt on any platform
+            df = finder.get(str(Path(tgt).parent / "zzz_unrelated_12345" / "path"))
             assert df is None
 
     def test_get_all(self):
@@ -772,8 +777,11 @@ class TestInstallCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
-            # Use 'python3' as cmd which should exist in test env
-            (config_dir / "packages.json").write_text('{"python3": {"cmd": "python3"}}')
+            # Use the running interpreter so the command is guaranteed to exist
+            exe = sys.executable.replace("\\", "/")
+            (config_dir / "packages.json").write_text(
+                f'{{"python": {{"cmd": "{exe}"}}}}'
+            )
 
             ret = cli_main(["--source", src, "--target", tgt, "install"])
 
@@ -837,6 +845,7 @@ class TestApplyWithInstall:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="executes /bin/sh scripts")
 class TestRunscriptsCommand:
 
     def test_runscripts_no_scripts_dir(self):
@@ -991,6 +1000,7 @@ class TestRunscriptsCommand:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="executes /bin/sh scripts")
 class TestApplyWithRunscripts:
 
     def test_apply_runs_scripts(self):

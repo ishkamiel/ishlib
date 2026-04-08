@@ -2,12 +2,15 @@ name: Pytest
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -26,3 +29,22 @@ jobs:
     - name: Run all pytests
       run: |
         pytest
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pytest pytest-xdist
+        grep -v -E '^(griffe|mkdocs)' requirements.txt > requirements-test.txt
+        python -m pip install -r requirements-test.txt
+    - name: Run Python tests
+      run: |
+        python -m pytest pytest/python/ -n 0
