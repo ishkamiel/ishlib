@@ -16,6 +16,10 @@ from pyishlib import CommandRunner
 from pyishlib.ish_config import IshConfig
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="tests use echo which is a shell builtin on Windows",
+)
 class TestCommandRunnerLogging:
 
     @pytest.fixture(autouse=True)
