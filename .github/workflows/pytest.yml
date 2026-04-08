@@ -47,4 +47,4 @@ jobs:
         python -m pip install -r requirements-test.txt
     - name: Run Python tests
       run: |
-        pytest pytest/python/ -v --tb=long 2>&1
+        pytest pytest/python/ -v --tb=long
