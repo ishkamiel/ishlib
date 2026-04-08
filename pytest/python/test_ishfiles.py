@@ -273,7 +273,11 @@ class TestCli:
             _make_file(src / "dot_bashrc", "content\n")
 
             cfg_path = Path(d) / "config.toml"
-            cfg_path.write_text(f'[ishfiles]\nsource = "{src}"\ntarget = "{tgt}"\n')
+            src_escaped = str(src).replace("\\", "/")
+            tgt_escaped = str(tgt).replace("\\", "/")
+            cfg_path.write_text(
+                f'[ishfiles]\nsource = "{src_escaped}"\ntarget = "{tgt_escaped}"\n'
+            )
 
             ret = cli_main(["--config", str(cfg_path), "--dry-run", "apply"])
 
