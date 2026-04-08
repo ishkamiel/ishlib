@@ -81,7 +81,7 @@ def build_link_rewrite_map(pages):
     return rewrites
 
 
-def rewrite_links(content, rewrites, source_in_pyishlib):
+def rewrite_links(content, rewrites):
     """Rewrite markdown links to point to wiki page names."""
 
     def replace_link(match):
@@ -94,13 +94,7 @@ def rewrite_links(content, rewrites, source_in_pyishlib):
             target, anchor = target.split("#", 1)
             anchor = "#" + anchor
 
-        if source_in_pyishlib and target in rewrites:
-            return f"{prefix}{rewrites[target]}{anchor}{suffix}"
-
         if target in rewrites:
-            return f"{prefix}{rewrites[target]}{anchor}{suffix}"
-
-        if target.startswith("pyishlib/") and target in rewrites:
             return f"{prefix}{rewrites[target]}{anchor}{suffix}"
 
         return match.group(0)
@@ -112,16 +106,25 @@ def rewrite_links(content, rewrites, source_in_pyishlib):
     )
 
 
+def _safe_rmtree(out_dir):
+    """Remove out_dir with a safety check against dangerous paths."""
+    real = os.path.realpath(out_dir)
+    if real in ("/", os.path.expanduser("~"), REPO_ROOT):
+        print(f"Error: refusing to delete {real} (safety guard)", file=sys.stderr)
+        sys.exit(1)
+    shutil.rmtree(real)
+
+
 def build_wiki(src_docs_dir, gen_docs_dir, out_dir):
     """Copy and transform docs into wiki format."""
     pages = collect_pages(src_docs_dir, gen_docs_dir)
     rewrites = build_link_rewrite_map(pages)
 
     if os.path.exists(out_dir):
-        shutil.rmtree(out_dir)
+        _safe_rmtree(out_dir)
     os.makedirs(out_dir)
 
-    for src_path, rel, wiki_name in pages:
+    for src_path, _, wiki_name in pages:
         if not os.path.isfile(src_path):
             print(f"Warning: {src_path} not found, skipping", file=sys.stderr)
             continue
@@ -129,8 +132,7 @@ def build_wiki(src_docs_dir, gen_docs_dir, out_dir):
         with open(src_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        in_pyishlib = rel.startswith("pyishlib/") and rel != "pyishlib/index.md"
-        content = rewrite_links(content, rewrites, in_pyishlib)
+        content = rewrite_links(content, rewrites)
 
         dest_path = os.path.join(out_dir, wiki_name)
         with open(dest_path, "w", encoding="utf-8") as f:
