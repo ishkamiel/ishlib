@@ -837,6 +837,7 @@ class TestApplyWithInstall:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="executes /bin/sh scripts")
 class TestRunscriptsCommand:
 
     def test_runscripts_no_scripts_dir(self):
@@ -991,6 +992,7 @@ class TestRunscriptsCommand:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="executes /bin/sh scripts")
 class TestApplyWithRunscripts:
 
     def test_apply_runs_scripts(self):
