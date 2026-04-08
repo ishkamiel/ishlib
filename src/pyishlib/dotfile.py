@@ -99,6 +99,7 @@ class DotFile:
         self._translated: Path = translate_path(rel_path)
         self._staged: Optional[Path] = None
         self._metadata: Optional[Dict[str, Any]] = None
+        self._scanned: bool = False
 
     @property
     def source(self) -> Path:
@@ -137,6 +138,12 @@ class DotFile:
     @metadata.setter
     def metadata(self, value: Optional[Dict[str, Any]]) -> None:
         self._metadata = value
+        self._scanned = True
+
+    @property
+    def scanned(self) -> bool:
+        """True if metadata has been read (even if no metadata was found)."""
+        return self._scanned
 
     @property
     def effective_source(self) -> Path:

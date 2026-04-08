@@ -15,13 +15,13 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..command_runner import CommandRunner
 from ..dotfile_script import DotfileScript
 from ..file_preprocessor import FilePreprocessor
 from ..ish_config import IshConfig
-from ..ish_metadata import read_metadata
+from ..ish_metadata import collect_metadata_packages, read_metadata
 from ..environment import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,102 @@ def find_scripts(cfg: IshConfig, source_dir: Path) -> List[Path]:
     ]
     log.debug("Found %d script(s) in %s", len(scripts), scripts_dir)
     return scripts
+
+
+def scan_scripts(
+    cfg: IshConfig,
+    scripts: Optional[Sequence[str]] = None,
+) -> Tuple[List[Path], List[Dict[str, Any]]]:
+    """Discover scripts, read metadata, and collect embedded packages.
+
+    Performs OS filtering and extracts any ``[packages]`` sections from
+    script metadata, without executing the scripts.
+
+    Args:
+        cfg:     Resolved ishfiles configuration.
+        scripts: Optional list of script names to include (default: all).
+
+    Returns:
+        A tuple of *(kept_scripts, packages)* where *kept_scripts* is
+        the list of script paths that passed OS filtering, and *packages*
+        is a list of package dicts collected from metadata.
+    """
+    source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
+    all_scripts = find_scripts(cfg, source_dir)
+
+    if scripts:
+        requested = set(scripts)
+        all_scripts = [s for s in all_scripts if s.name in requested]
+
+    kept: List[Path] = []
+    packages: List[Dict[str, Any]] = []
+
+    for script_path in all_scripts:
+        try:
+            meta = read_metadata(script_path)
+        except (ValueError, ImportError):
+            meta = None
+        if should_skip_for_os_from_metadata(meta):
+            log.debug("Skipping %s (OS rules in metadata)", script_path.name)
+            continue
+
+        packages.extend(collect_metadata_packages(meta, source=script_path.name))
+        kept.append(script_path)
+
+    return kept, packages
+
+
+def run_scanned_scripts(
+    cfg: IshConfig,
+    script_paths: List[Path],
+) -> int:
+    """Execute pre-scanned scripts (OS filtering already applied).
+
+    Use this after :func:`scan_scripts` has already performed discovery
+    and OS filtering.
+
+    Args:
+        cfg:          Resolved ishfiles configuration.
+        script_paths: Script paths from :func:`scan_scripts`.
+
+    Returns:
+        0 on success or when no scripts are found, 1 on error.
+    """
+    if not script_paths:
+        return 0
+
+    if not cfg.quiet:
+        names = [s.name for s in script_paths]
+        print(f"Scripts to run ({len(script_paths)}): {', '.join(names)}")
+
+    runner = CommandRunner(cfg=cfg)
+    preprocessor = FilePreprocessor(variables=cfg.context.as_dict())
+
+    for script_path in script_paths:
+        script = DotfileScript(
+            path=script_path,
+            preprocessor=preprocessor,
+            runner=runner,
+        )
+
+        if cfg.dry_run:
+            log.info("Would run script: %s", script_path.name)
+            if not cfg.quiet:
+                print(f"  [dry-run] {script_path.name}")
+            continue
+
+        try:
+            if not cfg.quiet:
+                print(f"  Running: {script_path.name}")
+            script.execute()
+        except subprocess.CalledProcessError:
+            log.error("Script failed: %s", script_path.name)
+            return 1
+        except FileNotFoundError:
+            log.error("Script not found: %s", script_path)
+            return 1
+
+    return 0
 
 
 def run_scripts(  # pylint: disable=too-many-return-statements,too-many-branches
