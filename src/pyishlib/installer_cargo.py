@@ -9,13 +9,14 @@ import logging
 import re
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Any, Optional, Iterable, Mapping
-from .command_runner import CommandRunner
+from typing import Iterable, Mapping
+
+from .installer_base import InstallerBase
 
 log = logging.getLogger(__name__)
 
 
-class InstallerCargo:
+class InstallerCargo(InstallerBase):
     """Helper class for managing rust and cargo packages"""
 
     INSTALLER_NAME: str = "cargo"
@@ -28,49 +29,16 @@ class InstallerCargo:
     # The --locked flags forces cargo to use the pkg-specific versions of deps
     CARGO_INSTALL_CMD: Iterable[str] = ["cargo", "install", "--locked"]
 
-    def __init__(self, runner: CommandRunner) -> None:
-        self.runner: CommandRunner = runner
-        self._cargo_checked: bool = False
-        self._has_cargo: bool = False
+    def _tool_cmd(self) -> str:
+        return "cargo"
 
-    @property
-    def has_cargo(self) -> bool:
-        """Check if cargo is available"""
-        if not self._cargo_checked:
-            self._has_cargo = self.runner.which("cargo") is not None
-            self._cargo_checked = True
-        return self._has_cargo
+    def _pkg_key(self) -> str:
+        return "cargo"
 
-    @property
-    def namespace(self):
-        """Get the common Namespace for installer commands"""
-
-        # pylint: disable=R0903
-        class Namespace:
-            """Namespace for cargo commands"""
-
-            can_install = self.can_use_cargo
-            install = self.install_cargo_pkgs
-            install_unless_found = self.install_cargo_pkg_unless_found
-            is_installed = self.is_cargo_pkg_installed
-            update = self.update_cargo_pkgs
-            update_and_install_all = self.update_and_install_all
-
-        return Namespace()
-
-    def can_use_cargo(self, pkg: Optional[Any] = None) -> bool:
-        """Check if cargo is available, and optionally, if pkg can use it"""
-        if pkg is not None and "cargo" not in pkg:
-            return False
-        return self.has_cargo
-
-    def is_cargo_pkg_installed(self, pkg) -> bool:
+    def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a cargo package is installed"""
-        if not self.can_use_cargo():
-            log.debug("Cargo not available")
-            return False
-        if not self.can_use_cargo(pkg):
-            log.debug("Cargo pkg not available for %s", pkg["name"])
+        if not self.can_install() or not self.can_install(pkg):
+            log.debug("Cargo not available for %s", pkg.get("name"))
             return False
 
         try:
@@ -85,12 +53,9 @@ class InstallerCargo:
             log.debug("Cargo error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_cargo_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of cargo packages"""
-        assert isinstance(pkgs, Iterable) and all(
-            isinstance(pkg, dict) for pkg in pkgs
-        ), "pkgs should be an iterable of dictionaries"
-        assert all(self.can_use_cargo(p) for p in pkgs)
+        self._validate_pkgs(pkgs)
 
         pkg_list: Iterable[str] = [pkg["cargo"] for pkg in pkgs]
 
@@ -101,24 +66,6 @@ class InstallerCargo:
         except CalledProcessError as e:
             log.critical("Cargo error installing %s: %s", " ".join(pkg_list), e)
             raise e
-
-    def install_cargo_pkg(self, pkg) -> bool:
-        """Install a cargo package"""
-        return self.install_cargo_pkgs([pkg])
-
-    def install_cargo_pkg_unless_found(self, pkg) -> bool:
-        """Install a cargo package unless it is already installed"""
-        if not self.is_cargo_pkg_installed(pkg):
-            return self.install_cargo_pkg(pkg)
-        return True
-
-    def update_cargo_pkgs(self) -> bool:
-        """Update all installed cargo packages"""
-        assert self.can_use_cargo()
-
-        self.install_cargo_pkg_unless_found(self.CARGO_UPDATE_PKG)
-        self.runner.run(["cargo", "install-update", "-a", "-q"])
-        return True
 
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""
@@ -137,8 +84,16 @@ class InstallerCargo:
             log.critical("Rustup error: %s", e)
             raise e
 
-    def update_and_install_all(self, pkgs):
+    def update_pkgs(self) -> bool:
+        """Update all installed cargo packages"""
+        assert self.can_install()
+
+        self.install_pkg_unless_found(self.CARGO_UPDATE_PKG)
+        self.runner.run(["cargo", "install-update", "-a", "-q"])
+        return True
+
+    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
         """Update rust, cargo and cargo packages, then install new cargo pkgs"""
         self.update_or_install_rust()
-        self.update_cargo_pkgs()
-        self.install_cargo_pkgs(pkgs)
+        self.update_pkgs()
+        self.install_pkgs(pkgs)

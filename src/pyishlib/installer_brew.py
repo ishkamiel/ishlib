@@ -8,60 +8,28 @@
 import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Any, Optional, Iterable
-from .command_runner import CommandRunner
+from typing import Iterable
+
+from .installer_base import InstallerBase
 
 log = logging.getLogger(__name__)
 
 
-class InstallerBrew:
+class InstallerBrew(InstallerBase):
     """Helper class for managing packages via Homebrew"""
 
     INSTALLER_NAME: str = "brew"
 
-    def __init__(self, runner: CommandRunner) -> None:
-        self.runner: CommandRunner = runner
-        self._brew_checked: bool = False
-        self._has_brew: bool = False
+    def _tool_cmd(self) -> str:
+        return "brew"
 
-    @property
-    def has_brew(self) -> bool:
-        """Check if Homebrew is available"""
-        if not self._brew_checked:
-            self._has_brew = self.runner.which("brew") is not None
-            self._brew_checked = True
-        return self._has_brew
+    def _pkg_key(self) -> str:
+        return "brew"
 
-    @property
-    def namespace(self):
-        """Get the common Namespace for installer commands"""
-
-        # pylint: disable=R0903
-        class Namespace:
-            """Namespace for brew commands"""
-
-            can_install = self.can_use_brew
-            install = self.install_brew_pkgs
-            install_unless_found = self.install_brew_pkg_unless_found
-            is_installed = self.is_brew_pkg_installed
-            update = self.update_brew_pkgs
-            update_and_install_all = self.update_and_install_brew_pkgs
-
-        return Namespace()
-
-    def can_use_brew(self, pkg: Optional[Any] = None) -> bool:
-        """Check if Homebrew is available, and optionally, if pkg can use it"""
-        if pkg is not None and "brew" not in pkg:
-            return False
-        return self.has_brew
-
-    def is_brew_pkg_installed(self, pkg) -> bool:
+    def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a Homebrew package is installed"""
-        if not self.can_use_brew():
-            log.debug("Homebrew not available")
-            return False
-        if not self.can_use_brew(pkg):
-            log.debug("Homebrew pkg not available for %s", pkg["name"])
+        if not self.can_install() or not self.can_install(pkg):
+            log.debug("Homebrew not available for %s", pkg.get("name"))
             return False
 
         try:
@@ -76,12 +44,9 @@ class InstallerBrew:
             log.debug("Homebrew error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_brew_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of Homebrew packages"""
-        assert isinstance(pkgs, Iterable) and all(
-            isinstance(pkg, dict) for pkg in pkgs
-        ), "pkgs should be an iterable of dictionaries"
-        assert all(self.can_use_brew(p) for p in pkgs)
+        self._validate_pkgs(pkgs)
 
         pkg_list: Iterable[str] = [pkg["brew"] for pkg in pkgs]
 
@@ -93,27 +58,17 @@ class InstallerBrew:
             log.critical("Homebrew error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
-    def install_brew_pkg(self, pkg) -> bool:
-        """Install a Homebrew package"""
-        return self.install_brew_pkgs([pkg])
-
-    def install_brew_pkg_unless_found(self, pkg) -> bool:
-        """Install a Homebrew package unless it is already installed"""
-        if not self.is_brew_pkg_installed(pkg):
-            return self.install_brew_pkg(pkg)
-        return True
-
-    def update_brew_pkgs(self) -> bool:
+    def update_pkgs(self) -> bool:
         """Update all installed Homebrew packages"""
-        assert self.can_use_brew()
+        assert self.can_install()
 
         self.runner.run(["brew", "update"])
         self.runner.run(["brew", "upgrade"])
         return True
 
-    def update_and_install_brew_pkgs(self, pkgs):
+    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
         """Update Homebrew and Homebrew packages, then install new Homebrew pkgs"""
-        assert self.can_use_brew()
+        assert self.can_install()
 
-        self.update_brew_pkgs()
-        self.install_brew_pkgs(pkgs)
+        self.update_pkgs()
+        self.install_pkgs(pkgs)

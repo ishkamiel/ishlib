@@ -9,13 +9,15 @@ import logging
 import subprocess
 import sys
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Any, Optional, Iterable, Mapping
+from typing import Iterable, Mapping
+
 from .command_runner import CommandRunner
+from .installer_base import InstallerBase
 
 log = logging.getLogger(__name__)
 
 
-class InstallerPip:
+class InstallerPip(InstallerBase):
     """Helper class for managing python packages via pip"""
 
     INSTALLER_NAME: str = "pip"
@@ -26,9 +28,7 @@ class InstallerPip:
     }
 
     def __init__(self, runner: CommandRunner) -> None:
-        self.runner: CommandRunner = runner
-        self._pip_checked: bool = False
-        self._has_pip: bool = False
+        super().__init__(runner)
         self._pip_cmd: Iterable[str] = self._detect_pip_cmd()
 
     def _detect_pip_cmd(self) -> Iterable[str]:
@@ -43,65 +43,45 @@ class InstallerPip:
             return ["pip"]
         return ["pip3"]
 
+    def _pkg_key(self) -> str:
+        return "pip"
+
     @property
     def pip_install_cmd(self) -> Iterable[str]:
         """Get the pip install command for the current platform"""
         return list(self._pip_cmd) + ["install", "--user"]
 
     @property
-    def has_pip(self) -> bool:
-        """Check if pip is available"""
-
-        if not self._pip_checked:
+    def available(self) -> bool:
+        """Check if pip is available (with platform-specific fallbacks)."""
+        if not self._tool_checked:
             if len(self._pip_cmd) == 1:
-                self._has_pip = self.runner.which(self._pip_cmd[0]) is not None
-                if not self._has_pip and self._pip_cmd == ["pip3"]:
+                self._tool_available = self.runner.which(self._pip_cmd[0]) is not None
+                if not self._tool_available and self._pip_cmd == ["pip3"]:
                     # Fallback: try "pip" if "pip3" is not found
-                    self._has_pip = self.runner.which("pip") is not None
-                    if self._has_pip:
+                    self._tool_available = self.runner.which("pip") is not None
+                    if self._tool_available:
                         self._pip_cmd = ["pip"]
-                if not self._has_pip and sys.platform == "win32":
+                if not self._tool_available and sys.platform == "win32":
                     # Fallback: try "python -m pip" on Windows
                     self._pip_cmd = [sys.executable, "-m", "pip"]
-                    self._has_pip = True
+                    self._tool_available = True
             else:
                 # Already set to a multi-element command (e.g. python -m pip)
-                self._has_pip = True
-            self._pip_checked = True
-        return self._has_pip
+                self._tool_available = True
+            self._tool_checked = True
+        return self._tool_available
 
+    # Keep has_pip as an alias for backwards compatibility with tests/callers
     @property
-    def namespace(self):
-        """Get the common Namespace for installer commands"""
+    def has_pip(self) -> bool:
+        """Alias for :attr:`available`."""
+        return self.available
 
-        # pylint: disable=R0903
-        class Namespace:
-            """Namespace for pip commands"""
-
-            can_install = self.can_use_pip
-            install = self.install_pip_pkgs
-            install_unless_found = self.install_pip_pkg_unless_found
-            is_installed = self.is_pip_pkg_installed
-            update = self.update_pip_pkgs
-            update_and_install_all = self.update_and_install_pip_pkgs
-
-        return Namespace()
-
-    def can_use_pip(self, pkg: Optional[Any] = None) -> bool:
-        """Check if pip is available, and optionally, if pkg can use it"""
-
-        if pkg is not None and "pip" not in pkg:
-            return False
-        return self.has_pip
-
-    def is_pip_pkg_installed(self, pkg) -> bool:
+    def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a pip package is installed"""
-
-        if not self.can_use_pip():
-            log.debug("Pip not available")
-            return False
-        if not self.can_use_pip(pkg):
-            log.debug("Pip pkg not available for %s", pkg["name"])
+        if not self.can_install() or not self.can_install(pkg):
+            log.debug("Pip not available for %s", pkg.get("name"))
             return False
 
         try:
@@ -116,13 +96,9 @@ class InstallerPip:
             log.debug("Pip error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_pip_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of pip packages"""
-
-        assert isinstance(pkgs, Iterable) and all(
-            isinstance(pkg, dict) for pkg in pkgs
-        ), "pkgs should be an iterable of dictionaries"
-        assert all(self.can_use_pip(p) for p in pkgs)
+        self._validate_pkgs(pkgs)
 
         pkg_list: Iterable[str] = [pkg["pip"] for pkg in pkgs]
 
@@ -136,29 +112,18 @@ class InstallerPip:
             log.critical("Pip error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
-    def install_pip_pkg(self, pkg) -> bool:
-        """Install a pip package"""
-        return self.install_pip_pkgs([pkg])
-
-    def install_pip_pkg_unless_found(self, pkg) -> bool:
-        """Install a pip package unless it is already installed"""
-
-        if not self.is_pip_pkg_installed(pkg):
-            return self.install_pip_pkg(pkg)
-        return True
-
-    def update_pip_pkgs(self) -> bool:
+    def update_pkgs(self) -> bool:
         """Update all installed pip packages"""
-        assert self.can_use_pip()
+        assert self.can_install()
 
-        self.install_pip_pkg_unless_found(self.PIP_UPDATE_PKG)
+        self.install_pkg_unless_found(self.PIP_UPDATE_PKG)
         self.runner.run(list(self._pip_cmd) + ["install", "--upgrade", "pip"])
         log.warning("pip update not implemented (only updates pip itself)")
         return True
 
-    def update_and_install_pip_pkgs(self, pkgs):
+    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
         """Update python, pip and pip packages, then install new pip pkgs"""
-        assert self.can_use_pip()
+        assert self.can_install()
 
-        self.update_pip_pkgs()
-        self.install_pip_pkgs(pkgs)
+        self.update_pkgs()
+        self.install_pkgs(pkgs)
