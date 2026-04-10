@@ -20,17 +20,7 @@ try:
 except ImportError:
     HAS_JSONSCHEMA = False
 
-try:
-    import tomllib  # Python 3.11+
-
-    HAS_TOML = True
-except ModuleNotFoundError:
-    try:
-        import tomli as tomllib  # Fallback for Python < 3.11
-
-        HAS_TOML = True
-    except ImportError:
-        HAS_TOML = False
+from ._compat import HAS_TOML, tomllib
 
 log = logging.getLogger(__name__)
 

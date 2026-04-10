@@ -15,13 +15,7 @@ from typing import Any, Dict, Optional
 
 from .dotfile_context import DotfileContext
 
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:
-    try:
-        import tomli as tomllib  # type: ignore[no-redef]
-    except ImportError:
-        tomllib = None  # type: ignore[assignment]
+from ._compat import tomllib
 
 _log = logging.getLogger(__name__)
 
