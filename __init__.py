@@ -11,5 +11,3 @@ bash scripts. Now, with a (partial) python implementation for even more
 tinkering!
 
 """
-
-from .src.pyishlib import *

@@ -64,10 +64,6 @@ class InstallerCargo:
             return False
         return self.has_cargo
 
-    def get_cargo_pkgs(self, pkgs) -> Iterable[dict]:
-        """Get the cargo packages from a list of packages"""
-        return [pkg for pkg in pkgs if self.can_use_cargo(pkg)]
-
     def is_cargo_pkg_installed(self, pkg) -> bool:
         """Check if a cargo package is installed"""
         if not self.can_use_cargo():

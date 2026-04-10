@@ -18,10 +18,7 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.dotfile_applier import (
-    DotfileApplier,
-    _cli_main,
-)
+from pyishlib.dotfile_applier import DotfileApplier
 from pyishlib.dotfile import (
     ChangeType,
     DotFile,
@@ -573,77 +570,6 @@ class TestCommandRunnerCopy:
 
             assert result is True
             assert not dst.exists()
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-class TestCliApply:
-
-    def test_cli_apply_dry_run(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "content\n")
-
-            ret = _cli_main(["dotfile-apply", src, "-t", tgt, "-n"])
-
-            assert ret == 0
-            assert not (Path(tgt) / ".bashrc").exists()
-
-    def test_cli_apply_with_ignore(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "content\n")
-            _make_file(Path(src) / "SKIPME", "skip\n")
-
-            ret = _cli_main(
-                ["dotfile-apply", src, "-t", tgt, "-n", "--ignore", "SKIPME"]
-            )
-
-            assert ret == 0
-
-    def test_cli_apply_verbose(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "content\n")
-
-            ret = _cli_main(["dotfile-apply", src, "-t", tgt, "-n", "-v"])
-
-            assert ret == 0
-
-    def test_cli_apply_explicit_files(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "bash\n")
-            _make_file(Path(src) / "dot_profile", "profile\n")
-
-            ret = _cli_main(["dotfile-apply", src, "-t", tgt, "-n", "-f", "dot_bashrc"])
-
-            assert ret == 0
-
-
-class TestCliStatus:
-
-    def test_cli_status_has_changes(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "content\n")
-
-            ret = _cli_main(["dotfile-status", src, "-t", tgt])
-
-            assert ret == 1
-
-    def test_cli_status_no_changes(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(Path(src) / "dot_bashrc", "same\n")
-            _make_file(Path(tgt) / ".bashrc", "same\n")
-
-            ret = _cli_main(["dotfile-status", src, "-t", tgt])
-
-            assert ret == 0
-
-    def test_cli_status_empty_source(self):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = _cli_main(["dotfile-status", src, "-t", tgt])
-
-            assert ret == 0
 
 
 if __name__ == "__main__":

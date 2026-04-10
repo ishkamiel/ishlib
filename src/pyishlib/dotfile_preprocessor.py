@@ -61,13 +61,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from .dotfile import DotFile
-from .file_preprocessor import (  # pylint: disable=unused-import
-    FilePreprocessor,
-    _RE_DIRECTIVE,
-    _RE_VAR_REF,
-    _parse_set_directive,
-    _substitute_variables,
-)
+from .file_preprocessor import FilePreprocessor
 
 # ---------------------------------------------------------------------------
 # DotFilePreprocessor

@@ -94,10 +94,6 @@ class InstallerPip:
             return False
         return self.has_pip
 
-    def get_pip_pkgs(self, pkgs) -> Iterable[dict]:
-        """Get the pip packages from a list of packages"""
-        return [pkg for pkg in pkgs if self.can_use_pip(pkg)]
-
     def is_pip_pkg_installed(self, pkg) -> bool:
         """Check if a pip package is installed"""
 

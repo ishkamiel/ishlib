@@ -58,10 +58,6 @@ class InstallerApt:
             return False
         return self.has_apt
 
-    def get_apt_pkgs(self, pkgs) -> Iterable[dict]:
-        """Get the apt packages from a list of packages"""
-        return [pkg for pkg in pkgs if self.can_use_apt(pkg)]
-
     def is_apt_pkg_installed(self, pkg) -> bool:
         """Check if an apt package is installed"""
         if not self.can_use_apt():
