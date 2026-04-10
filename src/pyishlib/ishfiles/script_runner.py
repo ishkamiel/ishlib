@@ -55,6 +55,7 @@ def find_scripts(cfg: IshConfig, source_dir: Path) -> List[Path]:
 def scan_scripts(
     cfg: IshConfig,
     scripts: Optional[Sequence[str]] = None,
+    print_skipped: bool = False,
 ) -> Tuple[List[Path], List[Dict[str, Any]]]:
     """Discover scripts, read metadata, and collect embedded packages.
 
@@ -62,8 +63,10 @@ def scan_scripts(
     script metadata, without executing the scripts.
 
     Args:
-        cfg:     Resolved ishfiles configuration.
-        scripts: Optional list of script names to include (default: all).
+        cfg:           Resolved ishfiles configuration.
+        scripts:       Optional list of script names to include (default: all).
+        print_skipped: When True, print a ``[skipped]`` line for each script
+                       excluded by OS rules.
 
     Returns:
         A tuple of *(kept_scripts, packages)* where *kept_scripts* is
@@ -87,6 +90,8 @@ def scan_scripts(
             meta = None
         if should_skip_for_os_from_metadata(meta):
             log.debug("Skipping %s (OS rules in metadata)", script_path.name)
+            if print_skipped:
+                print(f"  [skipped] {script_path.name} (OS rules)")
             continue
 
         packages.extend(collect_metadata_packages(meta, source=script_path.name))
@@ -148,7 +153,7 @@ def run_scanned_scripts(
     return 0
 
 
-def run_scripts(  # pylint: disable=too-many-return-statements,too-many-branches
+def run_scripts(
     cfg: IshConfig,
     scripts: Optional[Sequence[str]] = None,
 ) -> int:
@@ -163,68 +168,18 @@ def run_scripts(  # pylint: disable=too-many-return-statements,too-many-branches
     """
     source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
     scripts_dir_name = cfg.get_opt("scripts_dir")
-    all_scripts = find_scripts(cfg, source_dir)
+    all_found = find_scripts(cfg, source_dir)
 
-    if not all_scripts:
+    if not all_found:
         log.info("No scripts found in %s/%s/", source_dir, scripts_dir_name)
         return 0
 
-    # Filter to requested scripts if specified
     if scripts:
         requested = set(scripts)
-        filtered = [s for s in all_scripts if s.name in requested]
-        unknown = requested - {s.name for s in filtered}
+        unknown = requested - {s.name for s in all_found}
         if unknown:
             log.error("Unknown scripts: %s", ", ".join(sorted(unknown)))
             return 1
-        all_scripts = filtered
 
-    if not all_scripts:
-        return 0
-
-    if not cfg.quiet:
-        names = [s.name for s in all_scripts]
-        print(f"Scripts to run ({len(all_scripts)}): {', '.join(names)}")
-
-    runner = CommandRunner(cfg=cfg)
-    preprocessor = FilePreprocessor(variables=cfg.context.as_dict())
-
-    for script_path in all_scripts:
-        # Read metadata directly for OS filtering -- avoids running
-        # preprocess() (which can mutate the shared preprocessor
-        # context via @ish set directives) for scripts that will be
-        # skipped.
-        try:
-            meta = read_metadata(script_path)
-        except (ValueError, ImportError):
-            meta = None
-        if should_skip_for_os_from_metadata(meta):
-            log.debug("Skipping %s (OS rules in metadata)", script_path.name)
-            if not cfg.quiet:
-                print(f"  [skipped] {script_path.name} (OS rules)")
-            continue
-
-        script = DotfileScript(
-            path=script_path,
-            preprocessor=preprocessor,
-            runner=runner,
-        )
-
-        if cfg.dry_run:
-            log.info("Would run script: %s", script_path.name)
-            if not cfg.quiet:
-                print(f"  [dry-run] {script_path.name}")
-            continue
-
-        try:
-            if not cfg.quiet:
-                print(f"  Running: {script_path.name}")
-            script.execute()
-        except subprocess.CalledProcessError:
-            log.error("Script failed: %s", script_path.name)
-            return 1
-        except FileNotFoundError:
-            log.error("Script not found: %s", script_path)
-            return 1
-
-    return 0
+    kept, _ = scan_scripts(cfg, scripts=scripts, print_skipped=not cfg.quiet)
+    return run_scanned_scripts(cfg, kept)
