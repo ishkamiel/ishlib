@@ -27,19 +27,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union
 
-from pyishlib.installer_config import HAS_TOML  # pylint: disable=duplicate-code
+from ._compat import HAS_TOML, tomllib
 
-if HAS_TOML:
-    try:
-        import tomllib
-    except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
-
-    _TOML_LOADS = tomllib.loads
-    _TOML_DECODE_ERROR = tomllib.TOMLDecodeError
-else:
-    _TOML_LOADS = None
-    _TOML_DECODE_ERROR = None
+_TOML_LOADS = tomllib.loads if HAS_TOML and tomllib is not None else None
+_TOML_DECODE_ERROR = (
+    tomllib.TOMLDecodeError if HAS_TOML and tomllib is not None else None
+)
 
 try:
     import tomli_w
