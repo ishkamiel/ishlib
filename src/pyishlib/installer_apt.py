@@ -5,66 +5,31 @@
 # Distributed under terms of the MIT license.
 """Helper library for apt package installing tasks"""
 
-# Standard imports
 import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Any, Optional, Iterable
-from .command_runner import CommandRunner
+from typing import Iterable
+
+from .installer_base import InstallerBase
 
 log = logging.getLogger(__name__)
 
 
-class InstallerApt:
+class InstallerApt(InstallerBase):
     """Helper class for managing apt packages"""
 
     INSTALLER_NAME: str = "apt"
 
-    def __init__(self, runner: CommandRunner) -> None:
-        self.runner: CommandRunner = runner
-        self._apt_checked: bool = False
-        self._has_apt: bool = False
+    def _tool_cmd(self) -> str:
+        return "apt"
 
-    @property
-    def has_apt(self) -> bool:
-        """Check if apt is available"""
-        if not self._apt_checked:
-            self._has_apt = self.runner.which("apt") is not None
-            log.debug("has_apt: %s", self._has_apt)
-            self._apt_checked = True
-        return self._has_apt
+    def _pkg_key(self) -> str:
+        return "apt"
 
-    @property
-    def namespace(self):
-        """Get the common Namespace for installer commands"""
-
-        # pylint: disable=R0903
-        class Namespace:
-            """Namespace for apt commands"""
-
-            can_install = self.can_use_apt
-            install = self.install_apt_pkgs
-            install_unless_found = self.install_apt_pkg_unless_found
-            is_installed = self.is_apt_pkg_installed
-            update = self.update_apt_pkgs
-            update_and_install_all = self.update_and_install_all
-
-        return Namespace()
-
-    def can_use_apt(self, pkg: Optional[Any] = None) -> bool:
-        """Check if apt is available, and optionally, if pkg can use it"""
-        if pkg is not None and "apt" not in pkg:
-            log.debug("apt not available for %s", pkg["name"])
-            return False
-        return self.has_apt
-
-    def is_apt_pkg_installed(self, pkg) -> bool:
+    def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if an apt package is installed"""
-        if not self.can_use_apt():
-            log.debug("apt not available")
-            return False
-        if not self.can_use_apt(pkg):
-            log.debug("apt pkg not available for %s", pkg["name"])
+        if not self.can_install() or not self.can_install(pkg):
+            log.debug("apt not available for %s", pkg.get("name"))
             return False
 
         try:
@@ -79,12 +44,9 @@ class InstallerApt:
             log.debug("dpkg non-zero exit for %s: %s", pkg["name"], e)
             return False
 
-    def install_apt_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
         """Install a list of apt packages"""
-        assert isinstance(pkgs, Iterable) and all(
-            isinstance(pkg, dict) for pkg in pkgs
-        ), "pkgs should be an iterable of dictionaries"
-        assert all(self.can_use_apt(p) for p in pkgs)
+        self._validate_pkgs(pkgs)
 
         pkg_list: Iterable[str] = [pkg["apt"] for pkg in pkgs]
 
@@ -98,19 +60,9 @@ class InstallerApt:
             log.critical("apt error installing %s: %s", " ".join(pkg_list), e)
             raise e
 
-    def install_apt_pkg(self, pkg) -> bool:
-        """Install an apt package"""
-        return self.install_apt_pkgs([pkg])
-
-    def install_apt_pkg_unless_found(self, pkg) -> bool:
-        """Install an apt package unless it is already installed"""
-        if not self.is_apt_pkg_installed(pkg):
-            return self.install_apt_pkg(pkg)
-        return True
-
-    def update_apt_pkgs(self) -> bool:
+    def update_pkgs(self) -> bool:
         """Update all installed apt packages"""
-        assert self.can_use_apt()
+        assert self.can_install()
 
         log.info("Updating apt packages")
         try:
@@ -121,7 +73,7 @@ class InstallerApt:
             log.critical("apt error updating packages: %s", e)
             raise e
 
-    def update_and_install_all(self, pkgs):
+    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
         """Update apt packages, then install new apt pkgs"""
-        self.update_apt_pkgs()
-        self.install_apt_pkgs(pkgs)
+        self.update_pkgs()
+        self.install_pkgs(pkgs)
