@@ -82,18 +82,6 @@ class TestInstallerApt:
         apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         assert apt.can_use_apt() is True
 
-    def test_get_apt_pkgs(self):
-        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
-        pkgs = [
-            {"name": "a", "apt": "a"},
-            {"name": "b", "pip": "b"},
-            {"name": "c", "apt": "c", "pip": "c"},
-        ]
-        result = apt.get_apt_pkgs(pkgs)
-        assert len(result) == 2
-        assert result[0]["name"] == "a"
-        assert result[1]["name"] == "c"
-
     def test_is_apt_pkg_installed_no_apt(self):
         apt = InstallerApt(make_runner({}))
         pkg = {"name": "test", "apt": "test"}
@@ -151,16 +139,6 @@ class TestInstallerPip:
         pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         pkg = {"name": "test", "pip": "test"}
         assert pip.can_use_pip(pkg) is True
-
-    def test_get_pip_pkgs(self):
-        pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
-        pkgs = [
-            {"name": "a", "apt": "a"},
-            {"name": "b", "pip": "b"},
-        ]
-        result = pip.get_pip_pkgs(pkgs)
-        assert len(result) == 1
-        assert result[0]["name"] == "b"
 
     def test_pip_namespace(self):
         pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
@@ -292,18 +270,6 @@ class TestInstallerWinget:
     def test_can_use_winget_no_pkg(self):
         winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         assert winget.can_use_winget() is True
-
-    def test_get_winget_pkgs(self):
-        winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
-        pkgs = [
-            {"name": "a", "winget": "A.App"},
-            {"name": "b", "apt": "b"},
-            {"name": "c", "winget": "C.App", "apt": "c"},
-        ]
-        result = winget.get_winget_pkgs(pkgs)
-        assert len(result) == 2
-        assert result[0]["name"] == "a"
-        assert result[1]["name"] == "c"
 
     def test_is_winget_pkg_installed_no_winget(self):
         winget = InstallerWinget(make_runner({}))

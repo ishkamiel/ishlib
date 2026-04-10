@@ -19,7 +19,6 @@ prefixes.  The pipeline has three stages:
 
 from __future__ import annotations
 
-import argparse
 import logging
 import shutil
 import tempfile
@@ -33,7 +32,7 @@ from .dotfile_ignore import DotfileIgnore
 from .ish_metadata import collect_metadata_packages, read_metadata
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
-from .ish_comp import prompt_yes_no_always, setup_logging
+from .ish_comp import prompt_yes_no_always
 from .environment import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
@@ -313,137 +312,3 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
                 return 0
 
         return self.apply_changes(changes)
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-def register_cli(subparsers: argparse._SubParsersAction) -> None:
-    """Register dotfile subcommands onto an existing subparsers group.
-
-    This allows a parent CLI to embed the dotfile commands as part of a
-    larger tool, e.g.::
-
-        parent_sub = parent_parser.add_subparsers(...)
-        dotfile_applier.register_cli(parent_sub)
-
-    Args:
-        subparsers: An ``argparse._SubParsersAction`` to add commands to.
-    """
-    apply_parser = subparsers.add_parser(
-        "dotfile-apply", help="Apply dotfiles from a source directory"
-    )
-    _add_common_args(apply_parser)
-    apply_parser.add_argument(
-        "-n",
-        "--dry-run",
-        action="store_true",
-        default=False,
-        help="Show what would be done without making changes",
-    )
-    apply_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        default=False,
-        help="Enable verbose output",
-    )
-    apply_parser.add_argument(
-        "-f",
-        "--file",
-        action="append",
-        type=Path,
-        dest="files",
-        help="Specific file to apply (relative to source, may be repeated)",
-    )
-    apply_parser.set_defaults(func=_cmd_apply)
-
-    status_parser = subparsers.add_parser(
-        "dotfile-status", help="Show pending dotfile changes without applying"
-    )
-    _add_common_args(status_parser)
-    status_parser.set_defaults(func=_cmd_status)
-
-
-def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add arguments shared between apply and status subcommands."""
-    parser.add_argument(
-        "source",
-        type=Path,
-        help="Source dotfile repository directory",
-    )
-    parser.add_argument(
-        "-t",
-        "--target",
-        type=Path,
-        default=Path.home(),
-        help="Target directory (default: $HOME)",
-    )
-    parser.add_argument(
-        "--ignore",
-        action="append",
-        dest="ignore",
-        help="Additional names to ignore (may be repeated)",
-    )
-
-
-def _build_applier(args: argparse.Namespace) -> DotfileApplier:
-    """Construct a DotfileApplier from parsed CLI arguments."""
-    extra_patterns = list(args.ignore) if args.ignore else []
-
-    log_level = logging.INFO if getattr(args, "verbose", False) else logging.WARNING
-    cfg = IshConfig(
-        dry_run=getattr(args, "dry_run", False),
-        log_level=log_level,
-    )
-    setup_logging(cfg.log_level)
-
-    di = DotfileIgnore(
-        source_dir=args.source,
-        extra_patterns=extra_patterns,
-    )
-    return DotfileApplier(
-        source_dir=args.source,
-        target_dir=args.target,
-        cfg=cfg,
-        dotfile_ignore=di,
-    )
-
-
-def _cmd_apply(args: argparse.Namespace) -> int:
-    """Handler for the dotfile-apply subcommand."""
-    applier = _build_applier(args)
-    explicit = args.files if args.files else None
-    applied = applier.apply(files=explicit)
-    if applied:
-        log.info("Applied %d file(s)", applied)
-    return 0
-
-
-def _cmd_status(args: argparse.Namespace) -> int:
-    """Handler for the dotfile-status subcommand."""
-    applier = _build_applier(args)
-    dotfiles = applier.discover()
-    dotfiles = applier.prepare(dotfiles)
-    changes = applier.get_changes(dotfiles)
-    applier.print_changes(changes)
-    return 0 if not changes else 1
-
-
-def _cli_main(argv=None):
-    """CLI entry point for standalone dotfile_applier usage."""
-    parser = argparse.ArgumentParser(
-        prog="dotfile_applier",
-        description="Apply dotfiles from a chezmoi-style source repository",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    register_cli(subparsers)
-
-    args = parser.parse_args(argv)
-    return args.func(args)
-
-
-if __name__ == "__main__":
-    raise SystemExit(_cli_main())

@@ -20,8 +20,8 @@ sys.path.insert(
 from pyishlib.ish_metadata import HAS_TOML, remove_metadata_blocks
 from pyishlib.dotfile import DotFile
 from pyishlib.dotfile_context import DotfileContext
-from pyishlib.dotfile_preprocessor import (
-    DotFilePreprocessor,
+from pyishlib.dotfile_preprocessor import DotFilePreprocessor
+from pyishlib.file_preprocessor import (
     _RE_DIRECTIVE,
     _RE_VAR_REF,
     _parse_set_directive,

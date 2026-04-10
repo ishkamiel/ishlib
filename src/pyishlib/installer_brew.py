@@ -55,10 +55,6 @@ class InstallerBrew:
             return False
         return self.has_brew
 
-    def get_brew_pkgs(self, pkgs) -> Iterable[dict]:
-        """Get the Homebrew packages from a list of packages"""
-        return [pkg for pkg in pkgs if self.can_use_brew(pkg)]
-
     def is_brew_pkg_installed(self, pkg) -> bool:
         """Check if a Homebrew package is installed"""
         if not self.can_use_brew():

@@ -55,10 +55,6 @@ class InstallerWinget:
             return False
         return self.has_winget
 
-    def get_winget_pkgs(self, pkgs) -> Iterable[dict]:
-        """Get the winget packages from a list of packages"""
-        return [pkg for pkg in pkgs if self.can_use_winget(pkg)]
-
     def is_winget_pkg_installed(self, pkg) -> bool:
         """Check if a winget package is installed"""
         if not self.can_use_winget():
