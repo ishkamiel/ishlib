@@ -186,11 +186,10 @@ class DotfileFinder:
         dotfile_ignore: DotfileIgnore,
     ) -> None:
         for entry in sorted(current.iterdir()):
-            if dotfile_ignore.is_ignored(entry.name):
+            rel = rel_prefix / entry.name
+            if dotfile_ignore.is_ignored(entry.name, rel):
                 log.debug("Ignoring %s", entry)
                 continue
-
-            rel = rel_prefix / entry.name if rel_prefix != Path() else Path(entry.name)
 
             if entry.is_dir():
                 self._scan_dir(entry, rel, dotfiles, dotfile_ignore)
