@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Sequence
 
 from .command_runner import CommandRunner
 
@@ -86,7 +86,7 @@ class InstallerBase(ABC):
             return False
         return self.available
 
-    def _validate_pkgs(self, pkgs: Iterable[dict]) -> None:
+    def _validate_pkgs(self, pkgs: Sequence[dict]) -> None:
         """Assert *pkgs* is a valid iterable of installable package dicts."""
         assert isinstance(pkgs, Iterable) and all(
             isinstance(pkg, dict) for pkg in pkgs
