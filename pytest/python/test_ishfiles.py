@@ -45,6 +45,7 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 def _make_args(**overrides):
     """Create a minimal argparse-like namespace."""
     defaults = {
+        "home": None,
         "source": None,
         "target": None,
         "config": None,
@@ -115,6 +116,42 @@ class TestLoadConfig:
         args = _make_args(debug=True)
         cfg = load_config(args=args, config_file=Path("/nonexistent"))
         assert cfg.log_level == 10  # logging.DEBUG
+
+    def test_home_override_shifts_all_defaults(self):
+        fake_home = Path("/tmp/fake-home")
+        args = _make_args(home=str(fake_home))
+        cfg = load_config(args=args, config_file=Path("/nonexistent"))
+        assert cfg.get_opt("source") == str(fake_home / ".local" / "share" / "ishfiles")
+        assert cfg.get_opt("target") == str(fake_home)
+
+    def test_home_override_config_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_home = Path(d) / "fakehome"
+            cfg_dir = fake_home / ".config" / "ishfiles"
+            cfg_dir.mkdir(parents=True)
+            cfg_path = cfg_dir / "config.toml"
+            cfg_path.write_text('[ishfiles]\nsource = "/from/home-config"\n')
+
+            args = _make_args(home=str(fake_home))
+            cfg = load_config(args=args)
+
+            assert cfg.get_opt("source") == "/from/home-config"
+
+    def test_home_override_source_wins_over_explicit_source(self):
+        fake_home = Path("/tmp/fake-home")
+        args = _make_args(home=str(fake_home), source="/explicit/source")
+        cfg = load_config(args=args, config_file=Path("/nonexistent"))
+        # -s wins for source, but target still uses home override
+        assert cfg.get_opt("source") == "/explicit/source"
+        assert cfg.get_opt("target") == str(fake_home)
+
+    def test_home_override_explicit_target_wins(self):
+        fake_home = Path("/tmp/fake-home")
+        args = _make_args(home=str(fake_home), target="/explicit/target")
+        cfg = load_config(args=args, config_file=Path("/nonexistent"))
+        # -t wins for target, source uses home override
+        assert cfg.get_opt("target") == "/explicit/target"
+        assert cfg.get_opt("source") == str(fake_home / ".local" / "share" / "ishfiles")
 
 
 # ---------------------------------------------------------------------------

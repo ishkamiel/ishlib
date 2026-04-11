@@ -89,12 +89,8 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
             sd = Path(source_dir) if source_dir is not None else None
             td = Path(target_dir) if target_dir is not None else None
             # Pass explicit dirs only when provided; DotfileFinder reads
-            # source/target from cfg for any that are None.  Fall back to
-            # Path.home() for target_dir only when neither the explicit
-            # argument nor cfg provides one.
-            self._finder = DotfileFinder(
-                self.cfg, source_dir=sd, target_dir=td or Path.home()
-            )
+            # source/target from cfg for any that are None.
+            self._finder = DotfileFinder(self.cfg, source_dir=sd, target_dir=td)
 
         if dotfile_ignore is not None:
             self._dotfile_ignore = dotfile_ignore
