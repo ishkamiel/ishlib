@@ -16,6 +16,7 @@ An :class:`~pyishlib.environment.EnvironmentNamespace` is available as
 from __future__ import annotations
 
 import logging
+import sys
 from typing import Any, Dict, Optional
 
 from .environment import EnvironmentNamespace
@@ -102,6 +103,30 @@ class DotfileContext:
         for key, val in mapping.items():
             if key not in self._vars:
                 self._vars[key] = str(val)
+
+    def prompt(self, key: str, message: str, default: str = "") -> str:
+        """Return the stored value for *key*, or prompt the user interactively.
+
+        If *key* is already set and non-empty, returns the stored value without
+        prompting.  In non-interactive environments (no tty), falls back to
+        *default* with a warning.  The collected value is stored in the context.
+
+        This method is accessible as ``ish.prompt(key, message, default)``
+        inside ``@ish if`` expressions and from the ``@ish prompt`` directive.
+        """
+        existing = self._vars.get(key)
+        if existing:
+            return existing
+        if not sys.stdin.isatty():
+            log.warning(
+                "Non-interactive session, using default for '%s': %s", key, default
+            )
+            self._vars[key] = default
+            return default
+        suffix = f" [{default}]" if default else ""
+        value = input(f"{message}{suffix}: ").strip() or default
+        self._vars[key] = value
+        return value
 
     def as_dict(self) -> Dict[str, str]:
         """Return a plain dict copy of all variables."""

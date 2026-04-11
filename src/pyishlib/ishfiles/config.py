@@ -16,11 +16,15 @@ on :class:`IshConfig` so that every component resolves them via
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
+from .._compat import tomllib
 from ..ish_config import IshConfig
+
+log = logging.getLogger(__name__)
 
 DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()
@@ -53,6 +57,8 @@ _CONSTANTS = {
     "ignore_file": ".ishignore",
     # Package config filenames recognised inside config_dir
     "package_files": ["packages.toml", "packages.json"],
+    # Data template filename inside config_dir
+    "data_file": "data.toml",
 }
 
 
@@ -107,4 +113,27 @@ def load_config(
     for name, value in _CONSTANTS.items():
         cfg.set_constant(name, value)
 
+    # Seed the preprocessing context with any persisted [data] values.
+    data = _load_data_section(cfg_path)
+    if data:
+        cfg.context.update({k: str(v) for k, v in data.items()})
+
     return cfg
+
+
+def _load_data_section(config_path: Path) -> Dict[str, Any]:
+    """Read the ``[data]`` section from the TOML config file.
+
+    Returns an empty dict if the file does not exist, TOML is unavailable,
+    or there is no ``[data]`` section.
+    """
+    if tomllib is None or not config_path.is_file():
+        return {}
+    try:
+        with open(config_path, "rb") as fh:
+            raw = tomllib.load(fh)
+        result = raw.get("data", {})
+        return result if isinstance(result, dict) else {}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to read [data] from %s: %s", config_path, exc)
+        return {}

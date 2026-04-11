@@ -18,6 +18,7 @@ from typing import List, Optional
 from ..ish_comp import setup_logging
 from .commands import add, apply, diff, git, install, runscripts
 from .config import load_config
+from .data import process_data_template
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,5 +124,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     cfg = load_config(args=args)
     setup_logging(cfg.log_level)
+
+    process_data_template(cfg)
 
     return args.func(cfg)

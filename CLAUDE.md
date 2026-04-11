@@ -255,6 +255,27 @@ only_on = ["linux", "macos"]
 ignore_on = ["fedora"]
 ```
 
+## ishfiles Manual Testing Safety
+
+**Never run `ishfiles apply`, `install`, or `runscripts` against the real home directory.** These commands modify files and install packages. Only use `ishfiles diff` for manual testing, and always point to safe temporary directories:
+
+```bash
+TEST_HOME=$(mktemp -d)
+TEST_CONFIG="$TEST_HOME/.config/ishfiles/config.toml"
+mkdir -p "$(dirname "$TEST_CONFIG")"
+
+# Safe: diff only, temp home, temp config
+./bin/ishfiles --home "$TEST_HOME" -s /path/to/dotfiles -c "$TEST_CONFIG" diff
+
+# Inspect results
+cat "$TEST_CONFIG"
+
+# Clean up
+rm -rf "$TEST_HOME"
+```
+
+The `--home`, `-s` (source), and `-c` (config) flags redirect all file operations away from `$HOME`. Unit tests in `pytest/` use temp directories and are always safe to run.
+
 ## Important Warnings
 
 - **Never edit `ishlib.sh`, `docs/ishlib_shell.md`, or `docs/pyishlib/` directly** - they are generated. Edit sources in `src/` and run `make`.
