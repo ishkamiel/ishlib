@@ -9,7 +9,7 @@ import logging
 import subprocess
 import sys
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Sequence
 
 from .command_runner import CommandRunner
 from .installer_base import InstallerBase
@@ -96,11 +96,11 @@ class InstallerPip(InstallerBase):
             log.debug("Pip error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
         """Install a list of pip packages"""
         self._validate_pkgs(pkgs)
 
-        pkg_list: Iterable[str] = [pkg["pip"] for pkg in pkgs]
+        pkg_list: Sequence[str] = [pkg["pip"] for pkg in pkgs]
 
         log.info("Installing with pip: %s", " ".join(pkg_list))
         try:
@@ -121,7 +121,7 @@ class InstallerPip(InstallerBase):
         log.warning("pip update not implemented (only updates pip itself)")
         return True
 
-    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update python, pip and pip packages, then install new pip pkgs"""
         assert self.can_install()
 

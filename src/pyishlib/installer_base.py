@@ -110,7 +110,7 @@ class InstallerBase(ABC):
         """Return True if *pkg* is already installed."""
 
     @abstractmethod
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
         """Install all packages in *pkgs*.  Returns True on success."""
 
     @abstractmethod
@@ -118,5 +118,5 @@ class InstallerBase(ABC):
         """Update all packages managed by this backend."""
 
     @abstractmethod
-    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update the backend and install any new packages in *pkgs*."""

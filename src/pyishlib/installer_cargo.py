@@ -9,7 +9,7 @@ import logging
 import re
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Sequence
 
 from .installer_base import InstallerBase
 
@@ -53,11 +53,11 @@ class InstallerCargo(InstallerBase):
             log.debug("Cargo error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
         """Install a list of cargo packages"""
         self._validate_pkgs(pkgs)
 
-        pkg_list: Iterable[str] = [pkg["cargo"] for pkg in pkgs]
+        pkg_list: Sequence[str] = [pkg["cargo"] for pkg in pkgs]
 
         log.info("Installing with cargo: %s", " ".join(pkg_list))
         try:
@@ -92,7 +92,7 @@ class InstallerCargo(InstallerBase):
         self.runner.run(["cargo", "install-update", "-a", "-q"])
         return True
 
-    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update rust, cargo and cargo packages, then install new cargo pkgs"""
         self.update_or_install_rust()
         self.update_pkgs()

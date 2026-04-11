@@ -8,7 +8,7 @@
 import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable
+from typing import Sequence
 
 from .installer_base import InstallerBase
 
@@ -44,11 +44,11 @@ class InstallerBrew(InstallerBase):
             log.debug("Homebrew error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
         """Install a list of Homebrew packages"""
         self._validate_pkgs(pkgs)
 
-        pkg_list: Iterable[str] = [pkg["brew"] for pkg in pkgs]
+        pkg_list: Sequence[str] = [pkg["brew"] for pkg in pkgs]
 
         log.info("Installing with Homebrew: %s", " ".join(pkg_list))
         try:
@@ -66,7 +66,7 @@ class InstallerBrew(InstallerBase):
         self.runner.run(["brew", "upgrade"])
         return True
 
-    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update Homebrew and Homebrew packages, then install new Homebrew pkgs"""
         assert self.can_install()
 

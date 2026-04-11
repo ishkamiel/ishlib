@@ -75,10 +75,9 @@ def scan_scripts(
         the list of script paths that passed OS filtering, and *packages*
         is a list of package dicts collected from metadata.
     """
-    source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
-    all_scripts = (
-        all_scripts if all_scripts is not None else find_scripts(cfg, source_dir)
-    )
+    if all_scripts is None:
+        source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
+        all_scripts = find_scripts(cfg, source_dir)
 
     if scripts:
         requested = set(scripts)

@@ -8,7 +8,7 @@
 import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable
+from typing import Sequence
 
 from .installer_base import InstallerBase
 
@@ -44,11 +44,11 @@ class InstallerApt(InstallerBase):
             log.debug("dpkg non-zero exit for %s: %s", pkg["name"], e)
             return False
 
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
         """Install a list of apt packages"""
         self._validate_pkgs(pkgs)
 
-        pkg_list: Iterable[str] = [pkg["apt"] for pkg in pkgs]
+        pkg_list: Sequence[str] = [pkg["apt"] for pkg in pkgs]
 
         log.info("Installing with apt: %s", " ".join(pkg_list))
         try:
@@ -73,7 +73,7 @@ class InstallerApt(InstallerBase):
             log.critical("apt error updating packages: %s", e)
             raise e
 
-    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update apt packages, then install new apt pkgs"""
         self.update_pkgs()
         self.install_pkgs(pkgs)

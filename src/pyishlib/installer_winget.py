@@ -8,7 +8,7 @@
 import logging
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable
+from typing import Sequence
 
 from .installer_base import InstallerBase
 
@@ -47,7 +47,7 @@ class InstallerWinget(InstallerBase):
             log.debug("winget error checking %s: %s", pkg["name"], e)
             return False
 
-    def install_pkgs(self, pkgs: Iterable[dict]) -> bool:
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
         """Install a list of winget packages"""
         self._validate_pkgs(pkgs)
 
@@ -93,7 +93,7 @@ class InstallerWinget(InstallerBase):
         )
         return True
 
-    def update_and_install_all(self, pkgs: Iterable[dict]) -> None:
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update winget packages, then install new winget pkgs"""
         assert self.can_install()
 
