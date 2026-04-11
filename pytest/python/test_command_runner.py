@@ -20,7 +20,7 @@ sys.path.insert(
 )
 from pyishlib.command_runner import CommandRunner
 from pyishlib.ish_config import IshConfig
-from pyishlib.ish_comp import Choice
+from pyishlib.userio import Choice
 
 
 class TestCommandRunnerProperties:

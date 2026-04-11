@@ -109,6 +109,30 @@ def _parse_prompt_directive(command: str) -> Optional[tuple]:
     return None
 
 
+def _parse_prompt_bool_directive(command: str) -> Optional[tuple]:
+    """Parse ``prompt_bool key "message" ["true"|"false"]``.
+
+    Returns *(key, message, default_bool)* or *None*.  Default is ``False``
+    if omitted or unrecognised.
+
+    Examples::
+
+        prompt_bool isWork "Is this a work machine?"
+        prompt_bool isGaming "Is this a gaming machine?" "false"
+    """
+    m = re.match(
+        r'prompt_bool\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+"([^"]*)"(?:\s+"([^"]*)")?',
+        command,
+    )
+    if m:
+        from .userio import normalise_bool
+
+        raw_default = m.group(3) or ""
+        default_bool = normalise_bool(raw_default) == "true"
+        return m.group(1), m.group(2), default_bool
+    return None
+
+
 def _substitute_variables(text: str, variables: Dict[str, str]) -> str:
     """Replace ``${__ish_<name>}`` references with variable values."""
 
@@ -265,6 +289,12 @@ class FilePreprocessor:
             if parsed_prompt:
                 self._context.prompt(
                     parsed_prompt[0], parsed_prompt[1], parsed_prompt[2]
+                )
+                return
+            parsed_bool = _parse_prompt_bool_directive(command)
+            if parsed_bool:
+                self._context.prompt_bool(
+                    parsed_bool[0], parsed_bool[1], parsed_bool[2]
                 )
                 return
             log.warning("Unknown @ish directive: %s", command)

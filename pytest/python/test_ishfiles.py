@@ -295,7 +295,7 @@ class TestCli:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
 
-            from pyishlib.ish_comp import Choice
+            from pyishlib.userio import Choice
 
             with patch(
                 "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
@@ -310,7 +310,7 @@ class TestCli:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
 
-            from pyishlib.ish_comp import Choice
+            from pyishlib.userio import Choice
 
             with patch(
                 "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
@@ -708,7 +708,7 @@ class TestApplyWithFiles:
             _make_file(Path(src) / "dot_bashrc", "bash\n")
             _make_file(Path(src) / "dot_vimrc", "vim\n")
 
-            from pyishlib.ish_comp import Choice
+            from pyishlib.userio import Choice
 
             with patch(
                 "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
@@ -727,7 +727,7 @@ class TestApplyWithFiles:
             _make_file(Path(src) / "dot_bashrc", "bash\n")
             _make_file(Path(src) / "dot_vimrc", "vim\n")
 
-            from pyishlib.ish_comp import Choice
+            from pyishlib.userio import Choice
 
             with patch(
                 "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
@@ -1110,7 +1110,7 @@ class TestApplyWithRunscripts:
                 f"#!/bin/sh\necho applied > {marker}\n",
             )
 
-            from pyishlib.ish_comp import Choice
+            from pyishlib.userio import Choice
 
             with patch(
                 "pyishlib.ishfiles.commands.apply.prompt_yes_no_always",
@@ -1204,6 +1204,90 @@ class TestDotfileContextPrompt:
 # ---------------------------------------------------------------------------
 
 
+class TestNormaliseBool:
+    def test_true_synonyms(self):
+        from pyishlib.userio import normalise_bool
+
+        for val in ("true", "True", "TRUE", "yes", "Yes", "y", "Y", "1", "on", "ON"):
+            assert normalise_bool(val) == "true", f"expected true for {val!r}"
+
+    def test_false_synonyms(self):
+        from pyishlib.userio import normalise_bool
+
+        for val in ("false", "False", "FALSE", "no", "No", "n", "N", "0", "off", "OFF"):
+            assert normalise_bool(val) == "false", f"expected false for {val!r}"
+
+    def test_unrecognised_returns_none(self):
+        from pyishlib.userio import normalise_bool
+
+        assert normalise_bool("maybe") is None
+        assert normalise_bool("") is None
+        assert normalise_bool("2") is None
+
+
+class TestDotfileContextPromptBool:
+    def test_returns_normalised_existing_value(self):
+        """prompt_bool() normalises and returns a stored synonym without prompting."""
+        from pyishlib.dotfile_context import DotfileContext
+
+        for stored, expected in (("yes", "true"), ("No", "false"), ("1", "true")):
+            ctx = DotfileContext({"flag": stored})
+            with patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")):
+                result = ctx.prompt_bool("flag", "Is it?")
+            assert result == expected
+            assert ctx.get("flag") == expected
+
+    def test_prompts_and_stores_true(self):
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext()
+        with patch("pyishlib.userio.getch", return_value="y"), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            result = ctx.prompt_bool("flag", "Is it?", False)
+        assert result == "true"
+        assert ctx.get("flag") == "true"
+
+    def test_prompts_and_stores_false(self):
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext()
+        with patch("pyishlib.userio.getch", return_value="N"), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            result = ctx.prompt_bool("flag", "Is it?", True)
+        assert result == "false"
+
+    def test_enter_uses_default_true(self):
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext()
+        with patch("pyishlib.userio.getch", return_value="\r"), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            result = ctx.prompt_bool("flag", "Is it?", True)
+        assert result == "true"
+
+    def test_non_tty_uses_default_false(self):
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext()
+        with patch("sys.stdin.isatty", return_value=False), \
+             patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")):
+            result = ctx.prompt_bool("flag", "Is it?", False)
+        assert result == "false"
+
+    def test_retries_on_invalid_key(self):
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext()
+        with patch("pyishlib.userio.getch", side_effect=["x", "y"]), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            result = ctx.prompt_bool("flag", "Is it?", False)
+        assert result == "true"
+
+
 class TestIshPromptDirective:
     def _preprocess(self, text, variables=None):
         from pyishlib.file_preprocessor import FilePreprocessor
@@ -1240,6 +1324,29 @@ class TestIshPromptDirective:
              patch("builtins.input", side_effect=AssertionError("should not prompt")):
             result = proc.preprocess_text(text)
         assert "mydefault" in result
+
+    def test_prompt_bool_directive_sets_normalised_value(self):
+        """@ish prompt_bool normalises the answer to true/false."""
+        from pyishlib.file_preprocessor import FilePreprocessor
+
+        text = '#@ish prompt_bool flag "Is it?" "false"\n${__ish_flag}\n'
+        proc = FilePreprocessor()
+        with patch("pyishlib.userio.getch", return_value="y"), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            result = proc.preprocess_text(text)
+        assert "true" in result
+
+    def test_prompt_bool_directive_uses_default_in_non_tty(self):
+        """@ish prompt_bool uses the default in non-interactive mode."""
+        from pyishlib.file_preprocessor import FilePreprocessor
+
+        text = '#@ish prompt_bool flag "Is it?" "true"\n${__ish_flag}\n'
+        proc = FilePreprocessor()
+        with patch("sys.stdin.isatty", return_value=False), \
+             patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")):
+            result = proc.preprocess_text(text)
+        assert "true" in result
 
 
 # ---------------------------------------------------------------------------
