@@ -32,7 +32,7 @@ from .dotfile_ignore import DotfileIgnore
 from .ish_metadata import collect_metadata_packages, read_metadata
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
-from .ish_comp import prompt_yes_no_always
+from .userio import prompt_yes_no_always
 from .environment import should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)

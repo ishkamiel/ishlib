@@ -16,10 +16,11 @@ An :class:`~pyishlib.environment.EnvironmentNamespace` is available as
 from __future__ import annotations
 
 import logging
-import sys
 from typing import Any, Dict, Optional
 
 from .environment import EnvironmentNamespace
+from .userio import normalise_bool, prompt_bool as _io_prompt_bool
+from .userio import prompt_string as _io_prompt_string
 
 log = logging.getLogger(__name__)
 
@@ -108,8 +109,7 @@ class DotfileContext:
         """Return the stored value for *key*, or prompt the user interactively.
 
         If *key* is already set and non-empty, returns the stored value without
-        prompting.  In non-interactive environments (no tty), falls back to
-        *default* with a warning.  The collected value is stored in the context.
+        prompting.  Delegates all I/O to :func:`~pyishlib.userio.prompt_string`.
 
         This method is accessible as ``ish.prompt(key, message, default)``
         inside ``@ish if`` expressions and from the ``@ish prompt`` directive.
@@ -117,14 +117,25 @@ class DotfileContext:
         existing = self._vars.get(key)
         if existing:
             return existing
-        if not sys.stdin.isatty():
-            log.warning(
-                "Non-interactive session, using default for '%s': %s", key, default
-            )
-            self._vars[key] = default
-            return default
-        suffix = f" [{default}]" if default else ""
-        value = input(f"{message}{suffix}: ").strip() or default
+        value = _io_prompt_string(message, default, name=key)
+        self._vars[key] = value
+        return value
+
+    def prompt_bool(self, key: str, message: str, default: bool = False) -> str:
+        """Return the stored value for *key*, or prompt the user for a yes/no answer.
+
+        If *key* is already set and non-empty, normalises the stored value via
+        :func:`~pyishlib.userio.normalise_bool` and returns the canonical
+        ``"true"`` or ``"false"`` string.  Otherwise delegates I/O to
+        :func:`~pyishlib.userio.prompt_bool`.
+        """
+        existing = self._vars.get(key)
+        if existing:
+            normalised = normalise_bool(existing) or ("true" if existing else "false")
+            self._vars[key] = normalised
+            return normalised
+        result = _io_prompt_bool(message, default, name=key)
+        value = "true" if result else "false"
         self._vars[key] = value
         return value
 

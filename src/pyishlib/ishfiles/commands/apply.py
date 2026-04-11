@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from ...ish_comp import prompt_yes_no_always
+from ...userio import prompt_yes_no_always
 from ...ish_config import IshConfig
 from ..applier import make_applier, make_finder
 from ..installer_helper import run_install

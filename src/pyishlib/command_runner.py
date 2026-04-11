@@ -13,7 +13,8 @@ import shutil
 from typing import Optional, Iterable
 
 from .ish_config import IshConfig
-from .ish_comp import die, prompt_yes_no_always
+from .ish_comp import die
+from .userio import prompt_yes_no_always
 from .environment import is_windows
 
 log = logging.getLogger(__name__)

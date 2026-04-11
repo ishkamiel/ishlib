@@ -30,7 +30,7 @@ from typing import Any, Dict
 
 from .._compat import tomllib
 from ..ish_config import IshConfig
-from ..ish_comp import prompt_yes_no_always
+from ..userio import normalise_bool, prompt_yes_no_always
 
 log = logging.getLogger(__name__)
 
@@ -62,11 +62,16 @@ def process_data_template(cfg: IshConfig) -> None:
     for key, spec in template.items():
         if cfg.context.get(key):
             continue  # already set from the persisted config
-        value = cfg.context.prompt(
-            key,
-            spec.get("prompt", key),
-            spec.get("default", ""),
-        )
+        msg = spec.get("prompt", key)
+        if spec.get("type") == "bool":
+            raw_default = spec.get("default", False)
+            if isinstance(raw_default, str):
+                bool_default = normalise_bool(raw_default) == "true"
+            else:
+                bool_default = bool(raw_default)
+            value = cfg.context.prompt_bool(key, msg, bool_default)
+        else:
+            value = cfg.context.prompt(key, msg, str(spec.get("default", "")))
         new_values[key] = value
 
     if not new_values:
