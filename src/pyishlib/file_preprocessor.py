@@ -89,6 +89,26 @@ def _parse_set_directive(command: str) -> Optional[tuple]:
     return None
 
 
+def _parse_prompt_directive(command: str) -> Optional[tuple]:
+    """Parse ``prompt key "message" ["default"]``.
+
+    Returns *(key, message, default)* or *None*.  The message and optional
+    default must be double-quoted strings.
+
+    Examples::
+
+        prompt machineType "Machine type (min/def/personal)" "def"
+        prompt email "Email address"
+    """
+    m = re.match(
+        r'prompt\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+"([^"]*)"(?:\s+"([^"]*)")?',
+        command,
+    )
+    if m:
+        return m.group(1), m.group(2), m.group(3) or ""
+    return None
+
+
 def _substitute_variables(text: str, variables: Dict[str, str]) -> str:
     """Replace ``${__ish_<name>}`` references with variable values."""
 
@@ -237,11 +257,17 @@ class FilePreprocessor:
 
         # Non-conditional directives only execute in active branches
         if self._is_emitting(cond_stack):
-            parsed = _parse_set_directive(command)
-            if parsed:
-                self._context.set(parsed[0], parsed[1])
-            else:
-                log.warning("Unknown @ish directive: %s", command)
+            parsed_set = _parse_set_directive(command)
+            if parsed_set:
+                self._context.set(parsed_set[0], parsed_set[1])
+                return
+            parsed_prompt = _parse_prompt_directive(command)
+            if parsed_prompt:
+                self._context.prompt(
+                    parsed_prompt[0], parsed_prompt[1], parsed_prompt[2]
+                )
+                return
+            log.warning("Unknown @ish directive: %s", command)
 
     def _handle_conditional(self, command: str, cond_stack: List[_CondFrame]) -> bool:
         """Handle if/elif/else/fi directives.  Returns True if handled."""

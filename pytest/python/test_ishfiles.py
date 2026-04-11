@@ -1146,5 +1146,255 @@ class TestApplyWithRunscripts:
         assert ret == 0
 
 
+# ---------------------------------------------------------------------------
+# DotfileContext.prompt()
+# ---------------------------------------------------------------------------
+
+
+class TestDotfileContextPrompt:
+    def test_returns_existing_value_without_prompting(self):
+        """prompt() returns stored value and never calls input()."""
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext({"mykey": "stored"})
+        with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            result = ctx.prompt("mykey", "Enter value", "default")
+        assert result == "stored"
+
+    def test_prompts_for_missing_key(self):
+        """prompt() calls input() and stores the result when key is absent."""
+        from pyishlib.dotfile_context import DotfileContext
+        import io
+
+        ctx = DotfileContext()
+        with patch("builtins.input", return_value="typed"), \
+             patch("sys.stdin", io.StringIO("typed")), \
+             patch("sys.stdin.isatty", return_value=True):
+            result = ctx.prompt("mykey", "Enter value", "default")
+        assert result == "typed"
+        assert ctx.get("mykey") == "typed"
+
+    def test_uses_default_on_empty_input(self):
+        """prompt() falls back to default when user presses Enter."""
+        from pyishlib.dotfile_context import DotfileContext
+        import io
+
+        ctx = DotfileContext()
+        with patch("builtins.input", return_value=""), \
+             patch("sys.stdin", io.StringIO("")), \
+             patch("sys.stdin.isatty", return_value=True):
+            result = ctx.prompt("mykey", "Enter value", "fallback")
+        assert result == "fallback"
+        assert ctx.get("mykey") == "fallback"
+
+    def test_non_tty_uses_default_without_prompting(self):
+        """prompt() uses default silently when stdin is not a tty."""
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext()
+        with patch("sys.stdin.isatty", return_value=False), \
+             patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            result = ctx.prompt("mykey", "Enter value", "autodefault")
+        assert result == "autodefault"
+        assert ctx.get("mykey") == "autodefault"
+
+
+# ---------------------------------------------------------------------------
+# @ish prompt directive
+# ---------------------------------------------------------------------------
+
+
+class TestIshPromptDirective:
+    def _preprocess(self, text, variables=None):
+        from pyishlib.file_preprocessor import FilePreprocessor
+        import io
+
+        proc = FilePreprocessor(variables=variables or {})
+        with patch("sys.stdin", io.StringIO("typed")), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("builtins.input", return_value="typed"):
+            return proc.preprocess_text(text)
+
+    def test_prompt_directive_sets_variable(self):
+        """@ish prompt sets a variable via DotfileContext.prompt()."""
+        text = '#@ish prompt myvar "Enter value" "def"\n${__ish_myvar}\n'
+        result = self._preprocess(text)
+        assert "typed" in result
+
+    def test_prompt_directive_skips_if_already_set(self):
+        """@ish prompt does not overwrite an existing variable."""
+        text = '#@ish prompt myvar "Enter value" "def"\n${__ish_myvar}\n'
+        with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            from pyishlib.file_preprocessor import FilePreprocessor
+            proc = FilePreprocessor(variables={"myvar": "preset"})
+            result = proc.preprocess_text(text)
+        assert "preset" in result
+
+    def test_prompt_directive_uses_default_in_non_tty(self):
+        """@ish prompt uses default value when not interactive."""
+        from pyishlib.file_preprocessor import FilePreprocessor
+
+        text = '#@ish prompt myvar "Enter value" "mydefault"\n${__ish_myvar}\n'
+        proc = FilePreprocessor()
+        with patch("sys.stdin.isatty", return_value=False), \
+             patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            result = proc.preprocess_text(text)
+        assert "mydefault" in result
+
+
+# ---------------------------------------------------------------------------
+# process_data_template()
+# ---------------------------------------------------------------------------
+
+
+class TestProcessDataTemplate:
+    def _make_cfg(self, src, config_path=None):
+        """Build a minimal IshConfig pointing at src."""
+        if config_path is None:
+            config_path = Path("/nonexistent/config.toml")
+        return load_config(
+            args=SimpleNamespace(
+                source=src,
+                target="/tmp/unused_target",
+                config=str(config_path),
+                home=None,
+                dry_run=None,
+                verbose=None,
+                debug=None,
+                quiet=None,
+            ),
+            config_file=config_path,
+        )
+
+    def test_no_data_toml_is_a_noop(self):
+        """process_data_template() does nothing if no data.toml exists."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        with tempfile.TemporaryDirectory() as src:
+            cfg = self._make_cfg(src)
+            with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+                process_data_template(cfg)  # must not raise
+
+    def test_prompts_for_missing_values(self):
+        """process_data_template() prompts for values absent from context."""
+        from pyishlib.ishfiles.data import process_data_template
+        import io
+
+        with tempfile.TemporaryDirectory() as src:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
+            )
+            cfg = self._make_cfg(src)
+            with patch("builtins.input", return_value="userval"), \
+                 patch("sys.stdin", io.StringIO("userval")), \
+                 patch("sys.stdin.isatty", return_value=False):
+                process_data_template(cfg)
+            assert cfg.context.get("myvar") == "def"  # non-tty uses default
+
+    def test_skips_already_set_values(self):
+        """process_data_template() skips variables already in context."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        with tempfile.TemporaryDirectory() as src:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
+            )
+            cfg = self._make_cfg(src)
+            cfg.context.set("myvar", "preset")
+            with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+                process_data_template(cfg)
+            assert cfg.context.get("myvar") == "preset"
+
+    def test_dry_run_does_not_save(self):
+        """process_data_template() does not offer to save in dry-run mode."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as cfg_dir:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
+            )
+            config_path = Path(cfg_dir) / "config.toml"
+            cfg = load_config(
+                args=SimpleNamespace(
+                    source=src,
+                    target="/tmp/unused_target",
+                    config=str(config_path),
+                    home=None,
+                    dry_run=True,
+                    verbose=None,
+                    debug=None,
+                    quiet=None,
+                ),
+                config_file=config_path,
+            )
+            with patch("sys.stdin.isatty", return_value=False):
+                process_data_template(cfg)
+            assert not config_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Data section save/load helpers
+# ---------------------------------------------------------------------------
+
+
+class TestDataSectionIO:
+    def test_save_creates_data_section_in_new_file(self):
+        """_save_data_section() writes [data] to a non-existent file."""
+        from pyishlib.ishfiles.data import _save_data_section
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "config.toml"
+            _save_data_section(path, {"foo": "bar"})
+            text = path.read_text()
+            assert "[data]" in text
+            assert 'foo = "bar"' in text
+
+    def test_save_appends_to_existing_file(self):
+        """_save_data_section() appends [data] when file has no [data] section."""
+        from pyishlib.ishfiles.data import _save_data_section
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "config.toml"
+            path.write_text('[ishfiles]\nsource = "/some/path"\n')
+            _save_data_section(path, {"key": "val"})
+            text = path.read_text()
+            assert '[ishfiles]' in text
+            assert "[data]" in text
+            assert 'key = "val"' in text
+
+    def test_save_replaces_existing_data_section(self):
+        """_save_data_section() replaces an existing [data] section."""
+        from pyishlib.ishfiles.data import _save_data_section
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "config.toml"
+            path.write_text('[data]\nold = "value"\n')
+            _save_data_section(path, {"newkey": "newval"})
+            text = path.read_text()
+            assert 'newkey = "newval"' in text
+            assert 'old = "value"' in text  # merged, not dropped
+
+    def test_save_merges_with_existing_data(self):
+        """_save_data_section() merges new values with existing [data] entries."""
+        from pyishlib.ishfiles.data import _save_data_section
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "config.toml"
+            path.write_text('[data]\nexisting = "kept"\n')
+            _save_data_section(path, {"added": "new"})
+            text = path.read_text()
+            assert 'existing = "kept"' in text
+            assert 'added = "new"' in text
+
+
 if __name__ == "__main__":
     pytest.main()
