@@ -211,8 +211,32 @@ class DotfileIgnore:
         """All OS/distro tags that apply to the current platform."""
         return list(self._os_tags)
 
-    def is_ignored(self, name: str) -> bool:
-        """Return *True* if *name* should be skipped during discovery."""
-        return any(fnmatch.fnmatch(name, pat) for pat in self._patterns) or any(
-            fnmatch.fnmatch(name, pat) for pat in self._os_patterns
+    def is_ignored(self, name: str, rel_path: Optional[Path] = None) -> bool:
+        """Return *True* if *name* should be skipped during discovery.
+
+        Args:
+            name:     The bare filename (``entry.name``) of the entry being
+                      checked.
+            rel_path: The path of the entry relative to the source root.
+                      Required for patterns that contain ``/``; without it,
+                      path-based patterns are silently skipped.
+
+        Patterns that contain ``/`` are matched against the full relative path
+        string using :func:`fnmatch.fnmatch`.  Patterns without ``/`` are
+        matched against *name* only (the existing behaviour).
+        """
+        return any(self._matches(name, rel_path, pat) for pat in self._patterns) or any(
+            self._matches(name, rel_path, pat) for pat in self._os_patterns
         )
+
+    def _matches(self, name: str, rel_path: Optional[Path], pat: str) -> bool:
+        """Return *True* if the entry matches *pat*.
+
+        Routes to path-based or name-based matching depending on whether *pat*
+        contains a ``/``.
+        """
+        if "/" in pat:
+            if rel_path is None:
+                return False
+            return fnmatch.fnmatch(str(rel_path), pat)
+        return fnmatch.fnmatch(name, pat)

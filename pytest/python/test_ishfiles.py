@@ -196,6 +196,28 @@ class TestDotfileIgnore:
             assert di.is_ignored("temp_stuff")
             assert not di.is_ignored("keep_me")
 
+    def test_path_pattern_matches_rel_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            _make_file(Path(d) / ".ishignore", "foo/bar/LICENSE\n")
+            di = DotfileIgnore(Path(d), ignore_file=".ishignore")
+            assert di.is_ignored("LICENSE", Path("foo/bar/LICENSE"))
+            assert not di.is_ignored("LICENSE", Path("other/bar/LICENSE"))
+            assert not di.is_ignored("LICENSE")  # no rel_path: path patterns skipped
+
+    def test_path_pattern_with_glob(self):
+        with tempfile.TemporaryDirectory() as d:
+            _make_file(Path(d) / ".ishignore", "**/*.pyc\n")
+            di = DotfileIgnore(Path(d), ignore_file=".ishignore")
+            assert di.is_ignored("foo.pyc", Path("deep/nested/foo.pyc"))
+            assert not di.is_ignored("foo.py", Path("deep/nested/foo.py"))
+
+    def test_name_pattern_still_works_without_rel_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            _make_file(Path(d) / ".ishignore", "*.log\n")
+            di = DotfileIgnore(Path(d), ignore_file=".ishignore")
+            assert di.is_ignored("debug.log")
+            assert di.is_ignored("debug.log", Path("some/dir/debug.log"))
+
     def test_extra_patterns(self):
         with tempfile.TemporaryDirectory() as d:
             di = DotfileIgnore(Path(d), extra_patterns=["*.bak"])
