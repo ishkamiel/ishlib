@@ -26,6 +26,16 @@ DEFAULT_SOURCE_DIR = Path.home() / ".local" / "share" / "ishfiles"
 DEFAULT_TARGET_DIR = Path.home()
 DEFAULT_CONFIG_FILE = Path.home() / ".config" / "ishfiles" / "config.toml"
 
+
+def _default_paths(home: Path) -> "tuple[Path, Path, Path]":
+    """Return (source_dir, target_dir, config_file) for a given home base."""
+    return (
+        home / ".local" / "share" / "ishfiles",
+        home,
+        home / ".config" / "ishfiles" / "config.toml",
+    )
+
+
 _SCHEMA: Path = (
     Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
 )
@@ -61,7 +71,14 @@ def load_config(
         args:        An argparse namespace with CLI overrides.
         config_file: Override path to the TOML config file (for testing).
     """
-    cfg_path = DEFAULT_CONFIG_FILE
+    # Determine effective home base for default paths.
+    home = Path.home()
+    if args is not None and getattr(args, "home", None) is not None:
+        home = Path(args.home)
+
+    source_default, target_default, config_default = _default_paths(home)
+
+    cfg_path = config_default
     if config_file is not None:
         cfg_path = config_file
     elif args is not None and getattr(args, "config", None) is not None:
@@ -75,8 +92,8 @@ def load_config(
         filtered_args = SimpleNamespace(**non_none)
 
     defaults = {
-        "source": str(DEFAULT_SOURCE_DIR),
-        "target": str(DEFAULT_TARGET_DIR),
+        "source": str(source_default),
+        "target": str(target_default),
         "patterns": [],
     }
 

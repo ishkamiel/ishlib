@@ -31,6 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # -- global options -------------------------------------------------------
     parser.add_argument(
+        "--home",
+        metavar="DIR",
+        default=None,
+        help="Override home directory for all default paths "
+        "(source, target, config). Individual -s/-t/-c still override.",
+    )
+    parser.add_argument(
         "-s",
         "--source",
         metavar="DIR",
