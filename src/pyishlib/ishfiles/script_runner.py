@@ -56,6 +56,7 @@ def scan_scripts(
     cfg: IshConfig,
     scripts: Optional[Sequence[str]] = None,
     print_skipped: bool = False,
+    all_scripts: Optional[List[Path]] = None,
 ) -> Tuple[List[Path], List[Dict[str, Any]]]:
     """Discover scripts, read metadata, and collect embedded packages.
 
@@ -67,6 +68,7 @@ def scan_scripts(
         scripts:       Optional list of script names to include (default: all).
         print_skipped: When True, print a ``[skipped]`` line for each script
                        excluded by OS rules.
+        all_scripts:   Optional pre-discovered list of script paths to filter
 
     Returns:
         A tuple of *(kept_scripts, packages)* where *kept_scripts* is
@@ -74,7 +76,9 @@ def scan_scripts(
         is a list of package dicts collected from metadata.
     """
     source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
-    all_scripts = find_scripts(cfg, source_dir)
+    all_scripts = (
+        all_scripts if all_scripts is not None else find_scripts(cfg, source_dir)
+    )
 
     if scripts:
         requested = set(scripts)
@@ -181,5 +185,7 @@ def run_scripts(
             log.error("Unknown scripts: %s", ", ".join(sorted(unknown)))
             return 1
 
-    kept, _ = scan_scripts(cfg, scripts=scripts, print_skipped=not cfg.quiet)
+    kept, _ = scan_scripts(
+        cfg, scripts=scripts, print_skipped=not cfg.quiet, all_scripts=all_found
+    )
     return run_scanned_scripts(cfg, kept)
