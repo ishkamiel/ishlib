@@ -29,6 +29,7 @@ from pyishlib.ishfiles.config import (
     load_config,
 )
 from pyishlib.ishfiles.cli import main as cli_main
+from pyishlib.ishfiles.script_runner import scan_scripts
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -838,6 +839,53 @@ class TestApplyWithInstall:
             _make_file(Path(src) / "dot_bashrc", "content\n")
             ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
         assert ret == 0
+
+
+# ---------------------------------------------------------------------------
+# scan_scripts unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestScanScripts:
+
+    def test_print_skipped_emits_message_for_os_filtered_script(self, capsys):
+        """scan_scripts prints a [skipped] line when print_skipped=True and a script is excluded by OS rules."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            _make_file(scripts_dir / "os-only.sh", "#!/bin/sh\necho hello\n")
+
+            cfg = load_config(_make_args(source=src, target=tgt))
+
+            with patch(
+                "pyishlib.ishfiles.script_runner.should_skip_for_os_from_metadata",
+                return_value=True,
+            ):
+                kept, _ = scan_scripts(cfg, print_skipped=True)
+
+        assert kept == []
+        captured = capsys.readouterr()
+        assert "[skipped]" in captured.out
+        assert "os-only.sh" in captured.out
+
+    def test_print_skipped_false_emits_no_message(self, capsys):
+        """scan_scripts prints nothing for skipped scripts when print_skipped=False."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            scripts_dir = Path(src) / "ishscripts"
+            scripts_dir.mkdir()
+            _make_file(scripts_dir / "os-only.sh", "#!/bin/sh\necho hello\n")
+
+            cfg = load_config(_make_args(source=src, target=tgt))
+
+            with patch(
+                "pyishlib.ishfiles.script_runner.should_skip_for_os_from_metadata",
+                return_value=True,
+            ):
+                kept, _ = scan_scripts(cfg, print_skipped=False)
+
+        assert kept == []
+        captured = capsys.readouterr()
+        assert "[skipped]" not in captured.out
 
 
 # ---------------------------------------------------------------------------
