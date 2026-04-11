@@ -6,8 +6,6 @@
 
 import unittest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
-import sys
 
 import pytest
 
@@ -21,7 +19,6 @@ except ImportError:
     HAS_VALIDATION_DEPS = False
 
 from pyishlib.installer_config import (
-    InstallerConfig,
     InstallerConfigJSON,
     InstallerConfigTOML,
     HAS_TOML,

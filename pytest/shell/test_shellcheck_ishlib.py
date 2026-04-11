@@ -14,7 +14,7 @@ def pytest_generate_tests(metafunc):
 
 
 def test_shellcheck_ishlib(shell, sh_only, ishlib, tmp_path):
-    if not shell in sh_only:
+    if shell not in sh_only:
         run_check_call("shellcheck", "-s", shell, ishlib)
     else:
         script_content = ""

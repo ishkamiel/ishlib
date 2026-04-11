@@ -5,8 +5,7 @@
 # Distributed under terms of the MIT license.
 
 import unittest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 from pyishlib.installer import Installer
 from pyishlib.command_runner import CommandRunner
 from pyishlib.ish_config import IshConfig
@@ -15,7 +14,6 @@ import subprocess
 
 
 class TestInstaller(unittest.TestCase):
-
     @patch("pyishlib.installer.CommandRunner.which", return_value="fakecmd")
     # @patch("pyishlib.installer.CommandRunner.run", return_value=subprocess.CompletedProcess(args=[], returncode=0))
     def test_is_installed(self, mock_which):

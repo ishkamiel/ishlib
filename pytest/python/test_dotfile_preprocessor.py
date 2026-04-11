@@ -67,7 +67,6 @@ def _preprocess(content, variables=None):
 
 
 class TestDotfileContext:
-
     def test_dict_style_access(self):
         ctx = DotfileContext({"foo": "bar"})
         assert ctx["foo"] == "bar"
@@ -129,7 +128,6 @@ class TestDotfileContext:
 
 
 class TestDirectivePattern:
-
     def test_hash_directive(self):
         m = _RE_DIRECTIVE.match("#@ish set foo=bar")
         assert m is not None
@@ -184,7 +182,6 @@ class TestDirectivePattern:
 
 
 class TestVarRefPattern:
-
     def test_simple_var(self):
         m = _RE_VAR_REF.search("${__ish_hostname}")
         assert m is not None
@@ -215,7 +212,6 @@ class TestVarRefPattern:
 
 
 class TestParseSetDirective:
-
     def test_basic(self):
         result = _parse_set_directive("set foo=bar")
         assert result == ("foo", "bar")
@@ -240,7 +236,6 @@ class TestParseSetDirective:
 
 
 class TestSubstituteVariables:
-
     def test_single_replacement(self):
         text = "host=${__ish_hostname}"
         result = _substitute_variables(text, {"hostname": "mybox"})
@@ -268,7 +263,6 @@ class TestSubstituteVariables:
 
 
 class TestRemoveMetadataBlocks:
-
     def test_remove_shell_heredoc(self):
         text = """\
 #!/usr/bin/env bash
@@ -340,7 +334,6 @@ def main():
     reason="toml support not available (needs Python 3.11+ or tomli)",
 )
 class TestPreprocess:
-
     def test_strip_metadata_from_output(self):
         result, _ = _preprocess("""\
 #!/usr/bin/env bash
@@ -492,7 +485,6 @@ echo ${__ish_foo}
     reason="toml support not available (needs Python 3.11+ or tomli)",
 )
 class TestConditionals:
-
     def test_if_true(self):
         result, _ = _preprocess(
             """\
@@ -708,7 +700,6 @@ echo always
 
 
 class TestPreprocessorState:
-
     def test_context_shared_across_files(self):
         """Variables set in one file are visible in the next."""
         pp = DotFilePreprocessor()
@@ -747,7 +738,6 @@ class TestPreprocessorState:
     reason="toml support not available (needs Python 3.11+ or tomli)",
 )
 class TestApplierPreprocessIntegration:
-
     def test_prepare_strips_metadata(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(

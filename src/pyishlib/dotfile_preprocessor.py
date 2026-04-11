@@ -58,7 +58,7 @@ Variables are resolved in order of precedence (highest first):
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from .dotfile import DotFile
 from .file_preprocessor import FilePreprocessor
@@ -113,6 +113,7 @@ class DotFilePreprocessor(FilePreprocessor):
             UnicodeDecodeError: If the file cannot be read as UTF-8 (the
                 caller should fall back to a raw copy).
         """
+        meta: Optional[Any] = None
         if metadata is not None:
             text = dotfile.source.read_text(encoding="utf-8")
             text = self.preprocess_text(text, meta=metadata)

@@ -52,7 +52,9 @@ class InstallerBrew(InstallerBase):
 
         log.info("Installing with Homebrew: %s", " ".join(pkg_list))
         try:
-            res: CompletedProcess = self.runner.run(["brew", "install"] + pkg_list)
+            res: CompletedProcess = self.runner.run(
+                ["brew", "install"] + list(pkg_list)
+            )
             return res.returncode == 0
         except CalledProcessError as e:
             log.critical("Homebrew error installing %s: %s", " ".join(pkg_list), e)

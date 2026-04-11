@@ -1,0 +1,9 @@
+[tool.ruff]
+src = ["src"]
+exclude = ["pytest"]
+
+[tool.mypy]
+mypy_path = "src"
+explicit_package_bases = true
+exclude = ["pytest/"]
+ignore_missing_imports = true

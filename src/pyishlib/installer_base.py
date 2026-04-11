@@ -62,7 +62,6 @@ class InstallerBase(ABC):
     def namespace(self):
         """Return a :class:`Namespace` object wiring generic names to this backend."""
 
-        # pylint: disable=R0903
         class Namespace:
             """Installer namespace for use by :class:`Installer`."""
 

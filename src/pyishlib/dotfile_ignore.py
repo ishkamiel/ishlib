@@ -128,8 +128,10 @@ def load_ignore_file(
         if current_section is None:
             global_patterns.append(stripped)
         elif current_kind == "only_on":
+            assert current_os is not None
             only_on.setdefault(current_os, []).append(stripped)
         elif current_kind == "ignore_on":
+            assert current_os is not None
             ignore_on.setdefault(current_os, []).append(stripped)
 
     return global_patterns, only_on, ignore_on

@@ -5,8 +5,6 @@
 # Distributed under terms of the MIT license.
 """The ``apply`` subcommand -- install dotfiles into the target directory."""
 
-# pylint: disable=duplicate-code
-
 from __future__ import annotations
 
 import argparse

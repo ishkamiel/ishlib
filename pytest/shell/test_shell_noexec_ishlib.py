@@ -6,7 +6,6 @@
 # Distributed under terms of the MIT license.
 
 from . import *
-from pathlib import Path
 
 
 def pytest_generate_tests(metafunc):
@@ -14,7 +13,7 @@ def pytest_generate_tests(metafunc):
 
 
 def test_check_shell_n(shell, ishlib, tmp_path, sh_only):
-    if not shell in sh_only:
+    if shell not in sh_only:
         run_check_call(shell, "-n", ishlib)
     else:
         script_content = ""

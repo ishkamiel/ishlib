@@ -38,7 +38,7 @@ def run_check_output(*args):
 
 
 def gen_file(tmp_path, content):
-    tmp_file = Path(tmp_path) / f"test.sh"
+    tmp_file = Path(tmp_path) / "test.sh"
     tmp_file.write_text(content)
     return tmp_file
 

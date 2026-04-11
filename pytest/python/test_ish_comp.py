@@ -27,7 +27,6 @@ from pyishlib.ish_config import IshConfig
 
 
 class TestChoice:
-
     def test_yes_value(self):
         assert Choice.YES.value == "y"
 
@@ -63,7 +62,6 @@ class TestChoice:
 
 
 class TestIshLogFormatter:
-
     def test_debug_prefix(self):
         formatter = IshLogFormatter()
         record = logging.LogRecord("test", logging.DEBUG, "", 0, "test msg", (), None)
@@ -98,7 +96,6 @@ class TestIshLogFormatter:
 
 
 class TestIshConfig:
-
     def test_default_log_level_is_warning(self):
         cfg = IshConfig()
         assert cfg.log_level == logging.WARNING

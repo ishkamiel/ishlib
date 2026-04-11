@@ -49,6 +49,8 @@ class DotfileContext:
         variables: Optional initial variable mapping.
     """
 
+    _vars: Dict[str, str]
+
     def __init__(self, variables: Optional[Dict[str, str]] = None) -> None:
         # Use object.__setattr__ to avoid triggering our custom __setattr__
         # before _vars exists.

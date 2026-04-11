@@ -69,7 +69,7 @@ class Installer:
         """Get an installer namespace by name."""
         return self.get_backend(name).namespace
 
-    def get_installer(self, pkg: dict) -> Optional[str]:
+    def get_installer(self, pkg: Mapping) -> Optional[str]:
         """Get the installer for a package."""
 
         # See if the package has a preferred installer
@@ -88,7 +88,7 @@ class Installer:
         """Install all packages."""
 
         # Get the packages that are missing
-        missing_packages: Iterable[dict] = self.get_missing_pkgs(pkgs)
+        missing_packages: Iterable[Mapping] = self.get_missing_pkgs(pkgs)
 
         # Then sort them by installer
         to_install: Mapping[str, list] = {i: [] for i in self._backends}
@@ -106,7 +106,7 @@ class Installer:
             self.installer(i).install(i_pkgs)
         return True
 
-    def have_pkg(self, package: dict) -> bool:
+    def have_pkg(self, package: Mapping) -> bool:
         """Check if a package is installed."""
         found_checker = False
         if "cmd" in package:
@@ -136,6 +136,6 @@ class Installer:
         """Install a package"""
         return self.install_pkgs([pkg])
 
-    def get_missing_pkgs(self, pkgs: Iterable[dict]) -> Iterable[dict]:
+    def get_missing_pkgs(self, pkgs: Iterable[Mapping]) -> Iterable[Mapping]:
         """Check if a list of commands are available."""
         return [p for p in pkgs if not self.have_pkg(p)]

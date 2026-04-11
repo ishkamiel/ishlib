@@ -8,12 +8,12 @@
 import sys
 
 if sys.version_info >= (3, 11):
-    import tomllib  # pylint: disable=unused-import
+    import tomllib  # noqa: F401
 
     HAS_TOML = True
 else:
     try:
-        import tomli as tomllib  # type: ignore[no-redef]  # pylint: disable=unused-import
+        import tomli as tomllib  # type: ignore[no-redef]  # noqa: F401
 
         HAS_TOML = True
     except ImportError:

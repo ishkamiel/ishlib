@@ -37,7 +37,6 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    # pylint: disable=W0603
     global DEBUG_MODE
     DEBUG_MODE = args.debug
 
@@ -62,9 +61,10 @@ class Parser:
     def build_ishlib(self):
         """Build the ishlib.sh file"""
         log_debug(f"Starting from base {self.base}")
-        with open(self.base, "r", encoding="utf-8") as base_fh, open(
-            self.output, "w", encoding="utf-8"
-        ) as self.out_fh:
+        with (
+            open(self.base, "r", encoding="utf-8") as base_fh,
+            open(self.output, "w", encoding="utf-8") as self.out_fh,
+        ):
             for line in base_fh:
                 self.process_oneline(line, True)
         print(f"Generated ishlib.sh (version {self.ishlib_version})")

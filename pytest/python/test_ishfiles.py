@@ -64,7 +64,6 @@ def _make_args(**overrides):
 
 
 class TestLoadConfig:
-
     def test_defaults(self):
         cfg = load_config(config_file=Path("/nonexistent/config.toml"))
         assert cfg.get_opt("source") == str(DEFAULT_SOURCE_DIR)
@@ -160,7 +159,6 @@ class TestLoadConfig:
 
 
 class TestDotfileIgnore:
-
     def test_config_registers_constants(self):
         cfg = load_config(config_file=Path("/nonexistent/config.toml"))
         assert cfg.get_opt("config_dir") == "ishconfig"
@@ -241,7 +239,6 @@ class TestDotfileIgnore:
 
 
 class TestCli:
-
     def test_no_command_returns_2(self):
         with patch("sys.stdout"):
             ret = cli_main([])
@@ -356,7 +353,6 @@ class TestCli:
 
 
 class TestReverseTranslation:
-
     def test_reverse_translate_name(self):
         from pyishlib.dotfile import reverse_translate_name
 
@@ -383,7 +379,6 @@ class TestReverseTranslation:
 
 
 class TestDotfileFinder:
-
     def _make_finder(self, src, tgt):
         from pyishlib.dotfile_finder import DotfileFinder
         from pyishlib.ish_config import IshConfig
@@ -479,7 +474,6 @@ _has_git = shutil.which("git") is not None
 
 @pytest.mark.skipif(not _has_git, reason="git not available")
 class TestGitCommand:
-
     def test_git_status(self):
         """Running 'git status' in a git-initialised source dir succeeds."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -529,7 +523,6 @@ class TestGitCommand:
 
 
 class TestAddCommand:
-
     def test_add_new_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             target_file = _make_file(Path(tgt) / ".bashrc", "my config\n")
@@ -640,7 +633,6 @@ class TestAddCommand:
 
 
 class TestDiffWithFiles:
-
     def test_diff_restrict_to_file_by_source_name(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "bash\n")
@@ -687,7 +679,6 @@ class TestDiffWithFiles:
 
 
 class TestApplyWithFiles:
-
     def test_apply_restrict_to_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "bash\n")
@@ -731,7 +722,6 @@ class TestApplyWithFiles:
 
 
 class TestInstallCommand:
-
     def test_install_no_config_returns_0(self):
         """install succeeds silently when no package config exists."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -853,7 +843,6 @@ class TestInstallCommand:
 
 
 class TestApplyWithInstall:
-
     def test_apply_runs_install(self, capsys):
         """apply also triggers package installation."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -884,7 +873,6 @@ class TestApplyWithInstall:
 
 
 class TestScanScripts:
-
     def test_print_skipped_emits_message_for_os_filtered_script(self, capsys):
         """scan_scripts prints a [skipped] line when print_skipped=True and a script is excluded by OS rules."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -932,7 +920,6 @@ class TestScanScripts:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="executes /bin/sh scripts")
 class TestRunscriptsCommand:
-
     def test_runscripts_no_scripts_dir(self):
         """runscripts succeeds silently when no ishscripts dir exists."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -1087,7 +1074,6 @@ class TestRunscriptsCommand:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="executes /bin/sh scripts")
 class TestApplyWithRunscripts:
-
     def test_apply_runs_scripts(self):
         """apply also triggers script execution."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:

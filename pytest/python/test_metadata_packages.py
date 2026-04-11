@@ -21,7 +21,6 @@ sys.path.insert(
 
 from pyishlib.dotfile_applier import DotfileApplier
 from pyishlib.ish_metadata import extract_packages_from_metadata
-from pyishlib.dotfile import DotFile
 from pyishlib.ish_config import IshConfig
 from pyishlib.ishfiles.installer_helper import merge_package_lists
 
@@ -42,7 +41,6 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 
 
 class TestExtractPackagesFromMetadata:
-
     def test_simple_packages(self):
         section = {"vim": {}, "git": {}}
         result = extract_packages_from_metadata(section)
@@ -74,7 +72,6 @@ class TestExtractPackagesFromMetadata:
 
 
 class TestMergePackageLists:
-
     def test_no_overlap(self):
         base = [{"name": "vim"}]
         extra = [{"name": "git"}]
@@ -121,7 +118,6 @@ class TestMergePackageLists:
 
 
 class TestDotfileApplierScan:
-
     def test_scan_no_metadata(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
@@ -182,15 +178,11 @@ class TestDotfileApplierScan:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(
                 Path(src) / "dot_bashrc",
-                ": <<'__ISH__'\n" "[packages]\n" "vim = {}\n" "__ISH__\n" "content\n",
+                ": <<'__ISH__'\n[packages]\nvim = {}\n__ISH__\ncontent\n",
             )
             _make_file(
                 Path(src) / "dot_zshrc",
-                ": <<'__ISH__'\n"
-                "[packages]\n"
-                "zsh-completions = {}\n"
-                "__ISH__\n"
-                "content\n",
+                ": <<'__ISH__'\n[packages]\nzsh-completions = {}\n__ISH__\ncontent\n",
             )
             _make_file(Path(src) / "dot_profile", "plain content\n")
 
@@ -207,11 +199,7 @@ class TestDotfileApplierScan:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(
                 Path(src) / "dot_bashrc",
-                ": <<'__ISH__'\n"
-                "[packages]\n"
-                "vim = {}\n"
-                "__ISH__\n"
-                "export PATH=$PATH\n",
+                ": <<'__ISH__'\n[packages]\nvim = {}\n__ISH__\nexport PATH=$PATH\n",
             )
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
@@ -233,7 +221,6 @@ class TestDotfileApplierScan:
 
 
 class TestScanScripts:
-
     def test_scan_scripts_collects_packages(self):
         from pyishlib.ishfiles.script_runner import scan_scripts
 

@@ -74,7 +74,7 @@ def load_config(
     # Determine effective home base for default paths.
     home = Path.home()
     if args is not None and getattr(args, "home", None) is not None:
-        home = Path(args.home)
+        home = Path(args.home).expanduser()
 
     source_default, target_default, config_default = _default_paths(home)
 

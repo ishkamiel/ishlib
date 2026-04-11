@@ -18,14 +18,23 @@ repos:
           "--autofix"
         ]
     -   id: trailing-whitespace
--   repo: https://github.com/psf/black
-    rev: 26.3.1
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.10
     hooks:
-    -   id: black
+    -   id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+    -   id: ruff-format
+-   repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.20.0
+    hooks:
+    -   id: mypy
+        exclude: ^pytest/
+        additional_dependencies:
+        -   types-PyYAML
 -   repo: https://github.com/crate-ci/typos
     rev: v1.45.0
     hooks:
-      - id: typos
+    -   id: typos
 -   repo: https://github.com/markdownlint/markdownlint
     rev: v0.13.0
     hooks:
@@ -39,7 +48,7 @@ repos:
 -   repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.5.6
     hooks:
-      - id: insert-license
+    -   id: insert-license
         exclude: vim-templates/.*
         name: insert-license-shell
         files: \.(sh|bash|py)$
@@ -47,7 +56,7 @@ repos:
           - --use-current-year
           - --license-filepath
           - .LICENSE_HEADER
-      - id: insert-license
+    -   id: insert-license
         exclude: vim-templates/.*
         name: insert-license-makefile
         files: (Makefile|\.mk)$
@@ -64,15 +73,3 @@ repos:
         pass_filenames: false
         # types: [python]
         require_serial: true
-    -   id: pylint
-        name: pylint
-        entry: pylint
-        language: system
-        types: [python]
-        require_serial: true
-        args: [
-          # "--disable=W1201", # Don't warn about logging format string
-          "-rn",             # Only display messages
-          "-sn"              # Don't display the score
-        ]
-        exclude: "^pytest/.*"

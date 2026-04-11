@@ -27,4 +27,4 @@ jobs:
         pip install -r requirements.txt
     - uses: pre-commit/action@v3.0.1
       env:
-        SKIP: pytest,pylint
+        SKIP: pytest

@@ -50,7 +50,6 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
 
 
 class TestTranslateName:
-
     def test_dot_prefix(self):
         assert translate_name("dot_bashrc") == ".bashrc"
 
@@ -68,7 +67,6 @@ class TestTranslateName:
 
 
 class TestTranslatePath:
-
     def test_single_component(self):
         assert translate_path(Path("dot_bashrc")) == Path(".bashrc")
 
@@ -90,7 +88,6 @@ class TestTranslatePath:
 
 
 class TestDotFile:
-
     def test_properties(self):
         with tempfile.TemporaryDirectory() as tgt:
             src = Path("/repo/dot_bashrc")
@@ -165,7 +162,6 @@ class TestDotFile:
 
 
 class TestIgnore:
-
     def test_load_ignore_file(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / ".dotfileignore"
@@ -205,7 +201,6 @@ class TestIgnore:
 
 
 class TestDiscover:
-
     def test_discover_scan(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc")
@@ -297,7 +292,6 @@ class TestDiscover:
 
 
 class TestPrepare:
-
     def test_prepare_stages_files(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
@@ -340,7 +334,6 @@ class TestPrepare:
 
 
 class TestGetChanges:
-
     def test_new_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
@@ -398,7 +391,6 @@ class TestGetChanges:
 
 
 class TestApplyChanges:
-
     def test_apply_new_file(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "export FOO=bar\n")
@@ -465,7 +457,6 @@ class TestApplyChanges:
 
 
 class TestApply:
-
     def test_apply_no_changes(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
@@ -538,7 +529,6 @@ class TestApply:
 
 
 class TestCommandRunnerCopy:
-
     def test_copy_file(self):
         runner = CommandRunner()
         with tempfile.TemporaryDirectory() as tmpdir:
