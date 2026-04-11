@@ -41,7 +41,9 @@ def process_data_template(cfg: IshConfig) -> None:
     Reads ``<source>/<config_dir>/<data_file>`` (typically
     ``ishconfig/data.toml``).  For each declared variable, if a value is
     already present on ``cfg.context`` (loaded from the ``[data]`` section of
-    the config file), it is left unchanged.  Missing values are collected via
+    the config file), it is validated against the declared type.  Invalid
+    values (e.g. an unrecognised string for a ``type = "bool"`` field) are
+    cleared and the user is re-prompted.  Missing values are collected via
     ``cfg.context.prompt()``.
 
     If any new values were collected and the session is interactive,
@@ -60,8 +62,17 @@ def process_data_template(cfg: IshConfig) -> None:
 
     new_values: Dict[str, str] = {}
     for key, spec in template.items():
-        if cfg.context.get(key):
-            continue  # already set from the persisted config
+        existing = cfg.context.get(key)
+        if existing:
+            if not _validate_value(key, existing, spec):
+                cfg.context.set(key, "")  # invalid — clear and re-prompt
+            else:
+                # Normalise in-place for typed fields (e.g. "yes" → "true")
+                if spec.get("type") == "bool":
+                    normalised = normalise_bool(existing)
+                    if normalised:
+                        cfg.context.set(key, normalised)
+                continue  # valid, done
         msg = spec.get("prompt", key)
         if spec.get("type") == "bool":
             raw_default = spec.get("default", False)
@@ -87,6 +98,27 @@ def process_data_template(cfg: IshConfig) -> None:
         _save_data_section(config_path, new_values)
         if not cfg.quiet:
             print(f"Saved to {config_path}")
+
+
+def _validate_value(key: str, value: str, spec: Dict[str, Any]) -> bool:
+    """Return True if *value* is acceptable for the template *spec*.
+
+    For ``type = "bool"`` fields the value must be recognised by
+    :func:`~pyishlib.userio.normalise_bool`.  String fields accept any
+    non-empty value.  Logs a warning and returns False when invalid.
+    """
+    if spec.get("type") == "bool":
+        if normalise_bool(value) is None:
+            print(
+                f"Unrecognized value for '{key}': {value!r} — prompting for a new value."
+            )
+            log.warning(
+                "Unrecognized value for '%s': %r — prompting for a new value",
+                key,
+                value,
+            )
+            return False
+    return True
 
 
 def _load_template(path: Path) -> Dict[str, Dict[str, Any]]:

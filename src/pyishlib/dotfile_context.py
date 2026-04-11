@@ -124,16 +124,23 @@ class DotfileContext:
     def prompt_bool(self, key: str, message: str, default: bool = False) -> str:
         """Return the stored value for *key*, or prompt the user for a yes/no answer.
 
-        If *key* is already set and non-empty, normalises the stored value via
-        :func:`~pyishlib.userio.normalise_bool` and returns the canonical
-        ``"true"`` or ``"false"`` string.  Otherwise delegates I/O to
-        :func:`~pyishlib.userio.prompt_bool`.
+        If *key* is already set and its value is recognised by
+        :func:`~pyishlib.userio.normalise_bool`, returns the canonical
+        ``"true"`` or ``"false"`` string without prompting.  Unrecognised
+        values are treated as unset and fall through to the prompt path.
+        Delegates I/O to :func:`~pyishlib.userio.prompt_bool`.
         """
         existing = self._vars.get(key)
         if existing:
-            normalised = normalise_bool(existing) or ("true" if existing else "false")
-            self._vars[key] = normalised
-            return normalised
+            normalised = normalise_bool(existing)
+            if normalised is not None:
+                self._vars[key] = normalised
+                return normalised
+            log.warning(
+                "Unrecognised bool value for '%s': %r — treating as unset",
+                key,
+                existing,
+            )
         result = _io_prompt_bool(message, default, name=key)
         value = "true" if result else "false"
         self._vars[key] = value

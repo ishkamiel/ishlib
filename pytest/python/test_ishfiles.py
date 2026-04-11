@@ -1287,6 +1287,27 @@ class TestDotfileContextPromptBool:
             result = ctx.prompt_bool("flag", "Is it?", False)
         assert result == "true"
 
+    def test_unrecognised_existing_value_falls_through_to_prompt(self):
+        """prompt_bool() with an unrecognised stored value falls through to the prompt."""
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext({"flag": "maybe"})  # not a valid bool string
+        with patch("pyishlib.userio.getch", return_value="n"), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            result = ctx.prompt_bool("flag", "Is it?", True)
+        assert result == "false"
+        assert ctx.get("flag") == "false"
+
+    def test_unrecognised_existing_value_nontty_uses_default(self):
+        """prompt_bool() with unrecognised stored value and no tty uses default."""
+        from pyishlib.dotfile_context import DotfileContext
+
+        ctx = DotfileContext({"flag": "garbage"})
+        with patch("sys.stdin.isatty", return_value=False):
+            result = ctx.prompt_bool("flag", "Is it?", False)
+        assert result == "false"
+
 
 class TestIshPromptDirective:
     def _preprocess(self, text, variables=None):
@@ -1446,6 +1467,99 @@ class TestProcessDataTemplate:
             with patch("sys.stdin.isatty", return_value=False):
                 process_data_template(cfg)
             assert not config_path.exists()
+
+    def test_invalid_bool_value_triggers_reprompt(self):
+        """process_data_template() re-prompts when a bool field has an invalid value."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        with tempfile.TemporaryDirectory() as src:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[isWork]\nprompt = "Is this a work machine?"\ndefault = "false"\ntype = "bool"\n',
+            )
+            cfg = self._make_cfg(src)
+            cfg.context.set("isWork", "unknown")  # invalid bool value
+
+            with patch("pyishlib.userio.getch", return_value="n"), \
+                 patch("sys.stdin.isatty", return_value=True), \
+                 patch("sys.stdout.write"), patch("sys.stdout.flush"):
+                process_data_template(cfg)
+
+            assert cfg.context.get("isWork") == "false"
+
+    def test_valid_bool_synonym_is_accepted_without_reprompt(self):
+        """process_data_template() accepts a valid bool synonym without prompting."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        with tempfile.TemporaryDirectory() as src:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[isWork]\nprompt = "Is this a work machine?"\ndefault = "false"\ntype = "bool"\n',
+            )
+            cfg = self._make_cfg(src)
+            cfg.context.set("isWork", "yes")  # valid synonym for true
+
+            with patch("pyishlib.userio.getch", side_effect=AssertionError("should not prompt")):
+                process_data_template(cfg)
+
+            assert cfg.context.get("isWork") == "true"
+
+    def test_invalid_bool_value_included_in_new_values(self):
+        """Re-prompted values from invalid bool fields are offered for saving."""
+        from pyishlib.ishfiles.data import process_data_template, _validate_value
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as cfg_dir:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[isWork]\nprompt = "Is this a work machine?"\ndefault = "false"\ntype = "bool"\n',
+            )
+            config_path = Path(cfg_dir) / "config.toml"
+            cfg = load_config(
+                args=SimpleNamespace(
+                    source=src,
+                    target="/tmp/unused_target",
+                    config=str(config_path),
+                    home=None,
+                    dry_run=None,
+                    verbose=None,
+                    debug=None,
+                    quiet=None,
+                ),
+                config_file=config_path,
+            )
+            cfg.context.set("isWork", "garbage")
+
+            with patch("pyishlib.userio.getch", return_value="y"), \
+                 patch("sys.stdin.isatty", return_value=False):
+                process_data_template(cfg)
+
+            # Non-tty falls back to default ("false"), but the value was reset from "garbage"
+            assert cfg.context.get("isWork") in ("true", "false")
+
+    def test_string_field_with_any_value_is_accepted(self):
+        """process_data_template() accepts any non-empty string for untyped fields."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        with tempfile.TemporaryDirectory() as src:
+            ishconfig = Path(src) / "ishconfig"
+            ishconfig.mkdir()
+            _make_file(
+                ishconfig / "data.toml",
+                '[email]\nprompt = "Email address"\ndefault = "user@example.com"\n',
+            )
+            cfg = self._make_cfg(src)
+            cfg.context.set("email", "anything@example.com")
+
+            with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+                process_data_template(cfg)
+
+            assert cfg.context.get("email") == "anything@example.com"
 
 
 # ---------------------------------------------------------------------------
