@@ -479,7 +479,8 @@ class TestGitCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             import subprocess
 
-            subprocess.run(["git", "init", src], check=True, capture_output=True)
+            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            subprocess.run(["git", "init", src], check=True, capture_output=True, env=clean_env)
             ret = cli_main(["--source", src, "--target", tgt, "git", "status"])
             assert ret == 0
 
@@ -495,10 +496,11 @@ class TestGitCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             import subprocess
 
+            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            subprocess.run(["git", "init", src], check=True, capture_output=True)
+            subprocess.run(["git", "init", src], check=True, capture_output=True, env=clean_env)
             subprocess.run(
-                ["git", "add", "."], cwd=src, check=True, capture_output=True
+                ["git", "add", "."], cwd=src, check=True, capture_output=True, env=clean_env
             )
 
             # 'git diff' on a target path should translate it

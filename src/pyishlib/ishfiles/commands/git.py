@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 
@@ -52,8 +53,13 @@ def run(cfg: IshConfig) -> int:
     translated = [finder.translate_arg(a) for a in git_args]
     cmd = ["git"] + translated
 
+    # Strip GIT_* environment variables so the subprocess discovers its own
+    # git repository from cwd rather than inheriting GIT_DIR (or similar)
+    # set by a parent git process (e.g. when running inside a git hook).
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
     try:
-        result = subprocess.run(cmd, cwd=finder.source_dir, check=False)
+        result = subprocess.run(cmd, cwd=finder.source_dir, check=False, env=env)
     except FileNotFoundError:
         print(
             "git executable not found. Please install git or ensure it is in PATH.",
