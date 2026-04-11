@@ -9,12 +9,9 @@
 
 import os
 import sys
-import stat
-import subprocess
 import tempfile
 import logging
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -58,7 +55,6 @@ def make_cfg(source=None, **kwargs):
 
 
 class TestInstallerCustom:
-
     def test_installer_name(self):
         custom = InstallerCustom(make_runner())
         assert custom.INSTALLER_NAME == "custom"
@@ -207,7 +203,6 @@ class TestInstallerCustom:
 
 
 class TestInstallerCustomRegistration:
-
     def test_custom_registered_in_installer(self):
         cfg = IshConfig(dry_run=True, log_level=logging.DEBUG)
         runner = CommandRunner(cfg=cfg)
@@ -249,7 +244,6 @@ class TestInstallerCustomRegistration:
 
 
 class TestFilePreprocessor:
-
     def test_preprocess_file_basic(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             f = Path(tmpdir) / "test.sh"
@@ -313,7 +307,6 @@ class TestFilePreprocessor:
 
 
 class TestDotfileScript:
-
     def test_preprocess_basic(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             f = Path(tmpdir) / "install_test"
@@ -386,7 +379,6 @@ class TestDotfileScript:
 
 
 class TestInstallerCustomIntegration:
-
     def test_install_pkg_dry_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"

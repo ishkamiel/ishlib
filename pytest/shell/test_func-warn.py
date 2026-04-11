@@ -5,9 +5,6 @@
 #
 # Distributed under terms of the MIT license.
 
-import subprocess
-import os
-import sys
 import inspect
 from pathlib import Path
 from . import *

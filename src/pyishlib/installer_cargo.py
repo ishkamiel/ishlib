@@ -5,11 +5,13 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+from __future__ import annotations
+
 import logging
 import re
 import subprocess
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable, Mapping, Sequence
+from typing import Sequence
 
 from .installer_base import InstallerBase
 
@@ -21,13 +23,13 @@ class InstallerCargo(InstallerBase):
 
     INSTALLER_NAME: str = "cargo"
 
-    CARGO_UPDATE_PKG: Mapping[str, str] = {
+    CARGO_UPDATE_PKG: dict[str, str] = {
         "name": "cargo-update",
         "cargo": "cargo-update",
     }
 
     # The --locked flags forces cargo to use the pkg-specific versions of deps
-    CARGO_INSTALL_CMD: Iterable[str] = ["cargo", "install", "--locked"]
+    CARGO_INSTALL_CMD: list[str] = ["cargo", "install", "--locked"]
 
     def _tool_cmd(self) -> str:
         return "cargo"
@@ -61,7 +63,9 @@ class InstallerCargo(InstallerBase):
 
         log.info("Installing with cargo: %s", " ".join(pkg_list))
         try:
-            res: CompletedProcess = self.runner.run(self.CARGO_INSTALL_CMD + pkg_list)
+            res: CompletedProcess = self.runner.run(
+                self.CARGO_INSTALL_CMD + list(pkg_list)
+            )
             return res.returncode == 0
         except CalledProcessError as e:
             log.critical("Cargo error installing %s: %s", " ".join(pkg_list), e)

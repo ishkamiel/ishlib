@@ -5,11 +5,13 @@
 # Distributed under terms of the MIT license.
 """Helper library for package installing tasks"""
 
+from __future__ import annotations
+
 import logging
 import subprocess
 import sys
 from subprocess import CompletedProcess, CalledProcessError
-from typing import Iterable, Mapping, Sequence
+from typing import Sequence
 
 from .command_runner import CommandRunner
 from .installer_base import InstallerBase
@@ -22,16 +24,16 @@ class InstallerPip(InstallerBase):
 
     INSTALLER_NAME: str = "pip"
 
-    PIP_UPDATE_PKG: Mapping[str, str] = {
+    PIP_UPDATE_PKG: dict[str, str] = {
         "name": "pip",
         "pip": "pip",
     }
 
     def __init__(self, runner: CommandRunner) -> None:
         super().__init__(runner)
-        self._pip_cmd: Iterable[str] = self._detect_pip_cmd()
+        self._pip_cmd: list[str] = self._detect_pip_cmd()
 
-    def _detect_pip_cmd(self) -> Iterable[str]:
+    def _detect_pip_cmd(self) -> list[str]:
         """Detect the pip invocation for the current platform.
 
         On Windows, pip is often only available as ``python -m pip``
@@ -47,7 +49,7 @@ class InstallerPip(InstallerBase):
         return "pip"
 
     @property
-    def pip_install_cmd(self) -> Iterable[str]:
+    def pip_install_cmd(self) -> list[str]:
         """Get the pip install command for the current platform"""
         return list(self._pip_cmd) + ["install", "--user"]
 
@@ -105,7 +107,7 @@ class InstallerPip(InstallerBase):
         log.info("Installing with pip: %s", " ".join(pkg_list))
         try:
             res: CompletedProcess = self.runner.run(
-                list(self.pip_install_cmd) + pkg_list
+                self.pip_install_cmd + list(pkg_list)
             )
             return res.returncode == 0
         except CalledProcessError as e:

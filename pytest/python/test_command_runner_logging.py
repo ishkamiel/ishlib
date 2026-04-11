@@ -21,7 +21,6 @@ from pyishlib.ish_config import IshConfig
     reason="tests use echo which is a shell builtin on Windows",
 )
 class TestCommandRunnerLogging:
-
     @pytest.fixture(autouse=True)
     def setup(self):
         self.runner = CommandRunner()

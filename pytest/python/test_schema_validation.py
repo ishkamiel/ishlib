@@ -36,7 +36,6 @@ pytestmark = pytest.mark.skipif(not HAS_CERBERUS, reason="cerberus not installed
 
 
 class TestSchemaLoading:
-
     def test_load_packages_schema(self):
         schema = load_packages_schema()
         assert "keysrules" in schema
@@ -63,7 +62,6 @@ class TestSchemaLoading:
 
 
 class TestValidatePackages:
-
     def test_valid_empty(self):
         assert validate_packages({}) is None
 
@@ -118,7 +116,6 @@ class TestValidatePackages:
 
 
 class TestValidateMetadata:
-
     def test_valid_empty(self):
         assert validate_metadata({}) is None
 
@@ -177,7 +174,6 @@ class TestValidateMetadata:
 
 
 class TestReadMetadataValidation:
-
     def test_valid_metadata_no_warning(self, caplog):
         from pyishlib.ish_metadata import read_metadata
 
@@ -204,7 +200,7 @@ class TestReadMetadataValidation:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "test.sh"
             p.write_text(
-                ": <<'__ISH__'\n" 'only_on = "not_a_list"\n' "__ISH__\n" "echo hello\n"
+                ": <<'__ISH__'\nonly_on = \"not_a_list\"\n__ISH__\necho hello\n"
             )
             import logging
 
@@ -220,7 +216,7 @@ class TestReadMetadataValidation:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "test.sh"
             p.write_text(
-                ": <<'__ISH__'\n" 'only_on = "not_a_list"\n' "__ISH__\n" "echo hello\n"
+                ": <<'__ISH__'\nonly_on = \"not_a_list\"\n__ISH__\necho hello\n"
             )
             import logging
 
@@ -236,7 +232,6 @@ class TestReadMetadataValidation:
 
 
 class TestInstallerConfigSharedValidation:
-
     def test_valid_config(self):
         from pyishlib.installer_config import InstallerConfig
 

@@ -53,7 +53,7 @@ class InstallerApt(InstallerBase):
         log.info("Installing with apt: %s", " ".join(pkg_list))
         try:
             res: CompletedProcess = self.runner.run_sudo(
-                ["apt", "install", "-y"] + pkg_list
+                ["apt", "install", "-y"] + list(pkg_list)
             )
             return res.returncode == 0
         except CalledProcessError as e:

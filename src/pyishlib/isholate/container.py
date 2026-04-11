@@ -29,14 +29,26 @@ def get_host_user_info() -> "tuple[str, Path, Path]":
     return username, home, cwd
 
 
+def _sanitize_for_name(username: str) -> str:
+    """Sanitize a username for use in an Incus instance name.
+
+    Incus names must be lowercase alphanumeric with hyphens only.
+    """
+    import re
+
+    s = username.lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-") or "user"
+
+
 def generate_name(username: str) -> str:
     """Generate a short random container name."""
     suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-    return f"isholate-{username}-{suffix}"
+    return f"isholate-{_sanitize_for_name(username)}-{suffix}"
 
 
 def _run(cmd: List[str], **kwargs: Any) -> subprocess.CompletedProcess:
-    """Run an incus command, raising on failure by default."""
+    """Run an incus command. Pass check=True to raise on failure."""
     return subprocess.run(cmd, **kwargs)
 
 
@@ -228,4 +240,4 @@ def launch_and_exec(args: Any) -> int:
         # 6. Stop and delete the container (only if it started successfully)
         if started:
             _run(["incus", "stop", name, "--force"], check=False)
-            _run(["incus", "delete", name], check=False)
+            _run(["incus", "delete", name, "--force"], check=False)

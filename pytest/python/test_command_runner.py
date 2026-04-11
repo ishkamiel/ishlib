@@ -24,7 +24,6 @@ from pyishlib.ish_comp import Choice
 
 
 class TestCommandRunnerProperties:
-
     def test_dry_run_default(self):
         runner = CommandRunner()
         assert runner.dry_run is False
@@ -57,7 +56,6 @@ class TestCommandRunnerProperties:
     reason="tests use Unix shell builtins (echo, false, pwd)",
 )
 class TestCommandRunnerRun:
-
     def test_run_captures_output(self):
         runner = CommandRunner()
         result = runner.run(["echo", "hello"], capture_output=True)
@@ -113,7 +111,6 @@ class TestCommandRunnerRun:
 
 
 class TestCommandRunnerGit:
-
     def test_git_prepends_git(self):
         runner = CommandRunner(cfg=IshConfig(dry_run=True))
         result = runner.git(["status"])
@@ -131,7 +128,6 @@ class TestCommandRunnerGit:
 
 
 class TestCommandRunnerFileOps:
-
     def test_chdir(self):
         runner = CommandRunner()
         original_dir = os.getcwd()
@@ -225,7 +221,6 @@ class TestCommandRunnerFileOps:
 
 
 class TestCommandRunnerWhich:
-
     def test_which_existing_command(self):
         runner = CommandRunner()
         cmd = "cmd" if sys.platform == "win32" else "echo"
@@ -240,7 +235,6 @@ class TestCommandRunnerWhich:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="sudo not available on Windows")
 class TestCommandRunnerSudo:
-
     def test_run_sudo_aborts_on_user_decline(self):
         runner = CommandRunner()
         with patch("pyishlib.command_runner.prompt_yes_no_always") as mock_prompt:

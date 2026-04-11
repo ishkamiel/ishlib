@@ -110,8 +110,8 @@ pytest -k "test_pattern"                          # by name pattern
 
 ### Python Code
 
-- Formatted with **Black**
-- Linted with **Pylint** (pytest/ directory is excluded from pylint)
+- Formatted with **ruff-format**
+- Linted with **ruff** (pytest/ directory is excluded)
 - 4-space indentation
 - Files must include the MIT license header (auto-inserted by pre-commit)
 
@@ -154,7 +154,7 @@ Python tests use `unittest.TestCase` classes with `@patch` for mocking. No share
 
 ## Pre-commit Hooks
 
-The repo uses pre-commit with: pylint, black, markdownlint, typos, license header insertion, and pytest. Shellcheck is exercised via the pytest shell tests rather than a dedicated pre-commit hook.
+The repo uses pre-commit with: ruff (lint + format), mypy, markdownlint, typos, license header insertion, and pytest. Shellcheck is exercised via the pytest shell tests rather than a dedicated pre-commit hook.
 
 ## CI
 

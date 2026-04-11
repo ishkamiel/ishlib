@@ -6,7 +6,6 @@
 # Distributed under terms of the MIT license.
 
 from . import *
-from pathlib import Path
 
 
 def pytest_generate_tests(metafunc):

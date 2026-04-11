@@ -12,7 +12,7 @@ import os
 import subprocess
 import logging
 from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch
 import pytest
 
 sys.path.insert(
@@ -51,7 +51,6 @@ def make_installer(which_returns=None):
 
 
 class TestInstallerApt:
-
     def test_available_true(self):
         apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
         assert apt.available is True
@@ -117,7 +116,6 @@ class TestInstallerApt:
 
 
 class TestInstallerPip:
-
     def test_has_pip_true(self):
         pip = InstallerPip(make_runner({"pip3": "/usr/bin/pip3"}))
         assert pip.has_pip is True
@@ -161,7 +159,6 @@ class TestInstallerPip:
 
 
 class TestInstallerBrew:
-
     def test_available_true(self):
         brew = InstallerBrew(make_runner({"brew": "/usr/local/bin/brew"}))
         assert brew.available is True
@@ -201,7 +198,6 @@ class TestInstallerBrew:
 
 
 class TestInstallerCargo:
-
     def test_available_true(self):
         cargo = InstallerCargo(make_runner({"cargo": "/usr/bin/cargo"}))
         assert cargo.available is True
@@ -241,7 +237,6 @@ class TestInstallerCargo:
 
 
 class TestInstallerWinget:
-
     def test_available_true(self):
         winget = InstallerWinget(make_runner({"winget": "C:\\winget.exe"}))
         assert winget.available is True
@@ -339,7 +334,6 @@ class TestInstallerWinget:
 
 
 class TestInstallerRegistration:
-
     def test_all_default_backends_registered(self):
         installer = make_installer(which_returns={})
         assert "apt" in installer._backends
@@ -432,7 +426,6 @@ class TestInstallerRegistration:
 
 
 class TestInstallerOrchestration:
-
     def test_have_pkg_by_cmd(self):
         installer = make_installer(which_returns={"mycmd": "/usr/bin/mycmd"})
         pkg = {"name": "test", "cmd": "mycmd"}
@@ -493,7 +486,6 @@ class TestInstallerOrchestration:
 
 
 class TestInstallerPipWindowsSupport:
-
     def test_has_pip_fallback_to_pip(self):
         """When pip3 is not found, falls back to pip."""
         pip = InstallerPip(make_runner({"pip": "/usr/bin/pip"}))
@@ -527,7 +519,6 @@ class TestInstallerPipWindowsSupport:
 
 
 class TestCommandRunnerWindowsSupport:
-
     @patch("pyishlib.command_runner.is_windows", return_value=True)
     def test_run_sudo_raises_on_windows(self, _mock):
         """run_sudo raises OSError on Windows."""
@@ -537,7 +528,6 @@ class TestCommandRunnerWindowsSupport:
 
 
 class TestInstallerConfigIntegration:
-
     @patch("pyishlib.installer_config.is_ubuntu", return_value=True)
     def test_installer_config_on_ubuntu_check(self, _mock):
         """Test that on_ubuntu in InstallerConfig delegates to environment."""

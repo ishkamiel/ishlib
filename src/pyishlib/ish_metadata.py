@@ -100,7 +100,7 @@ def _parse_toml(text: str) -> Dict[str, Any]:
         )
     try:
         return _TOML_LOADS(text)
-    except _TOML_DECODE_ERROR as e:
+    except _TOML_DECODE_ERROR as e:  # type: ignore[misc]
         raise ValueError(f"Invalid TOML metadata: {e}") from e
 
 
@@ -313,6 +313,7 @@ def read_metadata(
         sidecar = _parse_toml(raw)
 
     # Merge or return whichever is available
+    result: Optional[Dict[str, Any]] = None
     if embedded is not None and sidecar is not None:
         merged, conflicts = merge_metadata(embedded, sidecar)
         for conflict in conflicts:
@@ -330,7 +331,7 @@ def read_metadata(
 def _validate_result(metadata: Dict[str, Any], source: str) -> None:
     """Validate metadata against the schema, logging warnings on failure."""
     # Import here to avoid circular imports
-    from .schema_validation import validate_metadata  # pylint: disable=C0415
+    from .schema_validation import validate_metadata
 
     err = validate_metadata(metadata, source=source)
     if err is not None:
@@ -464,7 +465,7 @@ def _cli_main(argv=None):
 def _print_output(data: Dict[str, Any], fmt: str) -> None:
     """Print metadata in the requested format."""
     if fmt == "toml" and HAS_TOML_W:
-        print(tomli_w.dumps(data))  # pylint: disable=possibly-used-before-assignment
+        print(tomli_w.dumps(data))
     else:
         if fmt == "toml":
             log.warning("tomli_w not installed, falling back to JSON output")

@@ -69,7 +69,7 @@ class CommandRunner:
         """Run command with sudo (not available on Windows)"""
         if self.on_windows:
             raise OSError("sudo is not available on Windows")
-        command = ["sudo"] + command
+        command = ["sudo"] + list(command)
         if not self._check_sudo(command, force_sudo):
             raise KeyboardInterrupt("User aborted sudo command")
         return self.run(command, **kwargs)
@@ -97,7 +97,6 @@ class CommandRunner:
                 kwargs["stderr"] = subprocess.DEVNULL
 
         if self.dry_run:
-            # pylint: disable=W1510
             return subprocess.CompletedProcess(
                 args=command, returncode=0, stdout=b"", stderr=b""
             )
@@ -106,7 +105,6 @@ class CommandRunner:
             old_path: Path = Path(os.getcwd())
             os.chdir(work_dir)
 
-        # pylint: disable=W1510
         try:
             result = subprocess.run(command, **kwargs)
         finally:
@@ -118,9 +116,10 @@ class CommandRunner:
         self, command: Iterable[str], work_dir: Optional[Path] = None, **kwargs
     ) -> subprocess.CompletedProcess:
         """Run git command using Commandrunner.run"""
-        if work_dir is not None and "-C" not in command:
-            command = ["-C", str(work_dir)] + command
-        return self.run(["git"] + command, work_dir=work_dir, **kwargs)
+        command_list = list(command)
+        if work_dir is not None and "-C" not in command_list:
+            command_list = ["-C", str(work_dir)] + command_list
+        return self.run(["git"] + command_list, work_dir=work_dir, **kwargs)
 
     def chdir(
         self,
@@ -165,7 +164,7 @@ class CommandRunner:
             path.unlink()
         return True
 
-    def mkdir(self, path: Path, parents: Optional[bool] = False) -> bool:
+    def mkdir(self, path: Path, parents: bool = False) -> bool:
         """Create path, optionally creating parent directories"""
         if path.exists():
             log.debug("Path %s already exists, skipping mkdir", path)
@@ -207,7 +206,7 @@ class CommandRunner:
         else:
             self._print_cmd([f"rm -f {path}"])
 
-    def _print_mkdir(self, path: Path, parents: Optional[bool] = False) -> None:
+    def _print_mkdir(self, path: Path, parents: bool = False) -> None:
         if self.quiet:
             return
 
@@ -217,7 +216,7 @@ class CommandRunner:
             self._print_cmd([f"mkdir {path}"])
 
     def _error_or_die(
-        self, msg: str, is_fatal: Optional[bool] = False, exit_code: Optional[int] = 1
+        self, msg: str, is_fatal: bool = False, exit_code: int = 1
     ) -> None:
         if is_fatal:
             die(msg, exit_code)

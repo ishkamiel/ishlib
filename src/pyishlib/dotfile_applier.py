@@ -42,7 +42,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class DotfileApplier:  # pylint: disable=too-many-instance-attributes
+class DotfileApplier:
     """Three-stage dotfile applier.
 
     1. :meth:`discover` -- find dotfiles in *source_dir* or from an
@@ -67,7 +67,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
                 *source_dir* and *target_dir* are read from it.
     """
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(
         self,
         source_dir: Optional[Path] = None,
         target_dir: Optional[Path] = None,
@@ -195,7 +195,7 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
             The list of staged dotfiles (excluding OS-skipped ones),
             with each :attr:`DotFile.staged` set.
         """
-        self._staging_dir = tempfile.TemporaryDirectory()  # pylint: disable=R1732
+        self._staging_dir = tempfile.TemporaryDirectory()
         staging_root = Path(self._staging_dir.name)
         preprocessor = DotFilePreprocessor(variables=self.cfg.context.as_dict())
 
@@ -205,7 +205,9 @@ class DotfileApplier:  # pylint: disable=too-many-instance-attributes
                 # scan() already read metadata and applied OS filtering.
                 # Use the stored metadata, falling back to an empty dict
                 # so the preprocessor skips redundant metadata reads.
-                meta = dotfile.metadata if dotfile.metadata is not None else {}
+                meta: Optional[Dict[str, Any]] = (
+                    dotfile.metadata if dotfile.metadata is not None else {}
+                )
             else:
                 try:
                     meta = read_metadata(dotfile.source)

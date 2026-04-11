@@ -7,7 +7,6 @@
 
 import inspect
 from . import *
-import pytest
 
 
 def pytest_generate_tests(metafunc):

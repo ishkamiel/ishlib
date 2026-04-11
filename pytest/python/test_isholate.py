@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -72,7 +72,6 @@ def _fake_subprocess_run(cmd, **kwargs):
 
 
 class TestGenerateName:
-
     def test_includes_username(self):
         name = generate_name("alice")
         assert name.startswith("isholate-alice-")
@@ -93,7 +92,6 @@ class TestGenerateName:
 
 
 class TestGetHostUserInfo:
-
     def test_returns_tuple(self):
         username, home, cwd = get_host_user_info()
         assert isinstance(username, str)
@@ -107,7 +105,6 @@ class TestGetHostUserInfo:
 
 
 class TestLaunchAndExec:
-
     def _run_with_mocks(self, args, fake_run_returns=None):
         """Run launch_and_exec with _run and subprocess.run mocked.
 
@@ -325,7 +322,6 @@ class TestLaunchAndExec:
 
 
 class TestParser:
-
     def test_defaults(self):
         from pyishlib.isholate.cli import DEFAULT_IMAGE, DEFAULT_SHELL
 
@@ -370,7 +366,6 @@ class TestParser:
         args = parser.parse_args(["--purge"])
         assert args.purge is True
 
-    @pytest.mark.skipif(sys.platform == "linux", reason="Only tests non-linux guard")
     def test_main_rejects_non_linux(self):
         with patch("sys.platform", "darwin"):
             rc = cli_main([])

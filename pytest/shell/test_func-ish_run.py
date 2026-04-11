@@ -5,13 +5,8 @@
 #
 # Distributed under terms of the MIT license.
 
-import subprocess
-import os
-import sys
 import inspect
-from pathlib import Path
 from . import *
-import pytest
 
 
 def pytest_generate_tests(metafunc):

@@ -107,7 +107,7 @@ def _substitute_variables(text: str, variables: Dict[str, str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-class _CondFrame:  # pylint: disable=too-few-public-methods
+class _CondFrame:
     """Tracks state for one if/elif/else/fi block.
 
     Attributes:
@@ -309,10 +309,8 @@ class FilePreprocessor:
         to keep evaluation safe and predictable.
         """
         try:
-            result = eval(  # pylint: disable=eval-used
-                expr, {"__builtins__": {}}, {"ish": self._context}
-            )
+            result = eval(expr, {"__builtins__": {}}, {"ish": self._context})
             return bool(result)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:
             log.warning("Failed to evaluate @ish expression %r: %s", expr, exc)
             return False

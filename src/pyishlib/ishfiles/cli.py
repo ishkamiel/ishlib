@@ -9,8 +9,6 @@ Entry point for the ``ishfiles`` tool.  Subcommands are registered by
 modules in :mod:`~pyishlib.ishfiles.commands`.
 """
 
-# pylint: disable=duplicate-code
-
 from __future__ import annotations
 
 import argparse
@@ -42,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         metavar="DIR",
         default=None,
-        help="Path to the ishfiles source folder " "(default: ~/.local/share/ishfiles)",
+        help="Path to the ishfiles source folder (default: ~/.local/share/ishfiles)",
     )
     parser.add_argument(
         "-t",
@@ -56,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         metavar="FILE",
         default=None,
-        help="Path to the config file " "(default: ~/.config/ishfiles/config.toml)",
+        help="Path to the config file (default: ~/.config/ishfiles/config.toml)",
     )
     parser.add_argument(
         "-n",

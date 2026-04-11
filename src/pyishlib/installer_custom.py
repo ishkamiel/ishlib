@@ -87,7 +87,6 @@ class InstallerCustom:
     def namespace(self):
         """Get the common Namespace for installer commands."""
 
-        # pylint: disable=R0903
         class Namespace:
             """Namespace for custom installer commands."""
 
@@ -165,9 +164,9 @@ class InstallerCustom:
         executing its corresponding script.
         """
         pkgs = list(pkgs)
-        assert all(
-            isinstance(pkg, dict) for pkg in pkgs
-        ), "pkgs should be an iterable of dictionaries"
+        assert all(isinstance(pkg, dict) for pkg in pkgs), (
+            "pkgs should be an iterable of dictionaries"
+        )
 
         for pkg in pkgs:
             self._install_one(pkg)
@@ -184,7 +183,7 @@ class InstallerCustom:
         script_path = self._find_script(pkg_name)
         if script_path is None:
             raise FileNotFoundError(
-                f"No install script found for {pkg_name} " f"in {self.installers_dir}"
+                f"No install script found for {pkg_name} in {self.installers_dir}"
             )
 
         log.info("Installing %s via custom script: %s", pkg["name"], script_path)

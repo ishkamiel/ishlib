@@ -80,7 +80,7 @@ _GIT_AVAILABLE: bool | None = None
 
 def _has_git() -> bool:
     """Check (and cache) whether git is on PATH."""
-    global _GIT_AVAILABLE  # pylint: disable=global-statement
+    global _GIT_AVAILABLE
     if _GIT_AVAILABLE is None:
         _GIT_AVAILABLE = shutil.which("git") is not None
     return _GIT_AVAILABLE

@@ -16,7 +16,6 @@ import sys
 from typing import List, Optional
 
 from .container import (
-    generate_name,
     get_host_user_info,
     launch_and_exec,
     purge_containers,

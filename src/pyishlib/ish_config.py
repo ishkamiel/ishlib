@@ -121,8 +121,7 @@ class IshConfig:
             return None
         if tomllib is None:
             _log.warning(
-                "TOML support unavailable (need Python 3.11+ or 'tomli'); "
-                "ignoring %s",
+                "TOML support unavailable (need Python 3.11+ or 'tomli'); ignoring %s",
                 path,
             )
             return None
@@ -251,7 +250,7 @@ class IshConfig:
             return
         if name in self.defaults:
             raise ValueError(
-                f"Cannot register constant {name!r}: " f"already exists as a default"
+                f"Cannot register constant {name!r}: already exists as a default"
             )
         self.constants[name] = value
 
