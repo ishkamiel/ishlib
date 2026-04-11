@@ -27,6 +27,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Restrict to specific files (source or target paths)",
     )
+    parser.add_argument(
+        "--name-only",
+        action="store_true",
+        default=False,
+        help="Show only the names of changed files, not the diff",
+    )
     parser.set_defaults(func=run)
 
 
@@ -56,8 +62,12 @@ def run(cfg: IshConfig) -> int:
             print("Everything is up to date.")
         return 0
 
+    name_only = cfg.get_opt("name_only", default=False)
     for dotfile in changes:
-        _show_diff(dotfile)
+        if name_only:
+            print(dotfile.target)
+        else:
+            _show_diff(dotfile)
 
     return 1
 
