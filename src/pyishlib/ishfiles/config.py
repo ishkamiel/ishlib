@@ -119,6 +119,9 @@ def load_config(
     for name, value in _CONSTANTS.items():
         cfg.set_constant(name, value)
 
+    # The resolved config file path is fixed for this invocation.
+    cfg.set_constant("config_file", cfg_path)
+
     # Seed the preprocessing context with any persisted [data] values.
     data = _load_data_section(cfg_path)
     if data:

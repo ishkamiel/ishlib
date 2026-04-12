@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
-from subprocess import CompletedProcess, CalledProcessError
+from subprocess import CalledProcessError, CompletedProcess
 from typing import Sequence
 
 from .installer_base import InstallerBase
@@ -62,18 +62,13 @@ class InstallerCargo(InstallerBase):
         pkg_list: Sequence[str] = [pkg["cargo"] for pkg in pkgs]
 
         log.info("Installing with cargo: %s", " ".join(pkg_list))
-        try:
-            res: CompletedProcess = self.runner.run(
-                self.CARGO_INSTALL_CMD + list(pkg_list)
-            )
-            return res.returncode == 0
-        except CalledProcessError as e:
-            log.critical("Cargo error installing %s: %s", " ".join(pkg_list), e)
-            raise e
+        res = self._run_cmd([*self.CARGO_INSTALL_CMD, *pkg_list], action="installing")
+        return res.returncode == 0
 
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""
-        assert self.runner.which("rustup") is not None
+        if self.runner.which("rustup") is None:
+            raise RuntimeError("cargo: rustup is required but was not found")
         q: bool = log.getEffectiveLevel() > logging.INFO
 
         try:
@@ -86,14 +81,14 @@ class InstallerCargo(InstallerBase):
             return True
         except CalledProcessError as e:
             log.critical("Rustup error: %s", e)
-            raise e
+            raise
 
     def update_pkgs(self) -> bool:
         """Update all installed cargo packages"""
-        assert self.can_install()
+        self._require_available()
 
         self.install_pkg_unless_found(self.CARGO_UPDATE_PKG)
-        self.runner.run(["cargo", "install-update", "-a", "-q"])
+        self._run_cmd(["cargo", "install-update", "-a", "-q"], action="updating")
         return True
 
     def update_and_install_all(self, pkgs: Sequence[dict]) -> None:

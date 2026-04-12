@@ -95,6 +95,6 @@ EOF
   fi
 
   ish_warn "ishlib run directly without parameters!"
-  say "To print docs:       ./ishlib.sh -h"
+  ish_say "To print docs:       ./ishlib.sh -h"
   exit 0
 }

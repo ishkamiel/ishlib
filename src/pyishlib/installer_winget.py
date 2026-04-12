@@ -7,7 +7,7 @@
 
 import logging
 import subprocess
-from subprocess import CompletedProcess, CalledProcessError
+from subprocess import CalledProcessError
 from typing import Sequence
 
 from .installer_base import InstallerBase
@@ -54,48 +54,41 @@ class InstallerWinget(InstallerBase):
         for pkg in pkgs:
             pkg_id: str = pkg["winget"]
             log.info("Installing with winget: %s", pkg_id)
-            try:
-                res: CompletedProcess = self.runner.run(
-                    [
-                        "winget",
-                        "install",
-                        "--id",
-                        pkg_id,
-                        "--exact",
-                        "--accept-source-agreements",
-                        "--accept-package-agreements",
-                    ]
-                )
-                if res.returncode != 0:
-                    log.critical(
-                        "winget error installing %s: returncode %d",
-                        pkg_id,
-                        res.returncode,
-                    )
-                    return False
-            except CalledProcessError as e:
-                log.critical("winget error installing %s: %s", pkg_id, e)
-                raise e
+            # _run_cmd uses CommandRunner.run with check=True, so a
+            # non-zero exit raises CalledProcessError and propagates.
+            self._run_cmd(
+                [
+                    "winget",
+                    "install",
+                    "--id",
+                    pkg_id,
+                    "--exact",
+                    "--accept-source-agreements",
+                    "--accept-package-agreements",
+                ],
+                action="installing",
+            )
         return True
 
     def update_pkgs(self) -> bool:
         """Update all installed winget packages"""
-        assert self.can_install()
+        self._require_available()
 
-        self.runner.run(
+        self._run_cmd(
             [
                 "winget",
                 "upgrade",
                 "--all",
                 "--accept-source-agreements",
                 "--accept-package-agreements",
-            ]
+            ],
+            action="updating",
         )
         return True
 
     def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update winget packages, then install new winget pkgs"""
-        assert self.can_install()
+        self._require_available()
 
         self.update_pkgs()
         self.install_pkgs(pkgs)

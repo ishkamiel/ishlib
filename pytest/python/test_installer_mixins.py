@@ -99,13 +99,15 @@ class TestInstallerApt:
         apt = InstallerApt(runner)
         with patch.object(
             runner,
-            "run_sudo",
+            "run",
             return_value=subprocess.CompletedProcess(args=[], returncode=0),
-        ) as mock_sudo:
+        ) as mock_run:
             pkgs = [{"name": "test", "apt": "test-pkg"}]
             result = apt.install_pkgs(pkgs)
             assert result is True
-            mock_sudo.assert_called_once_with(["apt", "install", "-y", "test-pkg"])
+            mock_run.assert_called_once_with(
+                ["apt", "install", "-y", "test-pkg"], sudo=True
+            )
 
     def test_install_pkg_unless_found_already_installed(self):
         apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
@@ -470,8 +472,10 @@ class TestInstallerOrchestration:
         installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
         with patch.object(
             installer.runner,
-            "run_sudo",
-            return_value=subprocess.CompletedProcess(args=[], returncode=0),
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"", stderr=b""
+            ),
         ):
             pkgs = [{"name": "test", "apt": "test-pkg", "cmd": "notfound"}]
             result = installer.install_pkgs(pkgs)
@@ -492,10 +496,10 @@ class TestInstallerPipWindowsSupport:
         assert pip.has_pip is True
         assert pip._pip_cmd == ["pip"]
 
+    @patch("pyishlib.installer_pip.is_windows", return_value=True)
     @patch("pyishlib.installer_pip.sys")
-    def test_has_pip_windows_fallback_to_python_m_pip(self, mock_sys):
+    def test_has_pip_windows_fallback_to_python_m_pip(self, mock_sys, _mock_win):
         """On Windows, falls back to python -m pip when pip is not on PATH."""
-        mock_sys.platform = "win32"
         mock_sys.executable = "C:\\Python39\\python.exe"
         pip = InstallerPip(make_runner({}))
         assert pip.has_pip is True

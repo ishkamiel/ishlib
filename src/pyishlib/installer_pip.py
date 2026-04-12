@@ -10,10 +10,11 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
-from subprocess import CompletedProcess, CalledProcessError
+from subprocess import CalledProcessError
 from typing import Sequence
 
 from .command_runner import CommandRunner
+from .environment import is_windows
 from .installer_base import InstallerBase
 
 log = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class InstallerPip(InstallerBase):
         detection order is: pip3, pip, then ``sys.executable -m pip``
         (the last one is only tried on Windows).
         """
-        if sys.platform == "win32":
+        if is_windows():
             return ["pip"]
         return ["pip3"]
 
@@ -64,7 +65,7 @@ class InstallerPip(InstallerBase):
                     self._tool_available = self.runner.which("pip") is not None
                     if self._tool_available:
                         self._pip_cmd = ["pip"]
-                if not self._tool_available and sys.platform == "win32":
+                if not self._tool_available and is_windows():
                     # Fallback: try "python -m pip" on Windows
                     self._pip_cmd = [sys.executable, "-m", "pip"]
                     self._tool_available = True
@@ -105,27 +106,23 @@ class InstallerPip(InstallerBase):
         pkg_list: Sequence[str] = [pkg["pip"] for pkg in pkgs]
 
         log.info("Installing with pip: %s", " ".join(pkg_list))
-        try:
-            res: CompletedProcess = self.runner.run(
-                self.pip_install_cmd + list(pkg_list)
-            )
-            return res.returncode == 0
-        except CalledProcessError as e:
-            log.critical("Pip error installing %s: %s", " ".join(pkg_list), e)
-            raise e
+        res = self._run_cmd([*self.pip_install_cmd, *pkg_list], action="installing")
+        return res.returncode == 0
 
     def update_pkgs(self) -> bool:
         """Update all installed pip packages"""
-        assert self.can_install()
+        self._require_available()
 
         self.install_pkg_unless_found(self.PIP_UPDATE_PKG)
-        self.runner.run(list(self._pip_cmd) + ["install", "--upgrade", "pip"])
+        self._run_cmd(
+            [*self._pip_cmd, "install", "--upgrade", "pip"], action="updating"
+        )
         log.warning("pip update not implemented (only updates pip itself)")
         return True
 
     def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update python, pip and pip packages, then install new pip pkgs"""
-        assert self.can_install()
+        self._require_available()
 
         self.update_pkgs()
         self.install_pkgs(pkgs)

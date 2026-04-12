@@ -33,12 +33,12 @@ download_file() {
   [ -z "$1" ] && ish_warn "downloadFile: bad 1st arg" && return 1
   [ -z "$2" ] && ish_warn "downloadFile: bad 2nd arg" && return 1
 
-  say "downloading ${1} to ${2}"
+  ish_say "downloading ${1} to ${2}"
   mkdir -p "$(dirname "$2")"
 
   if command -v curl >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      dry_run curl --progress-bar -fLo "$2" --create-dirs "$1"
+      ish_say_dry_run "curl --progress-bar -fLo \"$2\" --create-dirs \"$1\""
       return 0
     else
       curl --progress-bar -fLo "$2" --create-dirs "$1"
@@ -46,7 +46,7 @@ download_file() {
     fi
   elif command -v wget >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      dry_run wget -nv -O "$2" "$1"
+      ish_say_dry_run "wget -nv -O \"$2\" \"$1\""
       return 0
     else
       wget -nv -O "$2" "$1"

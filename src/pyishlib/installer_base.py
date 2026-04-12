@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from subprocess import CalledProcessError, CompletedProcess
 from typing import Any, Iterable, Optional, Sequence
 
 from .command_runner import CommandRunner
@@ -86,11 +87,48 @@ class InstallerBase(ABC):
         return self.available
 
     def _validate_pkgs(self, pkgs: Sequence[dict]) -> None:
-        """Assert *pkgs* is a valid iterable of installable package dicts."""
-        assert isinstance(pkgs, Iterable) and all(
+        """Validate *pkgs* is an iterable of installable package dicts."""
+        if not isinstance(pkgs, Iterable) or not all(
             isinstance(pkg, dict) for pkg in pkgs
-        ), "pkgs should be an iterable of dictionaries"
-        assert all(self.can_install(p) for p in pkgs)
+        ):
+            raise TypeError("pkgs should be an iterable of dictionaries")
+        if not all(self.can_install(p) for p in pkgs):
+            raise ValueError(
+                f"{self.INSTALLER_NAME}: cannot install one or more packages"
+            )
+
+    def _require_available(self) -> None:
+        """Raise if the backend tool is not available."""
+        if not self.can_install():
+            raise RuntimeError(
+                f"{self.INSTALLER_NAME}: backend is not available on this system"
+            )
+
+    def _run_cmd(
+        self,
+        cmd: Sequence[str],
+        *,
+        sudo: bool = False,
+        action: str = "running",
+    ) -> CompletedProcess:
+        """Run *cmd* via :attr:`runner` (sudo if requested).
+
+        Logs a critical message and re-raises on
+        :class:`subprocess.CalledProcessError`.  Centralises the
+        try/except/log boilerplate that every backend would otherwise
+        repeat.
+        """
+        try:
+            return self.runner.run(list(cmd), sudo=sudo)
+        except CalledProcessError as e:
+            log.critical(
+                "%s error %s: %s (cmd: %s)",
+                self.INSTALLER_NAME,
+                action,
+                e,
+                " ".join(cmd),
+            )
+            raise
 
     def install_pkg(self, pkg: dict) -> bool:
         """Install a single package (delegates to :meth:`install_pkgs`)."""

@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from ..environment import is_linux
 from .config import (
     discover_host_ishfiles_source,
     discover_project_overlay,
@@ -139,7 +140,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     Returns:
         Exit code.
     """
-    if sys.platform != "linux":
+    if not is_linux():
         print("isholate: error: isholate is only supported on Linux", file=sys.stderr)
         return 1
 
