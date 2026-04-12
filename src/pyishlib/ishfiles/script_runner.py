@@ -191,6 +191,15 @@ def run_scanned_scripts(
         names = [s.name for s in script_paths]
         print(f"Scripts to run ({len(script_paths)}): {', '.join(names)}")
 
+    # Expose the scripts directory as ${__ish_scripts_dir} so scripts can
+    # locate sibling data files even when executed from a temp path.
+    # set() is intentional: this is a system-computed path that must always
+    # reflect the real ishscripts/ location; user-defined context values with
+    # the same name should not override it.
+    source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
+    scripts_dir_path = source_dir / cfg.get_opt("scripts_dir")
+    cfg.context.set("scripts_dir", str(scripts_dir_path))
+
     runner = CommandRunner(cfg=cfg)
     preprocessor = FilePreprocessor(variables=cfg.context.as_dict())
 

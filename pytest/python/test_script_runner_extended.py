@@ -275,5 +275,42 @@ class TestScanScriptsTagFilter(unittest.TestCase):
             assert not any(p.name == "work.sh" for p in kept)
 
 
+class TestScriptsDirContext(unittest.TestCase):
+    """run_scanned_scripts() seeds cfg.context with the scripts directory path."""
+
+    def test_scripts_dir_seeded_in_context(self):
+        """cfg.context['scripts_dir'] is set to <source>/ishscripts after the call."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scripts_dir = Path(tmp) / "ishscripts"
+            _write_toml_script(scripts_dir, "tool.sh", "")
+            cfg = _make_cfg(tmp)
+            run_scanned_scripts(cfg, [scripts_dir / "tool.sh"])
+            expected = str(Path(tmp).resolve() / "ishscripts")
+            assert cfg.context.get("scripts_dir") == expected
+
+    def test_scripts_dir_substituted_in_script(self):
+        """${__ish_scripts_dir} in a script body is replaced with the resolved path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scripts_dir = Path(tmp) / "ishscripts"
+            scripts_dir.mkdir(parents=True, exist_ok=True)
+            script = scripts_dir / "data_path.sh"
+            script.write_text(
+                "#!/bin/sh\nDATA=${__ish_scripts_dir}/data/file\n",
+                encoding="utf-8",
+            )
+            cfg = _make_cfg(tmp)
+
+            # Capture the preprocessed content by inspecting the context after seeding.
+            run_scanned_scripts(cfg, [script])
+
+            from pyishlib.file_preprocessor import FilePreprocessor
+
+            pp = FilePreprocessor(variables=cfg.context.as_dict())
+            preprocessed, _ = pp.preprocess_file(script)
+            expected_path = str(Path(tmp).resolve() / "ishscripts")
+            assert expected_path in preprocessed
+            assert "${__ish_scripts_dir}" not in preprocessed
+
+
 if __name__ == "__main__":
     unittest.main()
