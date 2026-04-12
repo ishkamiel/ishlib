@@ -7,7 +7,7 @@
 
 import logging
 import subprocess
-from subprocess import CompletedProcess, CalledProcessError
+from subprocess import CalledProcessError
 from typing import Sequence
 
 from .installer_base import InstallerBase
@@ -51,26 +51,20 @@ class InstallerBrew(InstallerBase):
         pkg_list: Sequence[str] = [pkg["brew"] for pkg in pkgs]
 
         log.info("Installing with Homebrew: %s", " ".join(pkg_list))
-        try:
-            res: CompletedProcess = self.runner.run(
-                ["brew", "install"] + list(pkg_list)
-            )
-            return res.returncode == 0
-        except CalledProcessError as e:
-            log.critical("Homebrew error installing %s: %s", " ".join(pkg_list), e)
-            raise e
+        res = self._run_cmd(["brew", "install", *pkg_list], action="installing")
+        return res.returncode == 0
 
     def update_pkgs(self) -> bool:
         """Update all installed Homebrew packages"""
-        assert self.can_install()
+        self._require_available()
 
-        self.runner.run(["brew", "update"])
-        self.runner.run(["brew", "upgrade"])
+        self._run_cmd(["brew", "update"], action="updating")
+        self._run_cmd(["brew", "upgrade"], action="updating")
         return True
 
     def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update Homebrew and Homebrew packages, then install new Homebrew pkgs"""
-        assert self.can_install()
+        self._require_available()
 
         self.update_pkgs()
         self.install_pkgs(pkgs)

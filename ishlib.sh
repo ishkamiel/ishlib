@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-12.1322"
+export ish_VERSION_NUMBER="2026-04-12.2125"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -173,7 +173,7 @@ EOF
   fi
 
   ish_warn "ishlib run directly without parameters!"
-  say "To print docs:       ./ishlib.sh -h"
+  ish_say "To print docs:       ./ishlib.sh -h"
   exit 0
 }
 
@@ -578,12 +578,12 @@ download_file() {
   [ -z "$1" ] && ish_warn "downloadFile: bad 1st arg" && return 1
   [ -z "$2" ] && ish_warn "downloadFile: bad 2nd arg" && return 1
 
-  say "downloading ${1} to ${2}"
+  ish_say "downloading ${1} to ${2}"
   mkdir -p "$(dirname "$2")"
 
   if command -v curl >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      dry_run curl --progress-bar -fLo "$2" --create-dirs "$1"
+      ish_say_dry_run "curl --progress-bar -fLo \"$2\" --create-dirs \"$1\""
       return 0
     else
       curl --progress-bar -fLo "$2" --create-dirs "$1"
@@ -591,7 +591,7 @@ download_file() {
     fi
   elif command -v wget >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      dry_run wget -nv -O "$2" "$1"
+      ish_say_dry_run "wget -nv -O \"$2\" \"$1\""
       return 0
     else
       wget -nv -O "$2" "$1"

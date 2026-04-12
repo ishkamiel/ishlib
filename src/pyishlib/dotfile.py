@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import filecmp
 import os
-import sys
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from .environment import is_windows
 
 DOT_PREFIX = "dot_"
 EXECUTABLE_PREFIX = "executable_"
@@ -188,11 +189,7 @@ class DotFile:
         if not filecmp.cmp(self.effective_source, self.target, shallow=False):
             return ChangeType.MODIFIED
         # exec bits are meaningless on Windows; skip the check there
-        if (
-            self.executable
-            and sys.platform != "win32"
-            and not os.access(self.target, os.X_OK)
-        ):
+        if self.executable and not is_windows() and not os.access(self.target, os.X_OK):
             return ChangeType.MODIFIED
         return None
 

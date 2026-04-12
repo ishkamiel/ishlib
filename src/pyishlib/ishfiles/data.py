@@ -103,7 +103,7 @@ def process_data_template(cfg: IshConfig) -> None:
     print(f"\n{len(new_values)} new config value(s) collected.")
     choice = prompt_yes_no_always("Save to config file?")
     if choice.yes:
-        config_path = _resolve_config_path(cfg)
+        config_path = Path(cfg.get_opt("config_file"))
         _save_data_section(config_path, new_values)
         if not cfg.quiet:
             print(f"Saved to {config_path}")
@@ -183,21 +183,6 @@ def _load_template(path: Path) -> Dict[str, Dict[str, Any]]:
         else:
             log.warning("Skipping non-table entry in data template: %s", key)
     return result
-
-
-def _resolve_config_path(cfg: IshConfig) -> Path:
-    """Return the path to the user config file from *cfg*."""
-    # The config path is not exposed as a named opt, but we can read it
-    # from the conf object or fall back to the default.
-    from .config import DEFAULT_CONFIG_FILE
-
-    conf = cfg.conf
-    if conf is not None and hasattr(conf, "config"):
-        return Path(getattr(conf, "config"))
-    args = cfg.args
-    if args is not None and hasattr(args, "config") and getattr(args, "config"):
-        return Path(args.config)
-    return DEFAULT_CONFIG_FILE
 
 
 def _save_data_section(config_path: Path, new_values: Dict[str, str]) -> None:

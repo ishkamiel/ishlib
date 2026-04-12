@@ -2,10 +2,11 @@
 
 ## Project Overview
 
-**ishlib** is a modular shell scripting library providing utility functions for sysadmin and development tasks. It has two components:
+**ishlib** is a modular shell scripting library providing utility functions for sysadmin and development tasks. It has three components:
 
 - **Shell library** (`ishlib.sh`): A compiled, self-documenting POSIX/Bash function library built from modular sources in `src/`
-- **Python library** (`src/pyishlib/`): Installer framework with backends for apt, brew, cargo, pip, winget, and custom scripts; plus the `ishfiles` CLI for dotfile/package/script management
+- **Python library** (`src/pyishlib/`): Installer framework with backends for apt, brew, cargo, dnf, pip, winget, and custom scripts; plus the `ishfiles` CLI for dotfile/package/script management
+- **isholate** (`src/pyishlib/isholate/`, entry point `bin/isholate`): Incus-based isolation containers with host user mirroring for testing `ishfiles` setups without touching the real home directory. Linux-only.
 
 ## Repository Structure
 
@@ -13,22 +14,28 @@
 src/
   sh/             # POSIX-compliant shell functions (sourced into ishlib.sh)
   bash/           # Bash-only extensions (sourced into ishlib.sh)
-  pyishlib/       # Python installer framework
-    ishfiles/     # CLI tool subcommand modules
+  pyishlib/       # Python installer framework (shared primitives)
+    ishfiles/     # ishfiles CLI subcommand modules (dotfiles/packages/scripts/externals)
+      commands/   # One module per subcommand: add, apply, diff, external,
+                  #   git, install, log, runscripts
+    isholate/     # isholate CLI (Incus container launcher): cli, config, container
   schema/         # Config schemas (JSON)
-  docs/           # Documentation sources (e.g., shell library intro template)
+  docs/           # Documentation *sources* (intro templates etc.)
 pytest/
   shell/          # Shell function tests (parametrized across bash, dash, sh, zsh)
   python/         # Python unit tests
 t/                # Legacy Perl/TAP tests, run via `prove` by pytest/shell/test_legacy_prove.py
 scripts/          # Build scripts (build_ishlib.py, build_pydocs.py)
-bin/              # Executable scripts
-docs/             # MkDocs site source and generated docs
+bin/              # Executable entry points (ishfiles, isholate)
+docs/             # Generated MkDocs site pages (do not edit by hand)
   ishlib_shell.md     # Generated shell function reference
   pyishlib/           # Generated Python library reference (per-module pages)
   ishfiles.md         # CLI tool docs (placeholder)
 .github/workflows/   # CI workflows (pre-commit, pylint, pytest, docs)
 ```
+
+`src/docs/` holds hand-written documentation **sources**; `docs/` is the
+published MkDocs site (mostly generated). Don't confuse the two.
 
 Key root files:
 
@@ -196,7 +203,7 @@ The `ishfiles` CLI tool (`src/pyishlib/ishfiles/`) manages dotfiles, packages, a
 
 All configuration — directory names, file names, defaults, and constants — flows through the `IshConfig` object built by `ishfiles/config.py:load_config()`. Components must **never** import path constants directly from other modules; instead, read them from the `cfg` (`IshConfig`) instance via `cfg.get_opt("name")`.
 
-- **Constants** (read-only): Reserved directory and file names (`config_dir`, `scripts_dir`, `installers_dir`, `ignore_file`, `package_files`) are registered via `cfg.set_constant()` in `load_config()`. They cannot be overridden by CLI args, TOML config, or defaults. Attempting to shadow a constant via `set_default()` raises `ValueError`.
+- **Constants** (read-only): Reserved directory and file names (`config_dir`, `scripts_dir`, `installers_dir`, `ignore_file`, `package_files`, `data_file`, `externals_config_file`, `externals_cache_dirname`, `externals_state_filename`) plus the resolved `config_file` path for the current invocation are registered via `cfg.set_constant()` in `load_config()`. They cannot be overridden by CLI args, TOML config, or defaults. Attempting to shadow a constant via `set_default()` raises `ValueError`.
 - **Defaults** (overridable): Values like `source`, `target`, `patterns` that users can override via CLI args or TOML config.
 - **Lookup priority**: constants > args > conf > defaults.
 
@@ -204,24 +211,93 @@ New ishfiles-specific directory or file name constants should be defined in `ish
 
 ### DotfileContext and Preprocessing Variables
 
-Preprocessing variables (used in `${__ish_<name>}` substitution and `@ish if` conditionals) are stored on `cfg.context`, a `DotfileContext` instance that is a field of `IshConfig`. Components that need preprocessing variables should read them from `cfg.context.as_dict()` — never accept a separate `variables` parameter.
+Preprocessing variables (used in `${__ish_<name>}` substitution and `@ish if` conditionals) are stored on `cfg.context`, a `DotfileContext` instance that is a field of `IshConfig`. `DotfileContext` lives in `src/pyishlib/dotfile_context.py` (not in `environment.py`). Components that need preprocessing variables should read them from `cfg.context.as_dict()` — never accept a separate `variables` parameter.
 
 - `DotfileContext` is auto-populated on construction with platform detection defaults. Additional variables can be set via `cfg.context.set(name, value)`.
 - Components access it via `cfg.context.as_dict()` when constructing a `FilePreprocessor` or `DotFilePreprocessor`.
-- In `@ish if` expressions, the context is exposed as the `ish` namespace (e.g., `ish.platform == 'linux'`).
+- In `@ish if` expressions, the context is exposed as the `ish` namespace (e.g., `ish.platform == 'linux'`). An `EnvironmentNamespace` is attached as `ish.env`, providing live checks such as `ish.env.is_linux()` and `ish.env.is_macos()`.
 - The dotfiles source directory is read from `cfg.get_opt("source")`, not passed as a separate `dotfiles_dir` parameter.
 
 ### Subcommand Pattern
 
-Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` and `run(cfg)` functions. Register new commands in `ishfiles/cli.py`. The `apply` command runs dotfile installation, then package installation, then scripts — in that order.
+Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` and `run(cfg)` functions. Register new commands in `ishfiles/cli.py`. Current subcommands:
+
+- `add` — add a file to the dotfiles source
+- `apply` — the main pipeline (see below)
+- `diff` — show pending dotfile changes without applying
+- `external` — manage external git-repo dotfiles (`apply`/`update`/`list`)
+- `git` — proxy `git` commands against the dotfiles source
+- `install` — run the installer pipeline (packages only)
+- `log` — inspect script-run logs
+- `runscripts` — execute user scripts only (bypasses the rest of apply)
+
+### The `apply` Pipeline
+
+`apply` runs in six phases (see `ishfiles/commands/apply.py:run`):
+
+- **Phase 0 — Self-links**: create `~/.local/bin` symlinks to `ishfiles` and `isholate` so the tools are on the user's PATH. Best-effort; failures log a warning.
+- **Phase 1 — Scan**: discover dotfiles and scripts, read `__ISH__` metadata, apply OS/tag filtering, and collect embedded package declarations.
+- **Phase 2 — Merge**: combine metadata-declared packages with the main package list.
+- **Phase 3 — Install**: run the installer pipeline for all packages (main + metadata).
+- **Phase 4 — Apply dotfiles**: preprocess and install changed dotfiles.
+- **Phase 4b — Externals**: fetch and install external git-repo dotfiles (see the Externals section below).
+- **Phase 5 — Scripts**: execute user scripts with logging and `run_when` state gating.
+
+Flags:
+
+- `--dotfiles-only` skips phases 3, 4b, and 5 (package install, externals, scripts).
+- `--force-scripts [NAMES...]` re-runs named scripts (or all, with no names) ignoring `run_when` state.
+
+### Filename Prefixes for Dotfiles
+
+Files in the dotfiles source can carry these prefixes (chezmoi-compatible):
+
+- `dot_<name>` — target name becomes `.<name>` (e.g. `dot_bashrc` → `.bashrc`).
+- `executable_<name>` — after the file is applied, the target is `chmod +x`'d (Windows is a no-op). The prefix is stripped from the target name and can combine with `dot_` (`dot_executable_foo` → `.foo`, executable).
+
+### Externals
+
+External git-repo dotfiles are declared in `<source>/ishconfig/externals.toml`. Support is implemented by the triplet in `src/pyishlib/ishfiles/`:
+
+- `externals_config.py` — load/validate `ExternalSpec` entries from TOML.
+- `externals.py` — `ExternalsEngine` fetches, caches, applies, and checks for updates.
+- `externals_state.py` — persists resolved revisions to `<target>/.config/ishfiles/externals-state.json`.
+
+The `external` subcommand exposes `apply`, `update`, and `list`. `apply_externals_stage()` is the entry point called as Phase 4b of `apply`. The cache lives in `<source>/.cache/` (reserved, ignored for dotfile application).
 
 ### Reserved Directories in Dotfile Source
 
 The ishfiles source folder reserves these directories (ignored during dotfile application):
 
-- `ishconfig/` — package configuration (`packages.toml` / `packages.json`)
+- `ishconfig/` — package configuration (`packages.toml` / `packages.json`), data templates (`data.toml`), and externals config (`externals.toml`)
 - `ishscripts/` — user scripts executed on `apply` and `runscripts`
 - `ishinstallers/` — custom per-package install scripts
+- `.cache/` — externals fetch cache (managed by `ExternalsEngine`)
+
+### Installer Backends
+
+Package installer backends live at `src/pyishlib/installer_*.py` and all subclass `InstallerBase` (`installer_base.py`):
+
+- `installer_apt.py` — Debian/Ubuntu (`apt`)
+- `installer_brew.py` — Homebrew (`brew`)
+- `installer_cargo.py` — Rust toolchain (`cargo` + `rustup`)
+- `installer_dnf.py` — Fedora/RHEL (`dnf`)
+- `installer_pip.py` — Python packages (`pip` / `pip3` / `python -m pip`)
+- `installer_winget.py` — Windows Package Manager
+- `installer_custom.py` — arbitrary per-package install scripts
+
+Backends implement the abstract methods (`is_pkg_installed`, `install_pkgs`, `update_pkgs`, `update_and_install_all`). Two `InstallerBase` helpers exist to reduce boilerplate and should be preferred over open-coding:
+
+- `self._run_cmd(cmd, *, sudo=False, action="running")` — run a subprocess via `self.runner`, log a critical message and re-raise on `CalledProcessError`. Use this everywhere an install/update command is invoked.
+- `self._require_available()` — raises `RuntimeError` if the backend's tool is missing. Use this instead of `assert self.can_install()` for public-entry preconditions (asserts can be stripped by `python -O`).
+
+### Output & Logging Convention
+
+Three distinct channels, picked by purpose:
+
+- **`logging`** (via `log = logging.getLogger(__name__)`) — all diagnostic messages, status info (`log.info`), recoverable errors (`log.warning`), and terminal failures (`log.critical`). Honours the CLI `--verbose` / `--quiet` flags.
+- **`pyishlib.userio`** — every interactive prompt (yes/no/always, string, choice) goes through this module so non-interactive environments and tests have a single seam to patch.
+- **`print()`** — only for deliberate, structured CLI output that is the command's product (`diff`, `log`, metadata dumps, run summaries). Do not use `print` for status chatter that should respect verbosity — use logging instead.
 
 ### Environment Detection (`environment.py`)
 
@@ -236,6 +312,8 @@ The ishfiles source folder reserves these directories (ignored during dotfile ap
 - `is_linux()`, `is_macos()`, `is_windows()`, `is_ubuntu()`, `is_gnome()`, `is_linux_desktop()` — simple boolean environment checks
 
 New OS detection, platform-conditional logic, or environment helpers should be added to this module. `CommandRunner` (`src/pyishlib/command_runner.py`) handles command execution, file operations, and sudo — it delegates to `environment.py` for platform checks.
+
+Call these helpers from everywhere else — do not reach for `sys.platform` directly outside `environment.py`. The one intentional exception is `userio.getch`, which keeps `if sys.platform == "win32":` so mypy can narrow the branch for the Windows-only `msvcrt` import.
 
 ### OS-conditional Ignore Rules
 
@@ -256,6 +334,18 @@ Files and scripts can also use `only_on` and `ignore_on` keys in their `__ISH__`
 only_on = ["unixlike"]
 ignore_on = ["fedora"]
 ```
+
+## isholate Architecture
+
+`isholate` (`src/pyishlib/isholate/`, entry point `bin/isholate`) launches ephemeral Incus containers that mirror the host user so `ishfiles` setups can be tested without touching the real `$HOME`. Linux-only — `cli.main` bails out on non-Linux hosts via `environment.is_linux()`.
+
+Key modules:
+
+- `cli.py` — argparse front-end, subcommands (`run`, `purge`, …). Discovers a project-local overlay at `.isholate/ishconfig/isholate.toml` before parsing args so image/shell overrides take effect.
+- `config.py` — TOML config loading, host-ishfiles-source discovery, and project overlay resolution.
+- `container.py` — container lifecycle: create/launch/exec, host user/group mirroring, bind-mount handling, purge.
+
+When editing isholate, keep the boundary with `pyishlib` clean: reuse `environment.py` for platform checks and `command_runner.py` for subprocess execution rather than re-implementing them.
 
 ## ishfiles Manual Testing Safety
 

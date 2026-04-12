@@ -67,24 +67,37 @@ class CommandRunner:
     def run_sudo(
         self, command: Iterable[str], force_sudo: Optional[bool] = False, **kwargs
     ) -> subprocess.CompletedProcess:
-        """Run command with sudo (not available on Windows)"""
-        if self.on_windows:
-            raise OSError("sudo is not available on Windows")
-        command = ["sudo"] + list(command)
-        if not self._check_sudo(command, force_sudo):
-            raise KeyboardInterrupt("User aborted sudo command")
-        return self.run(command, **kwargs)
+        """Thin wrapper for :meth:`run` with ``sudo=True``.
+
+        Prefer ``runner.run(cmd, sudo=True)`` in new code.
+        """
+        return self.run(command, sudo=True, force_sudo=force_sudo, **kwargs)
 
     def run(
         self,
         command: Iterable[str],
         work_dir: Optional[Path] = None,
         quiet: bool = False,
+        sudo: bool = False,
+        force_sudo: Optional[bool] = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
-        """Run command"""
+        """Run command.
+
+        When *sudo* is True the command is prefixed with ``sudo`` and
+        runs through :meth:`_check_sudo` for user confirmation (unless
+        *force_sudo* is True or ``always_sudo`` is set).  Raises
+        ``OSError`` on Windows when *sudo* is True.
+        """
 
         command = [str(c) for c in command]
+
+        if sudo:
+            if self.on_windows:
+                raise OSError("sudo is not available on Windows")
+            command = ["sudo"] + command
+            if not self._check_sudo(command, force_sudo):
+                raise KeyboardInterrupt("User aborted sudo command")
 
         if "check" not in kwargs:
             kwargs["check"] = True

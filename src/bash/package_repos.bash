@@ -126,7 +126,7 @@ ish_apt_add_repo() {
 
   ish_say "Adding apt repo: ${_list_file}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
-    ish_say_dry_run "echo '${_deb_line}' | sudo tee ${_list_file}"
+    ish_say_dry_run "echo '${_deb_line}' | sudo tee \"${_list_file}\""
     ish_say_dry_run sudo apt-get update -q
     return 0
   fi

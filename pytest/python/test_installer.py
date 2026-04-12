@@ -36,8 +36,10 @@ class TestInstaller(unittest.TestCase):
     # @patch("pyishlib.installer.InstallerApt.can_use_apt", return_value=True)
     @patch("pyishlib.installer.CommandRunner.which", side_effect=mock_which)
     @patch(
-        "pyishlib.installer.CommandRunner.run_sudo",
-        return_value=subprocess.CompletedProcess(args=[], returncode=0),
+        "pyishlib.installer.CommandRunner.run",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=b"", stderr=b""
+        ),
     )
     def test_apt(self, mock_run, mock_which):
         cfg = IshConfig(dry_run=True, log_level=logging.DEBUG)
@@ -48,7 +50,9 @@ class TestInstaller(unittest.TestCase):
         install_package_result: bool = installer.install_pkg(pkg_config)
 
         # mock_which.assert_called_once_with("fakecmd")
-        mock_run.assert_any_call(["apt", "install", "-y", "fakepkg"])
+        mock_run.assert_any_call(
+            ["apt", "install", "-y", "fakepkg"], sudo=True
+        )
         assert install_package_result
 
 

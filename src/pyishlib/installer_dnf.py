@@ -7,7 +7,7 @@
 
 import logging
 import subprocess
-from subprocess import CompletedProcess, CalledProcessError
+from subprocess import CalledProcessError
 from typing import Sequence
 
 from .installer_base import InstallerBase
@@ -51,26 +51,18 @@ class InstallerDnf(InstallerBase):
         pkg_list: Sequence[str] = [pkg["dnf"] for pkg in pkgs]
 
         log.info("Installing with dnf: %s", " ".join(pkg_list))
-        try:
-            res: CompletedProcess = self.runner.run_sudo(
-                ["dnf", "install", "-y"] + list(pkg_list)
-            )
-            return res.returncode == 0
-        except CalledProcessError as e:
-            log.critical("dnf error installing %s: %s", " ".join(pkg_list), e)
-            raise e
+        res = self._run_cmd(
+            ["dnf", "install", "-y", *pkg_list], sudo=True, action="installing"
+        )
+        return res.returncode == 0
 
     def update_pkgs(self) -> bool:
         """Update all installed dnf packages"""
-        assert self.can_install()
+        self._require_available()
 
         log.info("Updating dnf packages")
-        try:
-            self.runner.run_sudo(["dnf", "upgrade", "-y"])
-            return True
-        except CalledProcessError as e:
-            log.critical("dnf error updating packages: %s", e)
-            raise e
+        self._run_cmd(["dnf", "upgrade", "-y"], sudo=True, action="updating")
+        return True
 
     def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
         """Update dnf packages, then install new dnf pkgs"""

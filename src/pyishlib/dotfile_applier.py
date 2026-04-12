@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -34,7 +33,7 @@ from .ish_metadata import collect_metadata_packages, read_metadata
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
 from .userio import prompt_yes_no_always
-from .environment import should_skip_for_os_from_metadata
+from .environment import is_windows, should_skip_for_os_from_metadata
 
 log = logging.getLogger(__name__)
 
@@ -282,7 +281,7 @@ class DotfileApplier:
         applied = 0
         for dotfile in changes:
             if self.runner.copy(dotfile.effective_source, dotfile.target):
-                if dotfile.executable and sys.platform != "win32":
+                if dotfile.executable and not is_windows():
                     if self.runner.dry_run:
                         print(f"chmod +x {dotfile.target}")
                     else:

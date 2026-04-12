@@ -96,6 +96,8 @@ def getch() -> str:
 
     Raises :exc:`EOFError` if stdin is closed.
     """
+    # NOTE: use sys.platform (not environment.is_windows) here so mypy can
+    # narrow the branch and type-check the Windows-only msvcrt import.
     if sys.platform == "win32":
         import msvcrt  # type: ignore[import]
 
