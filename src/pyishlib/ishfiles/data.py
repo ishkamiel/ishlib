@@ -30,7 +30,7 @@ from typing import Any, Dict
 
 from .._compat import tomllib
 from ..ish_config import IshConfig
-from ..userio import normalise_bool, prompt_yes_no_always
+from ..userio import normalise_bool, normalise_str, prompt_yes_no_always
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +60,9 @@ def process_data_template(cfg: IshConfig) -> None:
     if not template:
         return
 
+    # Publish the template so InstallerConfig can derive tag-type info.
+    cfg.data_template = template
+
     new_values: Dict[str, str] = {}
     for key, spec in template.items():
         existing = cfg.context.get(key)
@@ -67,20 +70,26 @@ def process_data_template(cfg: IshConfig) -> None:
             if not _validate_value(key, existing, spec):
                 cfg.context.set(key, "")  # invalid — clear and re-prompt
             else:
-                # Normalise in-place for typed fields (e.g. "yes" → "true")
+                # Normalise in-place for bool synonyms (e.g. "yes" → "true")
                 if spec.get("type") == "bool":
                     normalised = normalise_bool(existing)
                     if normalised:
                         cfg.context.set(key, normalised)
                 continue  # valid, done
-        msg = spec.get("prompt", key)
-        if spec.get("type") == "bool":
+        msg = _default_prompt(key, spec)
+        t = spec.get("type")
+        if t == "bool":
             raw_default = spec.get("default", False)
             if isinstance(raw_default, str):
                 bool_default = normalise_bool(raw_default) == "true"
             else:
                 bool_default = bool(raw_default)
             value = cfg.context.prompt_bool(key, msg, bool_default)
+        elif t in ("tags", "ordered_tags"):
+            values = spec.get("values", [])
+            raw_default = spec.get("default")
+            str_default = str(raw_default) if raw_default is not None else None
+            value = cfg.context.prompt_choice(key, msg, values, str_default)
         else:
             value = cfg.context.prompt(key, msg, str(spec.get("default", "")))
         new_values[key] = value
@@ -100,14 +109,30 @@ def process_data_template(cfg: IshConfig) -> None:
             print(f"Saved to {config_path}")
 
 
+def _default_prompt(key: str, spec: Dict[str, Any]) -> str:
+    """Build a default prompt string when the spec omits ``prompt``."""
+    if "prompt" in spec:
+        return spec["prompt"]
+    t = spec.get("type")
+    if t in ("tags", "ordered_tags"):
+        values = spec.get("values", [])
+        return f"{key} [{'/'.join(values)}]"
+    if t == "bool":
+        return f"{key}?"
+    return key
+
+
 def _validate_value(key: str, value: str, spec: Dict[str, Any]) -> bool:
     """Return True if *value* is acceptable for the template *spec*.
 
-    For ``type = "bool"`` fields the value must be recognised by
-    :func:`~pyishlib.userio.normalise_bool`.  String fields accept any
-    non-empty value.  Logs a warning and returns False when invalid.
+    - ``bool``: must be recognised by :func:`~pyishlib.userio.normalise_bool`.
+    - ``tags`` / ``ordered_tags``: normalised value must be in ``spec["values"]``.
+    - string (default): any non-empty value is accepted.
+
+    Logs a warning and returns False when invalid.
     """
-    if spec.get("type") == "bool":
+    t = spec.get("type")
+    if t == "bool":
         if normalise_bool(value) is None:
             print(
                 f"Unrecognized value for '{key}': {value!r} — prompting for a new value."
@@ -116,6 +141,20 @@ def _validate_value(key: str, value: str, spec: Dict[str, Any]) -> bool:
                 "Unrecognized value for '%s': %r — prompting for a new value",
                 key,
                 value,
+            )
+            return False
+    elif t in ("tags", "ordered_tags"):
+        values = spec.get("values", [])
+        nvalues = [normalise_str(v) for v in values]
+        if normalise_str(value) not in nvalues:
+            print(
+                f"Unrecognized value for '{key}': {value!r} — expected one of {values}."
+            )
+            log.warning(
+                "Unrecognized value for '%s': %r — not in %s, prompting for a new value",
+                key,
+                value,
+                values,
             )
             return False
     return True

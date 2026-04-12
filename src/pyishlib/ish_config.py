@@ -49,6 +49,9 @@ class IshConfig:
     context: DotfileContext = field(
         default_factory=DotfileContext, repr=False, compare=False
     )
+    data_template: Dict[str, Any] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     # -- TOML loading ----------------------------------------------------------
 

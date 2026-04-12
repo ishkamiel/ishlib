@@ -10,8 +10,9 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping, Iterable, Optional
 
-from .environment import should_skip_for_os, is_linux_desktop, is_gnome
+from .environment import should_skip_for_os
 from .schema_validation import validate_packages
+from .userio import normalise_bool, normalise_str
 
 try:
     import jsonschema
@@ -23,21 +24,6 @@ except ImportError:
 from ._compat import HAS_TOML, tomllib  # HAS_TOML re-exported for callers
 
 log = logging.getLogger(__name__)
-
-#: Known tags that map to runtime conditions rather than context variables.
-_RUNTIME_TAGS = frozenset({"gui", "gnome"})
-
-#: Tags that map to context variable names (value must be truthy).
-_CTX_TRUTHY_TAGS: dict = {
-    "build_tools": "needBuildTools",
-    "work": "isWork",
-    "gaming": "isGaming",
-}
-
-#: Tags that map to context variables that must NOT be truthy.
-_CTX_FALSY_TAGS: dict = {
-    "no_work": "isWork",
-}
 
 
 class InstallerConfig:
@@ -72,57 +58,66 @@ class InstallerConfig:
             return self._cfg.context.get(key, default)
         return default
 
-    def _ctx_truthy(self, key: str) -> bool:
-        """Return True if the context variable *key* normalises to true."""
-        from .userio import normalise_bool
-
-        val = self._ctx_get(key)
-        return normalise_bool(val) == "true"
-
     def _passes_tag_filter(self, pkg: dict) -> bool:
         """Return True if *pkg* should be included given its tags.
 
-        Tags control which packages are selected based on user configuration
-        and runtime environment:
+        Tag semantics are derived entirely from ``cfg.data_template`` — no
+        tag names are hard-coded here.  Supported patterns:
 
-        - ``min``         — always included
-        - ``build_tools`` — only when ``needBuildTools`` is truthy in context
-        - ``work``        — only when ``isWork`` is truthy
-        - ``no_work``     — only when ``isWork`` is NOT truthy
-        - ``gaming``      — only when ``isGaming`` is truthy
-        - ``personal``    — only when ``machineType == "personal"``
-        - ``gui``         — only when a Linux desktop session is detected
-        - ``gnome``       — only when GNOME desktop is detected
-        - *(no tags)*     — included unless ``machineType == "min"``
+        - ``<var>``   — where ``var`` is a ``bool`` key: include when truthy.
+        - ``!<var>``  — negation of the above.
+        - ``<val>``   — where ``val`` appears in a ``tags`` variable's
+                        ``values`` list: include when the variable == val.
+        - ``<val>``   — where ``val`` appears in an ``ordered_tags`` variable's
+                        ``values`` list: include when the variable's index ≥ val's.
+
+        Packages without tags are always included.
         """
-        tags = pkg.get("tags", [])
+        tags = pkg.get("tags", []) or []
         if not tags:
-            # No tags: default packages, excluded on minimal installs
-            return self._ctx_get("machineType") != "min"
-
-        if "min" in tags:
             return True
 
-        for tag in tags:
-            if tag in _CTX_TRUTHY_TAGS:
-                if not self._ctx_truthy(_CTX_TRUTHY_TAGS[tag]):
-                    return False
-            elif tag in _CTX_FALSY_TAGS:
-                if self._ctx_truthy(_CTX_FALSY_TAGS[tag]):
-                    return False
-            elif tag == "personal":
-                if self._ctx_get("machineType") != "personal":
-                    return False
-            elif tag == "gui":
-                if not is_linux_desktop():
-                    return False
-            elif tag == "gnome":
-                if not is_gnome():
-                    return False
-            else:
-                log.warning("Unknown package tag %r on %s", tag, pkg.get("name"))
+        template: dict = {}
+        if self._cfg is not None:
+            template = getattr(self._cfg, "data_template", None) or {}
 
+        for tag in tags:
+            negated = tag.startswith("!")
+            name = tag[1:] if negated else tag
+            matched = self._tag_matches(name, template, pkg)
+            if negated:
+                matched = not matched
+            if not matched:
+                return False
         return True
+
+    def _tag_matches(self, tag: str, template: dict, pkg: dict) -> bool:
+        """Return True if *tag* is satisfied by the current context and template."""
+        ntag = normalise_str(tag)
+
+        # 1. tag == a bool variable name
+        for var, vspec in template.items():
+            if normalise_str(var) == ntag and vspec.get("type") == "bool":
+                return normalise_bool(self._ctx_get(var)) == "true"
+
+        # 2. tag is a value declared in a tags / ordered_tags variable
+        for var, vspec in template.items():
+            t = vspec.get("type")
+            if t not in ("tags", "ordered_tags"):
+                continue
+            nvalues = [normalise_str(v) for v in vspec.get("values", [])]
+            if ntag not in nvalues:
+                continue
+            ncurrent = normalise_str(self._ctx_get(var))
+            if t == "tags":
+                return ncurrent == ntag
+            # ordered_tags: current index must be >= tag index (higher implies lower)
+            if ncurrent not in nvalues:
+                return False
+            return nvalues.index(ncurrent) >= nvalues.index(ntag)
+
+        log.warning("Unknown package tag %r on %s", tag, pkg.get("name"))
+        return False
 
     def get_pkgs(self) -> Iterable[dict]:
         """Get the packages from the configuration, applying OS and tag filters."""
