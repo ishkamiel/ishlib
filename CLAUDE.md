@@ -244,14 +244,16 @@ Ignore files (`.ishignore`, `.dotfileignore`) support OS-conditional sections:
 - `[only_on.<os>]` — patterns listed here apply *only* on `<os>`; they are ignored on all other platforms.
 - `[ignore_on.<os>]` — patterns listed here are ignored *on* `<os>`; they have no effect on other platforms.
 
-Recognised OS/distro names: `linux`, `macos`, `windows`, `debian` (includes Ubuntu, Mint, Pop!_OS, etc.), `fedora` (includes RHEL, CentOS, Asahi Remix, etc.). Common aliases (`mac`, `darwin`, `win`, `ubuntu`) are accepted and normalised.
+Recognised OS/distro names: `linux`, `macos`, `windows`, `unixlike` (Linux or macOS), `debian` (includes Ubuntu, Mint, Pop!_OS, etc.), `fedora` (includes RHEL, CentOS, Asahi Remix, etc.). Common aliases (`mac`, `darwin`, `win`, `ubuntu`) are accepted and normalised.
 
 Matching is hierarchical: a system running Ubuntu matches both `debian` and `linux` rules.
+
+`only_on` uses **AND** semantics — all listed tags must match the current system. Listing multiple tags narrows the target further (e.g. `["linux", "debian"]` means Debian-family Linux only). Use `unixlike` as a shorthand for "Linux or macOS":
 
 Files and scripts can also use `only_on` and `ignore_on` keys in their `__ISH__` metadata (TOML) to control per-file OS filtering:
 
 ```toml
-only_on = ["linux", "macos"]
+only_on = ["unixlike"]
 ignore_on = ["fedora"]
 ```
 

@@ -125,11 +125,12 @@ class DotfileScript:
         """
         text = self.preprocess()
 
-        # Inject the log-helper prelude for shell scripts when a logger is set.
-        if script_logger is not None and self._is_shell_script(text):
+        # Inject the log-helper prelude for shell and PowerShell scripts.
+        ext = self._path.suffix
+        if script_logger is not None and (self._is_shell_script(text) or ext == ".ps1"):
             from .ishfiles.script_logger import inject_prelude
 
-            text = inject_prelude(text)
+            text = inject_prelude(text, ext)
 
         interpreter = self._detect_interpreter(text)
 

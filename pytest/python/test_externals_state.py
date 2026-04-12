@@ -94,11 +94,12 @@ class TestExternalsStateBasics(unittest.TestCase):
             assert state.get(".anything") is None
 
     def test_from_cfg(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = str(Path(raw_tmp).resolve())
             cfg = _make_cfg(tmp)
             state = ExternalsState.from_cfg(cfg)
             assert state.path.name == "externals-state.json"
-            assert ".config/ishfiles" in str(state.path)
+            assert ".config/ishfiles" in state.path.as_posix()
 
 
 class TestExternalsStateStale(unittest.TestCase):

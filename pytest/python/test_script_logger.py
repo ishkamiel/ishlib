@@ -186,6 +186,7 @@ class TestScriptLoggerMessages(unittest.TestCase):
             assert "[ERROR]" in content
 
 
+@unittest.skipIf(sys.platform == "win32", "bash not available on Windows")
 class TestScriptLoggerFifo(unittest.TestCase):
     """The FIFO-based message path works with a real bash subprocess."""
 
@@ -248,6 +249,69 @@ class TestScriptLoggerFifo(unittest.TestCase):
                     check=False,
                 )
                 time.sleep(0.15)
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "test error" in content
+
+
+@unittest.skipIf(sys.platform != "win32", "PowerShell sink tests are Windows-only")
+class TestScriptLoggerWindowsSink(unittest.TestCase):
+    """The polled-file sink works with a real PowerShell subprocess."""
+
+    def _run_ps_with_logger(self, cfg, ps_body):
+        import subprocess
+
+        with ScriptLogger(cfg) as slog:
+            env = {**os.environ, **slog.env()}
+            subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", ps_body],
+                env=env,
+                check=False,
+            )
+            time.sleep(0.2)
+            return slog
+
+    def test_sink_info_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._run_ps_with_logger(
+                cfg,
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "info`thello from pwsh"',
+            )
+            assert slog.counts["info"] == 1
+
+    def test_sink_warn_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._run_ps_with_logger(
+                cfg,
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warn`twatch out"',
+            )
+            assert slog.counts["warn"] == 1
+
+    def test_sink_fatal_sets_aborted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._run_ps_with_logger(
+                cfg,
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "fatal`tdead"',
+            )
+            assert slog.aborted
+
+    def test_sink_message_appears_in_log_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                import subprocess
+
+                env = {**os.environ, **slog.env()}
+                subprocess.run(
+                    ["pwsh", "-NoProfile", "-Command",
+                     'Add-Content -Path $env:ISHLIB_LOG_OUT -Value ("error`t" + "test error")'],
+                    env=env,
+                    check=False,
+                )
+                time.sleep(0.2)
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
             assert "test error" in content

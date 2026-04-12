@@ -47,7 +47,7 @@ def normalise_str(value: str) -> str:
     >>> normalise_str("MyStuff")
     'mystuff'
     >>> normalise_str("build tools!")
-    'build tools'
+    'buildtools'
     >>> normalise_str("hello-world_1+2")
     'hello-world_1+2'
     """

@@ -238,5 +238,5 @@ class DotfileIgnore:
         if "/" in pat:
             if rel_path is None:
                 return False
-            return fnmatch.fnmatch(str(rel_path), pat)
+            return fnmatch.fnmatch(rel_path.as_posix(), pat)
         return fnmatch.fnmatch(name, pat)
