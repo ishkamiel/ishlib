@@ -12,6 +12,7 @@ from .ish_config import IshConfig
 from .command_runner import CommandRunner
 from .installer_cargo import InstallerCargo
 from .installer_apt import InstallerApt
+from .installer_dnf import InstallerDnf
 from .installer_custom import InstallerCustom
 from .installer_pip import InstallerPip
 from .installer_brew import InstallerBrew
@@ -41,6 +42,7 @@ class Installer:
             runner if runner is not None else CommandRunner(cfg=self.cfg)
         )
         self.register_installer(InstallerApt(self.runner))
+        self.register_installer(InstallerDnf(self.runner))
         self.register_installer(InstallerCargo(self.runner))
         self.register_installer(InstallerPip(self.runner))
         self.register_installer(InstallerBrew(self.runner))

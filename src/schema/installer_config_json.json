@@ -19,7 +19,22 @@
         "custom": {
           "type": "string"
         },
-        "gnome": {
+        "dnf": {
+          "type": "string"
+        },
+        "ignore_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "only_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "optional": {
           "type": "boolean"
         },
         "pip": {
@@ -28,11 +43,14 @@
         "pref": {
           "type": "array"
         },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "type": {
           "type": "string"
-        },
-        "ubuntu": {
-          "type": "boolean"
         },
         "winget": {
           "type": "string"

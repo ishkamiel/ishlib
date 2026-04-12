@@ -85,7 +85,7 @@ class TestInstallerConfigFull(unittest.TestCase):
   },
   "python-is-python3": {
     "apt": "python-is-python3",
-    "ubuntu": true
+    "only_on": ["debian"]
   },
   "python3-toml": {
     "apt": "python3-toml",
@@ -173,7 +173,7 @@ cmd = "dust"
 
 [python-is-python3]
 apt = "python-is-python3"
-ubuntu = true
+only_on = ["debian"]
 
 [python3-toml]
 apt = "python3-toml"

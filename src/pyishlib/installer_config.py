@@ -8,9 +8,9 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Mapping, Iterable
+from typing import Any, Mapping, Iterable, Optional
 
-from .environment import is_windows, is_ubuntu, is_gnome
+from .environment import should_skip_for_os, is_linux_desktop, is_gnome
 from .schema_validation import validate_packages
 
 try:
@@ -20,16 +20,37 @@ try:
 except ImportError:
     HAS_JSONSCHEMA = False
 
-from ._compat import HAS_TOML, tomllib
+from ._compat import HAS_TOML, tomllib  # HAS_TOML re-exported for callers
 
 log = logging.getLogger(__name__)
+
+#: Known tags that map to runtime conditions rather than context variables.
+_RUNTIME_TAGS = frozenset({"gui", "gnome"})
+
+#: Tags that map to context variable names (value must be truthy).
+_CTX_TRUTHY_TAGS: dict = {
+    "build_tools": "needBuildTools",
+    "work": "isWork",
+    "gaming": "isGaming",
+}
+
+#: Tags that map to context variables that must NOT be truthy.
+_CTX_FALSY_TAGS: dict = {
+    "no_work": "isWork",
+}
 
 
 class InstallerConfig:
     """Class for handling installer configuration"""
 
-    def __init__(self, config: Mapping[str, Any], config_fn: Path) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, Any],
+        config_fn: Path,
+        cfg: Optional[Any] = None,
+    ) -> None:
         self._config_file: Path = config_fn
+        self._cfg = cfg  # IshConfig instance for tag/context filtering
 
         err = validate_packages(dict(config), source=str(config_fn))
         if err is not None:
@@ -45,31 +66,74 @@ class InstallerConfig:
         """Get the configuration file name"""
         return self._config_file
 
-    @property
-    def on_windows(self):
-        """True if running on Windows"""
-        return is_windows()
+    def _ctx_get(self, key: str, default: str = "") -> str:
+        """Get a value from the IshConfig context, or return *default*."""
+        if self._cfg is not None and hasattr(self._cfg, "context"):
+            return self._cfg.context.get(key, default)
+        return default
 
-    @property
-    def on_gnome(self):
-        """True if running Gnome"""
-        return is_gnome()
+    def _ctx_truthy(self, key: str) -> bool:
+        """Return True if the context variable *key* normalises to true."""
+        from .userio import normalise_bool
 
-    @property
-    def on_ubuntu(self):
-        """True if on Ubuntu"""
-        return is_ubuntu()
+        val = self._ctx_get(key)
+        return normalise_bool(val) == "true"
+
+    def _passes_tag_filter(self, pkg: dict) -> bool:
+        """Return True if *pkg* should be included given its tags.
+
+        Tags control which packages are selected based on user configuration
+        and runtime environment:
+
+        - ``min``         — always included
+        - ``build_tools`` — only when ``needBuildTools`` is truthy in context
+        - ``work``        — only when ``isWork`` is truthy
+        - ``no_work``     — only when ``isWork`` is NOT truthy
+        - ``gaming``      — only when ``isGaming`` is truthy
+        - ``personal``    — only when ``machineType == "personal"``
+        - ``gui``         — only when a Linux desktop session is detected
+        - ``gnome``       — only when GNOME desktop is detected
+        - *(no tags)*     — included unless ``machineType == "min"``
+        """
+        tags = pkg.get("tags", [])
+        if not tags:
+            # No tags: default packages, excluded on minimal installs
+            return self._ctx_get("machineType") != "min"
+
+        if "min" in tags:
+            return True
+
+        for tag in tags:
+            if tag in _CTX_TRUTHY_TAGS:
+                if not self._ctx_truthy(_CTX_TRUTHY_TAGS[tag]):
+                    return False
+            elif tag in _CTX_FALSY_TAGS:
+                if self._ctx_truthy(_CTX_FALSY_TAGS[tag]):
+                    return False
+            elif tag == "personal":
+                if self._ctx_get("machineType") != "personal":
+                    return False
+            elif tag == "gui":
+                if not is_linux_desktop():
+                    return False
+            elif tag == "gnome":
+                if not is_gnome():
+                    return False
+            else:
+                log.warning("Unknown package tag %r on %s", tag, pkg.get("name"))
+
+        return True
 
     def get_pkgs(self) -> Iterable[dict]:
-        """Get the packages from the configuration"""
-        all_pkgs = []
+        """Get the packages from the configuration, applying OS and tag filters."""
+        result = []
         for p in self._config.values():
-            if "ubuntu" in p and p["ubuntu"] and not self.on_ubuntu:
+            if should_skip_for_os(p.get("only_on"), p.get("ignore_on")):
                 continue
-            if "gnome" in p and p["gnome"] and not self.on_gnome:
+            if not self._passes_tag_filter(p):
                 continue
-            all_pkgs.append(p)
-        return all_pkgs
+            result.append(p)
+        return result
 
     def get_pkg(self, name: str) -> dict:
         """Get a package by name"""
@@ -85,7 +149,7 @@ class InstallerConfigJSON(InstallerConfig):
         Path(__file__).parent.parent / "schema" / "installer_config_json.json"
     )
 
-    def __init__(self, config_fn: Path, **kwargs) -> None:
+    def __init__(self, config_fn: Path, cfg: Optional[Any] = None, **kwargs) -> None:
         # Load JSON config
         try:
             with open(config_fn, "r", encoding="utf-8") as config_fh:
@@ -111,13 +175,13 @@ class InstallerConfigJSON(InstallerConfig):
                 config_fn,
             )
 
-        super().__init__(config=config, config_fn=config_fn, **kwargs)
+        super().__init__(config=config, config_fn=config_fn, cfg=cfg, **kwargs)
 
 
 class InstallerConfigTOML(InstallerConfig):
     """Class for handling installer configuration from a TOML file"""
 
-    def __init__(self, config_fn: Path, **kwargs) -> None:
+    def __init__(self, config_fn: Path, cfg: Optional[Any] = None, **kwargs) -> None:
         if not HAS_TOML:
             raise ImportError(
                 "TOML support requires Python 3.11+ (tomllib) "
@@ -131,4 +195,4 @@ class InstallerConfigTOML(InstallerConfig):
         except tomllib.TOMLDecodeError as e:
             raise ValueError(f"Config file is not valid TOML: {e}") from e
 
-        super().__init__(config=config, config_fn=config_fn, **kwargs)
+        super().__init__(config=config, config_fn=config_fn, cfg=cfg, **kwargs)

@@ -345,7 +345,7 @@ class TestInstallerRegistration:
 
     def test_registered_backends_count(self):
         installer = make_installer(which_returns={})
-        assert len(installer._backends) == 6
+        assert len(installer._backends) == 7  # apt, dnf, cargo, pip, brew, winget, custom
 
     def test_get_backend_returns_instance(self):
         installer = make_installer(which_returns={})
@@ -390,7 +390,7 @@ class TestInstallerRegistration:
 
         installer.register_installer(ExtraInstaller())
         assert "extra" in installer._backends
-        assert len(installer._backends) == 7
+        assert len(installer._backends) == 8  # 7 built-in + 1 extra
 
     def test_register_override_existing(self):
         installer = make_installer(which_returns={})
@@ -528,15 +528,6 @@ class TestCommandRunnerWindowsSupport:
 
 
 class TestInstallerConfigIntegration:
-    @patch("pyishlib.installer_config.is_ubuntu", return_value=True)
-    def test_installer_config_on_ubuntu_check(self, _mock):
-        """Test that on_ubuntu in InstallerConfig delegates to environment."""
-        from pyishlib.installer_config import InstallerConfig
-
-        config = {"pkg1": {"apt": "pkg1"}}
-        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
-        assert ic.on_ubuntu is True
-
     def test_installer_config_get_pkg(self):
         from pyishlib.installer_config import InstallerConfig
 
@@ -554,44 +545,45 @@ class TestInstallerConfigIntegration:
         with pytest.raises(ValueError):
             ic.get_pkg("nonexistent")
 
-    @patch("pyishlib.installer_config.is_ubuntu", return_value=False)
-    def test_installer_config_get_pkgs_filters_ubuntu(self, _mock):
+    @patch("pyishlib.installer_config.should_skip_for_os", return_value=False)
+    def test_installer_config_get_pkgs_no_filter(self, _mock):
+        """get_pkgs() includes packages when OS filter passes."""
         from pyishlib.installer_config import InstallerConfig
 
         config = {
             "pkg1": {"apt": "pkg1"},
-            "pkg2": {"apt": "pkg2", "ubuntu": True},
+            "pkg2": {"apt": "pkg2"},
+        }
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
+        pkgs = ic.get_pkgs()
+        assert len(pkgs) == 2
+
+    @patch("pyishlib.installer_config.should_skip_for_os")
+    def test_installer_config_get_pkgs_filters_only_on(self, mock_skip):
+        """get_pkgs() excludes packages when should_skip_for_os returns True."""
+        from pyishlib.installer_config import InstallerConfig
+
+        def skip_debian(only_on=None, ignore_on=None):
+            return only_on == ["debian"]
+
+        mock_skip.side_effect = skip_debian
+        config = {
+            "pkg1": {"apt": "pkg1"},
+            "pkg2": {"apt": "pkg2", "only_on": ["debian"]},
         }
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1
         assert pkgs[0]["name"] == "pkg1"
 
-    @patch("pyishlib.installer_config.is_windows", return_value=True)
-    def test_installer_config_on_windows(self, _mock):
-        """Test that on_windows delegates to environment."""
-        from pyishlib.installer_config import InstallerConfig
-
-        config = {"pkg1": {"apt": "pkg1"}}
-        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
-        assert ic.on_windows is True
-
-    @patch("pyishlib.installer_config.is_windows", return_value=False)
-    def test_installer_config_not_on_windows(self, _mock):
-        """Test that on_windows is False on Linux."""
-        from pyishlib.installer_config import InstallerConfig
-
-        config = {"pkg1": {"apt": "pkg1"}}
-        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
-        assert ic.on_windows is False
-
     @patch("pyishlib.installer_config.is_gnome", return_value=False)
-    def test_installer_config_get_pkgs_filters_gnome(self, _mock):
+    def test_installer_config_get_pkgs_filters_gnome_tag(self, _mock):
+        """get_pkgs() excludes gnome-tagged packages when not on GNOME."""
         from pyishlib.installer_config import InstallerConfig
 
         config = {
             "pkg1": {"apt": "pkg1"},
-            "pkg2": {"apt": "pkg2", "gnome": True},
+            "pkg2": {"apt": "pkg2", "tags": ["gnome"]},
         }
         ic = InstallerConfig(config, config_fn=Path("/fake/path"))
         pkgs = ic.get_pkgs()
