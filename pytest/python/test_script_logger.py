@@ -85,8 +85,8 @@ class TestScriptLoggerLifecycle(unittest.TestCase):
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
                 env = slog.env()
-                assert "ISHFILES_LOG_FIFO" in env
-                fifo_path = Path(env["ISHFILES_LOG_FIFO"])
+                assert "ISHLIB_LOG_OUT" in env
+                fifo_path = Path(env["ISHLIB_LOG_OUT"])
                 assert fifo_path.exists()
 
     def test_bash_prelude_static(self):
@@ -190,14 +190,13 @@ class TestScriptLoggerFifo(unittest.TestCase):
     """The FIFO-based message path works with a real bash subprocess."""
 
     def _run_bash_with_logger(self, cfg, script_body):
-        """Run a small bash snippet that writes to ISHFILES_LOG_FIFO."""
+        """Run a small bash snippet that writes to ISHLIB_LOG_OUT."""
         import subprocess
 
         with ScriptLogger(cfg) as slog:
             env = {**os.environ, **slog.env()}
-            bash_script = f"exec {{fd}}>\"$ISHFILES_LOG_FIFO\"\n{script_body}"
             subprocess.run(
-                ["bash", "-c", bash_script],
+                ["bash", "-c", script_body],
                 env=env,
                 check=False,
             )
@@ -210,7 +209,7 @@ class TestScriptLoggerFifo(unittest.TestCase):
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "info\\thello from bash\\n" >> "$ISHFILES_LOG_FIFO"',
+                'printf "info\\thello from bash\\n" >> "$ISHLIB_LOG_OUT"',
             )
             assert slog.counts["info"] == 1
 
@@ -219,7 +218,7 @@ class TestScriptLoggerFifo(unittest.TestCase):
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "warn\\twatch out\\n" >> "$ISHFILES_LOG_FIFO"',
+                'printf "warn\\twatch out\\n" >> "$ISHLIB_LOG_OUT"',
             )
             assert slog.counts["warn"] == 1
 
@@ -228,7 +227,7 @@ class TestScriptLoggerFifo(unittest.TestCase):
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "fatal\\tdead\\n" >> "$ISHFILES_LOG_FIFO"',
+                'printf "fatal\\tdead\\n" >> "$ISHLIB_LOG_OUT"',
             )
             assert slog.aborted
 
@@ -243,7 +242,7 @@ class TestScriptLoggerFifo(unittest.TestCase):
                     [
                         "bash",
                         "-c",
-                        'printf "error\\ttest error\\n" >> "$ISHFILES_LOG_FIFO"',
+                        'printf "error\\ttest error\\n" >> "$ISHLIB_LOG_OUT"',
                     ],
                     env=env,
                     check=False,

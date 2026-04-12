@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-11.0829"
+export ish_VERSION_NUMBER="2026-04-12.1322"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -383,6 +383,24 @@ ish_say() {
 }
 
 : <<'DOCSTRING'
+`ish_info ...`
+
+Print an info message.
+
+When `ISHLIB_LOG_OUT` is set, writes `info<TAB><message>` to that path
+(e.g. a named FIFO) instead of stderr.  This allows structured log
+capture without any changes to the calling script.
+DOCSTRING
+ish_info() {
+  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
+    printf 'info\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+  else
+    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
+  fi
+  return 0
+}
+
+: <<'DOCSTRING'
 `ish_prompt ...`
 
 Print a message and read input from stdin.
@@ -398,9 +416,14 @@ ish_prompt() {
 `ish_warn ...`
 
 Print a warning message.
+
+When `ISHLIB_LOG_OUT` is set, writes `warn<TAB><message>` to that path
+instead of stderr.
 DOCSTRING
 ish_warn() {
-  if [ -z "${BASH_VERSION:-}" ]; then
+  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
+    printf 'warn\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+  elif [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
   else
     #shellcheck disable=SC3044
@@ -409,7 +432,6 @@ ish_warn() {
       "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
       "${ish_ColorNC}"
   fi
-
   return 0
 }
 
@@ -420,6 +442,52 @@ Prints the args and then calls `exit 1`
 DOCSTRING
 ish_fail() {
   if [ -z "${BASH_VERSION:-}" ]; then
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  else
+    #shellcheck disable=SC3044
+    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
+      "$*" \
+      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
+      "${ish_ColorNC}"
+  fi
+  exit 1
+}
+
+: <<'DOCSTRING'
+`ish_error ...`
+
+Print a non-fatal error message.
+
+When `ISHLIB_LOG_OUT` is set, writes `error<TAB><message>` to that path
+instead of stderr.
+DOCSTRING
+ish_error() {
+  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
+    printf 'error\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+  elif [ -z "${BASH_VERSION:-}" ]; then
+    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+  else
+    #shellcheck disable=SC3044
+    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
+      "$*" \
+      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
+      "${ish_ColorNC}"
+  fi
+  return 0
+}
+
+: <<'DOCSTRING'
+`ish_fatal ...`
+
+Print a fatal error message and exit 1.
+
+When `ISHLIB_LOG_OUT` is set, writes `fatal<TAB><message>` to that path
+instead of stderr, then exits.
+DOCSTRING
+ish_fatal() {
+  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
+    printf 'fatal\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+  elif [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
   else
     #shellcheck disable=SC3044
