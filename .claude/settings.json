@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mpyp *)",
+      "Bash(pre-commit run *)",
+      "Bash(python -m mpyp *)",
+      "Read"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+# Data validation
+cerberus
+jsonschema
+
+# Testing
+pytest
+pytest-xdist
+mypy
+
+# Documentation
+griffe
+mkdocs
+mkdocs-material
