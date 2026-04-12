@@ -182,8 +182,15 @@ def render_index(modules):
     return "\n".join(out).rstrip() + "\n"
 
 
-def main():
-    """Generate the Python API reference markdown."""
+def main(out_dir=None):
+    """Generate the Python API reference markdown.
+
+    Args:
+        out_dir: Override output directory. Defaults to ``docs/pyishlib/``
+                 relative to the repository root.
+    """
+    output_dir = out_dir or OUTPUT_DIR
+
     pkg = griffe.load("pyishlib", search_paths=[SRC_DIR])
 
     modules = sorted(
@@ -191,32 +198,46 @@ def main():
         key=lambda m: m.name,
     )
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Remove stale module files
     current_names = {m.name for m in modules}
-    for existing in os.listdir(OUTPUT_DIR):
+    for existing in os.listdir(output_dir):
         if existing == "index.md":
             continue
         if not existing.endswith(".md"):
             continue
         stem = existing[: -len(".md")]
         if stem not in current_names:
-            os.remove(os.path.join(OUTPUT_DIR, existing))
+            os.remove(os.path.join(output_dir, existing))
 
     # Write index
-    index_path = os.path.join(OUTPUT_DIR, "index.md")
+    index_path = os.path.join(output_dir, "index.md")
     with open(index_path, "w", encoding="utf-8") as fh:
         fh.write(render_index(modules))
 
     # Write per-module pages
     for mod in modules:
-        mod_path = os.path.join(OUTPUT_DIR, f"{mod.name}.md")
+        mod_path = os.path.join(output_dir, f"{mod.name}.md")
         with open(mod_path, "w", encoding="utf-8") as fh:
             fh.write(render_module_page(mod))
 
-    print(f"Generated {len(modules)} module pages + index in {OUTPUT_DIR}/")
+    print(f"Generated {len(modules)} module pages + index in {output_dir}/")
+
+
+def cli_main():
+    """CLI entry point: parse arguments and call :func:`main`."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate pyishlib API docs")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=f"Output directory (default: {OUTPUT_DIR})",
+    )
+    args = parser.parse_args()
+    main(out_dir=args.out_dir)
 
 
 if __name__ == "__main__":
-    main()
+    cli_main()
