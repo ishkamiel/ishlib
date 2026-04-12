@@ -66,6 +66,8 @@ def _make_args(**overrides):
         "ro_cwd": False,
         "no_host_ishfiles": False,
         "no_project_overlay": False,
+        "verbose": 0,
+        "quiet": False,
         "command": [],
     }
     defaults.update(overrides)
@@ -330,6 +332,23 @@ class TestLaunchAndExec:
         cwd_idx = exec_cmd.index("--cwd") + 1
         assert exec_cmd[cwd_idx] == f"/home/{_FAKE_USER}"
 
+    def test_progress_messages_on_stderr_by_default(self, capsys):
+        args = _make_args()
+        self._run_with_mocks(args)
+        err = capsys.readouterr().err
+        # Must announce each long-running stage so first-run does not
+        # appear to hang.
+        assert "isholate:" in err
+        assert "creating container" in err
+        assert "starting container" in err
+        assert "creating user" in err
+
+    def test_quiet_suppresses_progress_messages(self, capsys):
+        args = _make_args(quiet=True)
+        self._run_with_mocks(args)
+        err = capsys.readouterr().err
+        assert "isholate:" not in err
+
 
 # ---------------------------------------------------------------------------
 # launch_and_exec -- provisioning
@@ -473,6 +492,44 @@ class TestProvisioning:
         assert "python3" in script
         assert "sudo" in script
 
+    def test_verbose_drops_apt_qq_and_adds_ishfiles_verbose(self):
+        args = _make_args(verbose=1)
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        sh_cmds = [c for c in cmds if "/bin/sh" in c]
+        script = sh_cmds[0][-1]
+        # -qq should not appear when verbose
+        assert "-qq" not in script
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert any("-v" in c for c in apply_cmds)
+
+    def test_vv_passes_debug_to_ishfiles(self):
+        args = _make_args(verbose=2)
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert any("--debug" in c for c in apply_cmds)
+
+    def test_default_keeps_apt_qq_and_no_ishfiles_verbose(self):
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        sh_cmds = [c for c in cmds if "/bin/sh" in c]
+        script = sh_cmds[0][-1]
+        assert "-qq" in script
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        for cmd in apply_cmds:
+            assert "-v" not in cmd
+            assert "--debug" not in cmd
+
 
 # ---------------------------------------------------------------------------
 # CLI parser
@@ -492,6 +549,8 @@ class TestParser:
         assert args.ro_cwd is False
         assert args.no_host_ishfiles is False
         assert args.no_project_overlay is False
+        assert args.verbose == 0
+        assert args.quiet is False
         assert args.command == []
 
     def test_rw_cwd_and_ro_cwd_are_mutually_exclusive(self):
@@ -535,6 +594,20 @@ class TestParser:
         parser = build_parser()
         args = parser.parse_args(["--purge"])
         assert args.purge is True
+
+    def test_verbose_flag_counts(self):
+        parser = build_parser()
+        assert parser.parse_args([]).verbose == 0
+        assert parser.parse_args(["-v"]).verbose == 1
+        assert parser.parse_args(["-vv"]).verbose == 2
+        assert parser.parse_args(["--verbose"]).verbose == 1
+
+    def test_quiet_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["-q"])
+        assert args.quiet is True
+        args = parser.parse_args(["--quiet"])
+        assert args.quiet is True
 
     def test_main_rejects_non_linux(self):
         with patch("sys.platform", "darwin"):

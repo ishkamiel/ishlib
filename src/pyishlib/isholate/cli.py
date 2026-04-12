@@ -104,6 +104,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help=(
+            "Show output from apt and ishfiles during provisioning. "
+            "Repeat (-vv) to enable ishfiles --debug."
+        ),
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Suppress isholate's own progress messages",
+    )
+
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help="Command to run inside the container (default: interactive shell)",
@@ -143,7 +161,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.purge:
         username, _, _ = get_host_user_info()
-        return purge_containers(username)
+        return purge_containers(username, quiet=args.quiet)
 
     # Resolve provisioning sources (skip if the respective --no-* flag is set).
     host_source: Optional[Path] = None
