@@ -83,11 +83,14 @@ class TestValidatePackages:
                 "cargo": "my-pkg",
                 "cmd": "install my-pkg",
                 "custom": "myscript",
-                "gnome": True,
+                "dnf": "my-pkg",
+                "ignore_on": ["windows"],
+                "only_on": ["linux"],
+                "optional": True,
                 "pip": "my-pkg",
                 "pref": ["apt", "brew"],
+                "tags": ["build_tools"],
                 "type": "system",
-                "ubuntu": True,
                 "winget": "Publisher.MyPkg",
             }
         }
@@ -99,8 +102,8 @@ class TestValidatePackages:
         assert err is not None
         assert "validation failed" in err.lower() or "Package" in err
 
-    def test_invalid_wrong_type_for_gnome(self):
-        packages = {"vim": {"gnome": "yes"}}
+    def test_invalid_wrong_type_for_optional(self):
+        packages = {"vim": {"apt": "vim", "optional": "yes"}}
         err = validate_packages(packages)
         assert err is not None
 

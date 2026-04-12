@@ -86,12 +86,14 @@ class TestNormaliseOs:
         assert normalise_os("linux") == "linux"
         assert normalise_os("macos") == "macos"
         assert normalise_os("windows") == "windows"
+        assert normalise_os("unixlike") == "unixlike"
 
     def test_aliases(self):
         assert normalise_os("mac") == "macos"
         assert normalise_os("darwin") == "macos"
         assert normalise_os("win") == "windows"
         assert normalise_os("win32") == "windows"
+        assert normalise_os("unix") == "unixlike"
 
     def test_distro_names(self):
         assert normalise_os("debian") == "debian"
@@ -335,17 +337,22 @@ class TestDetectOsTags:
     def test_linux_with_distro(self):
         with patch("pyishlib.environment.detect_os", return_value="linux"), \
                 patch("pyishlib.environment.detect_distro", return_value="debian"):
-            assert detect_os_tags() == ["linux", "debian"]
+            assert detect_os_tags() == ["linux", "unixlike", "debian"]
 
     def test_linux_unknown_distro(self):
         with patch("pyishlib.environment.detect_os", return_value="linux"), \
                 patch("pyishlib.environment.detect_distro", return_value=None):
-            assert detect_os_tags() == ["linux"]
+            assert detect_os_tags() == ["linux", "unixlike"]
 
     def test_macos(self):
         with patch("pyishlib.environment.detect_os", return_value="macos"), \
                 patch("pyishlib.environment.detect_distro", return_value=None):
-            assert detect_os_tags() == ["macos"]
+            assert detect_os_tags() == ["macos", "unixlike"]
+
+    def test_windows(self):
+        with patch("pyishlib.environment.detect_os", return_value="windows"), \
+                patch("pyishlib.environment.detect_distro", return_value=None):
+            assert detect_os_tags() == ["windows"]
 
 
 # ---------------------------------------------------------------------------
@@ -416,12 +423,27 @@ class TestShouldSkipForOs:
     def test_only_on_no_match(self):
         assert should_skip_for_os(only_on=["linux"], current_os="macos") is True
 
-    def test_only_on_multiple(self):
+    def test_only_on_multiple_and_semantics(self):
+        """only_on uses AND: ALL tags must match."""
+        # "unixlike,linux" system matches only_on=["unixlike"] (one tag, trivially AND)
         assert (
-            should_skip_for_os(only_on=["linux", "macos"], current_os="macos") is False
+            should_skip_for_os(only_on=["unixlike"], current_os="linux,unixlike") is False
         )
+        # "macos,unixlike" matches only_on=["unixlike"] too
         assert (
-            should_skip_for_os(only_on=["linux", "macos"], current_os="windows") is True
+            should_skip_for_os(only_on=["unixlike"], current_os="macos,unixlike") is False
+        )
+        # "windows" does NOT have "unixlike" → skipped
+        assert (
+            should_skip_for_os(only_on=["unixlike"], current_os="windows") is True
+        )
+        # AND: only_on=["unixlike","linux"] requires both tags
+        assert (
+            should_skip_for_os(only_on=["unixlike", "linux"], current_os="linux,unixlike,debian") is False
+        )
+        # macOS has unixlike but not linux → skipped
+        assert (
+            should_skip_for_os(only_on=["unixlike", "linux"], current_os="macos,unixlike") is True
         )
 
     def test_ignore_on_match(self):
@@ -437,15 +459,24 @@ class TestShouldSkipForOs:
         )
 
     def test_both_rules(self):
-        # only_on=["linux", "macos"], ignore_on=["macos"]
-        # On macos: only_on passes (macos in list), but ignore_on skips
+        # only_on=["unixlike"], ignore_on=["macos"]
+        # On macos: only_on passes (unixlike present), but ignore_on skips
         assert (
             should_skip_for_os(
-                only_on=["linux", "macos"],
+                only_on=["unixlike"],
                 ignore_on=["macos"],
-                current_os="macos",
+                current_os="macos,unixlike",
             )
             is True
+        )
+        # On linux: only_on passes, ignore_on does not trigger
+        assert (
+            should_skip_for_os(
+                only_on=["unixlike"],
+                ignore_on=["macos"],
+                current_os="linux,unixlike,debian",
+            )
+            is False
         )
 
     def test_distro_only_on_debian_on_ubuntu(self):

@@ -216,7 +216,7 @@ class TestInstallerCustomRegistration:
         runner = CommandRunner(cfg=cfg)
         runner.which = lambda cmd: None
         installer = Installer(cfg=cfg, runner=runner)
-        assert len(installer._backends) == 6
+        assert len(installer._backends) == 7  # apt, dnf, cargo, pip, brew, winget, custom
 
     def test_get_installer_with_custom(self):
         with tempfile.TemporaryDirectory() as tmpdir:

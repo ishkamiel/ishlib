@@ -5,10 +5,15 @@
 # Distributed under terms of the MIT license.
 """Shared installer logic for ishfiles commands.
 
-Loads a package configuration file from the config directory
-inside the ishfiles source folder and provides helpers to install
-the declared packages via the :class:`~pyishlib.installer.Installer`
-framework.
+Loads package configuration files from the config directory inside the
+ishfiles source folder and provides helpers to install the declared packages
+via the :class:`~pyishlib.installer.Installer` framework.
+
+Package config files are discovered in ``<source>/ishconfig/``:
+
+- ``packages.toml`` / ``packages.json`` — main config (no implicit OS filter)
+- ``packages.<tag>.toml`` — tagged config; every package in the file gets
+  ``<tag>`` prepended to its ``only_on`` list (AND semantics)
 """
 
 from __future__ import annotations
@@ -16,9 +21,10 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..command_runner import CommandRunner
+from ..environment import normalise_os
 from ..installer import Installer
 from ..installer_config import InstallerConfigJSON, InstallerConfigTOML
 from ..ish_config import IshConfig
@@ -32,30 +38,103 @@ _SUFFIX_LOADERS = {
 }
 
 
-def find_package_config(cfg: IshConfig, source_dir: Path) -> Optional[Path]:
-    """Return the first existing package config file, or *None*.
+def find_package_configs(
+    cfg: IshConfig, source_dir: Path
+) -> List[Tuple[Path, Optional[str]]]:
+    """Return all package config files with their implicit ``only_on`` tag.
 
-    Searches ``<source_dir>/<config_dir>/`` for each filename listed in
-    the ``package_files`` config option.
+    Searches ``<source_dir>/<config_dir>/`` for:
+
+    1. The main config file (``packages.toml`` or ``packages.json``) —
+       returned with tag ``None`` (no implicit OS filter).
+    2. Tagged configs ``packages.<tag>.toml`` — returned with *tag* as the
+       implicit ``only_on`` value prepended to every package's filter.
+
+    Returns:
+        List of ``(path, implicit_tag)`` tuples in discovery order.
     """
     config_dir_name = cfg.get_opt("config_dir")
     package_files = cfg.get_opt("package_files")
     config_dir = Path(source_dir) / config_dir_name
+    results: List[Tuple[Path, Optional[str]]] = []
+
+    # Main config file (first match wins)
     for filename in package_files:
         candidate = config_dir / filename
         if candidate.is_file():
-            log.debug("Found package config: %s", candidate)
-            return candidate
+            log.debug("Found main package config: %s", candidate)
+            results.append((candidate, None))
+            break
+
+    # Tagged configs: packages.<tag>.toml
+    if config_dir.is_dir():
+        for path in sorted(config_dir.glob("packages.*.toml")):
+            # Extract tag from stem "packages.<tag>"
+            tag = path.stem[len("packages.") :]
+            if not tag:
+                continue
+            # Validate that the tag is a recognised OS/platform name
+            try:
+                normalise_os(tag)
+            except ValueError:
+                log.warning(
+                    "Skipping %s: %r is not a recognised OS tag", path.name, tag
+                )
+                continue
+            log.debug("Found tagged package config: %s (implicit tag: %s)", path, tag)
+            results.append((path, tag))
+
+    return results
+
+
+# Keep old name as alias for callers that pass a single path directly
+def find_package_config(cfg: IshConfig, source_dir: Path) -> Optional[Path]:
+    """Return the first existing main package config file, or *None*.
+
+    Deprecated: use :func:`find_package_configs` instead.
+    """
+    configs = find_package_configs(cfg, source_dir)
+    if configs:
+        path, tag = configs[0]
+        if tag is None:
+            return path
     return None
 
 
-def load_packages(config_file: Path) -> Iterable[dict]:
-    """Load and return the platform-filtered package list from *config_file*."""
+def _apply_implicit_tag(pkgs: List[Dict[str, Any]], tag: str) -> List[Dict[str, Any]]:
+    """Prepend *tag* to the ``only_on`` list of every package in *pkgs*."""
+    result = []
+    for pkg in pkgs:
+        p = dict(pkg)
+        existing = list(p.get("only_on") or [])
+        if tag not in existing:
+            p["only_on"] = [tag] + existing
+        result.append(p)
+    return result
+
+
+def load_packages(
+    config_file: Path,
+    cfg: Optional[IshConfig] = None,
+    implicit_tag: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Load and return the filtered package list from *config_file*.
+
+    Args:
+        config_file:   Path to a ``packages.toml`` or ``packages.json`` file.
+        cfg:           IshConfig for tag/context filtering (optional).
+        implicit_tag:  If set, prepend this tag to every package's
+                       ``only_on`` list before filtering.
+    """
     suffix = config_file.suffix.lower()
     loader = _SUFFIX_LOADERS.get(suffix)
     if loader is None:
         raise ValueError(f"Unsupported package config format: {config_file}")
-    return loader(config_file).get_pkgs()
+    installer_cfg = loader(config_file, cfg=cfg)
+    pkgs = list(installer_cfg.get_pkgs())
+    if implicit_tag:
+        pkgs = _apply_implicit_tag(pkgs, implicit_tag)
+    return pkgs
 
 
 def merge_package_lists(
@@ -96,6 +175,10 @@ def run_install(
 ) -> int:
     """Install packages defined in the ishfiles package config.
 
+    Discovers all package config files (main + tagged), loads and merges
+    them, then installs missing packages.  Required packages raise on
+    failure; optional packages log a warning and continue.
+
     Args:
         cfg:            Resolved ishfiles configuration.
         packages:       Optional list of package names to install (default: all).
@@ -103,19 +186,20 @@ def run_install(
                         to merge with the main config packages.
 
     Returns:
-        0 on success or when no config file is found and no extra
-        packages are provided, 1 on errors.
+        0 on success or when no packages are found, 1 on errors.
     """
     source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
-    config_file = find_package_config(cfg, source_dir)
+    configs = find_package_configs(cfg, source_dir)
 
-    if config_file is not None:
-        log.info("Loading packages from %s", config_file)
-        all_pkgs = list(load_packages(config_file))
-    else:
+    all_pkgs: List[Dict[str, Any]] = []
+    for config_file, implicit_tag in configs:
+        log.info("Loading packages from %s (tag=%s)", config_file, implicit_tag)
+        pkgs = list(load_packages(config_file, cfg=cfg, implicit_tag=implicit_tag))
+        all_pkgs = merge_package_lists(all_pkgs, pkgs)
+
+    if not all_pkgs:
         config_dir_name = cfg.get_opt("config_dir")
         log.info("No package config found in %s/%s/", source_dir, config_dir_name)
-        all_pkgs = []
 
     # Merge in extra packages from file metadata
     if extra_packages:
@@ -147,10 +231,24 @@ def run_install(
         names = [p["name"] for p in missing]
         print(f"Packages to install ({len(missing)}): {', '.join(names)}")
 
-    if not cfg.dry_run:
+    if cfg.dry_run:
+        return 0
+
+    # Split into required and optional; install required first
+    required = [p for p in missing if not p.get("optional")]
+    optional = [p for p in missing if p.get("optional")]
+
+    if required:
         try:
-            installer.install_pkgs(missing)
+            installer.install_pkgs(required)
         except (subprocess.CalledProcessError, OSError) as exc:
             log.error("Package installation failed: %s", exc)
             return 1
+
+    for pkg in optional:
+        try:
+            installer.install_pkgs([pkg])
+        except (subprocess.CalledProcessError, OSError) as exc:
+            log.warning("Optional package %s failed to install: %s", pkg["name"], exc)
+
     return 0

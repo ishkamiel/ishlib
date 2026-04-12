@@ -34,9 +34,10 @@ log = logging.getLogger(__name__)
 
 #: Recognised OS and distro identifiers for ``only_on`` / ``ignore_on``.
 #: Platform level: ``linux``, ``macos``, ``windows``.
+#: Meta-tag: ``unixlike`` (linux and macos; anything but windows).
 #: Distro families: ``debian`` (Ubuntu, Debian, …), ``fedora`` (Fedora,
 #: Asahi Remix, …).
-RECOGNISED_OS = ("linux", "macos", "windows", "debian", "fedora")
+RECOGNISED_OS = ("linux", "macos", "windows", "unixlike", "debian", "fedora")
 
 # Distro family detection rules.  Each entry maps a canonical family name
 # to a set of patterns matched against os-release ``ID`` and ``ID_LIKE``
@@ -164,7 +165,10 @@ def detect_os_tags() -> list:
     ``only_on = ["debian"]`` match on Ubuntu, and ``only_on = ["linux"]``
     still matches on any Linux distro.
     """
-    tags = [detect_os()]
+    os_tag = detect_os()
+    tags = [os_tag]
+    if os_tag in ("linux", "macos"):
+        tags.append("unixlike")
     distro = detect_distro()
     if distro is not None:
         tags.append(distro)
@@ -188,6 +192,8 @@ def normalise_os(name: str) -> str:
         "windows": "windows",
         "win": "windows",
         "win32": "windows",
+        "unixlike": "unixlike",
+        "unix": "unixlike",
         "debian": "debian",
         "ubuntu": "debian",
         "fedora": "fedora",
@@ -235,7 +241,9 @@ def should_skip_for_os(
         except ValueError as exc:
             log.warning("Bad only_on value, skipping OS filter: %s", exc)
             return False
-        if not any(tag in normalised for tag in current_tags):
+        # ALL listed tags must be present in the system's tags (AND semantics).
+        # Use only_on = ["unixlike"] instead of ["linux", "macos"] for OR-style needs.
+        if not all(tag in current_tags for tag in normalised):
             return True
 
     if ignore_on is not None:
