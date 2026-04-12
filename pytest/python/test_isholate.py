@@ -37,6 +37,7 @@ from pyishlib.isholate.container import (
     generate_name,
     get_host_user_info,
     launch_and_exec,
+    purge_containers,
 )
 
 # ---------------------------------------------------------------------------
@@ -101,6 +102,57 @@ class TestGenerateName:
         name = generate_name("alice")
         # Container names must use only lowercase letters, digits, and hyphens
         assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in name)
+
+
+# ---------------------------------------------------------------------------
+# purge_containers
+# ---------------------------------------------------------------------------
+
+
+class TestPurgeContainers:
+    def test_prefix_matches_sanitised_username(self):
+        """purge must sanitise the username the same way generate_name does
+        so that users like 'john_doe' (name -> 'isholate-john-doe-xxxxxx')
+        still match the purge prefix."""
+        username = "john_doe"
+        # Containers a real run would have created for this user:
+        existing = [
+            {"name": generate_name(username)},
+            {"name": generate_name(username)},
+            {"name": "isholate-other-abc123"},  # different user, not purged
+        ]
+        run_calls = []
+
+        def fake_run(cmd, **kwargs):
+            run_calls.append(cmd)
+            return SimpleNamespace(returncode=0)
+
+        def fake_subprocess_run(cmd, **kwargs):
+            # The initial `incus list --format=json` lookup
+            import json
+
+            return SimpleNamespace(
+                returncode=0, stdout=json.dumps(existing), stderr=""
+            )
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ):
+            with patch(
+                "pyishlib.isholate.container.subprocess.run",
+                side_effect=fake_subprocess_run,
+            ):
+                rc = purge_containers(username, quiet=True)
+
+        assert rc == 0
+        deleted = [c for c in run_calls if c[:2] == ["incus", "delete"]]
+        deleted_names = [c[2] for c in deleted]
+        # Both of the user's containers must be deleted; the other user's
+        # container must not be touched.
+        assert len(deleted) == 2
+        for name in deleted_names:
+            assert name.startswith("isholate-john-doe-")
+            assert "isholate-other-" not in name
 
 
 # ---------------------------------------------------------------------------

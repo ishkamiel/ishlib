@@ -78,7 +78,10 @@ def purge_containers(username: str, *, quiet: bool = False) -> int:
     Returns:
         0 if all deletions succeeded, 1 if any failed.
     """
-    prefix = f"isholate-{username}-"
+    # Match the prefix produced by generate_name(), which sanitises the
+    # username (e.g. "john_doe" -> "john-doe").  Using the raw username
+    # here would miss containers for users with non-alphanumeric names.
+    prefix = f"isholate-{_sanitize_for_name(username)}-"
     result = subprocess.run(
         ["incus", "list", "--format=json"],
         capture_output=True,
@@ -186,8 +189,8 @@ def _provision(
 
     # Install python3 and sudo (needed by ishfiles' apt backend).
     # First-run image initialisation (apt update + install) is the
-    # slowest part of provisioning, so announce it and -- unless running
-    # without -v -- stream the output so users can see progress.
+    # slowest part of provisioning, so announce it; with -v, stream
+    # apt output so users can see progress.
     _say(
         "installing base packages in container (python3, sudo); "
         "this can take a minute on first run...",
