@@ -22,7 +22,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from .dotfile import DotFile, reverse_translate_path
+from .dotfile import EXECUTABLE_PREFIX, DotFile, reverse_translate_path
 from .dotfile_ignore import DotfileIgnore
 from .ish_config import IshConfig
 
@@ -199,7 +199,10 @@ class DotfileFinder:
     def _discover_explicit(self, files: Sequence[Path]) -> List[DotFile]:
         """Build DotFile objects for an explicit list of relative paths."""
         dotfiles: List[DotFile] = []
-        for rel in files:
+        for path in files:
+            rel = self._resolve_to_source_rel(str(path))
+            if rel is None:
+                continue
             source = self._source_dir / rel
             if not source.is_file():
                 log.warning("File not found, skipping: %s", source)
@@ -231,6 +234,17 @@ class DotfileFinder:
             return self._resolve_absolute(p)
         return self._resolve_relative(p)
 
+    def _try_executable_prefix(self, rev: Path) -> Optional[Path]:
+        """Return the ``executable_``-prefixed variant of *rev* if it exists.
+
+        Checks ``{source}/{rev.parent}/executable_{rev.name}`` and returns
+        that path when it exists in the source directory, otherwise *None*.
+        """
+        candidate = rev.parent / (EXECUTABLE_PREFIX + rev.name)
+        if (self._source_dir / candidate).exists():
+            return candidate
+        return None
+
     def _resolve_absolute(self, p: Path) -> Optional[Path]:
         """Resolve an absolute path."""
         resolved = p.resolve()
@@ -240,7 +254,14 @@ class DotfileFinder:
             pass
         try:
             rel_target = resolved.relative_to(self._target_dir.resolve())
-            return reverse_translate_path(rel_target)
+            reverse = reverse_translate_path(rel_target)
+            if (self._source_dir / reverse).exists():
+                return reverse
+            # Also try executable_-prefixed source name
+            exec_candidate = self._try_executable_prefix(reverse)
+            if exec_candidate is not None:
+                return exec_candidate
+            return reverse
         except ValueError:
             pass
         log.warning(
@@ -266,6 +287,11 @@ class DotfileFinder:
         reverse = reverse_translate_path(p)
         if (self._source_dir / reverse).exists():
             return reverse
+
+        # Also try executable_-prefixed source name
+        exec_candidate = self._try_executable_prefix(reverse)
+        if exec_candidate is not None:
+            return exec_candidate
 
         # Last resort: return reverse-translated even if it doesn't exist
         log.debug(
