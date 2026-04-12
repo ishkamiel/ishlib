@@ -31,6 +31,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Restrict to specific files (source or target paths)",
     )
+    parser.add_argument(
+        "--dotfiles-only",
+        action="store_true",
+        default=False,
+        help="Skip package installation and scripts; apply dotfiles only",
+    )
     parser.set_defaults(func=run)
 
 
@@ -49,6 +55,8 @@ def run(cfg: IshConfig) -> int:
     Returns:
         0 on success, 1 on error.
     """
+    dotfiles_only = cfg.get_opt("dotfiles_only", default=False)
+
     finder = make_finder(cfg)
     applier = make_applier(cfg, finder=finder)
 
@@ -61,7 +69,10 @@ def run(cfg: IshConfig) -> int:
     dotfiles = applier.discover(files=rel_files)
     dotfiles, dotfile_pkgs = applier.scan(dotfiles)
 
-    script_paths, script_pkgs = scan_scripts(cfg)
+    if not dotfiles_only:
+        script_paths, script_pkgs = scan_scripts(cfg)
+    else:
+        script_paths, script_pkgs = [], []
 
     # -- Phase 2: Merge ------------------------------------------------------
     extra_packages = dotfile_pkgs + script_pkgs
@@ -69,9 +80,10 @@ def run(cfg: IshConfig) -> int:
         log.info("Collected %d package(s) from file metadata", len(extra_packages))
 
     # -- Phase 3: Install ----------------------------------------------------
-    ret = run_install(cfg, extra_packages=extra_packages)
-    if ret != 0:
-        return ret
+    if not dotfiles_only:
+        ret = run_install(cfg, extra_packages=extra_packages)
+        if ret != 0:
+            return ret
 
     # -- Phase 4: Apply dotfiles ---------------------------------------------
     dotfiles = applier.prepare(dotfiles)
@@ -90,8 +102,9 @@ def run(cfg: IshConfig) -> int:
             print(f"Applied {applied} file(s).")
 
     # -- Phase 5: Run scripts ------------------------------------------------
-    ret = run_scanned_scripts(cfg, script_paths)
-    if ret != 0:
-        return ret
+    if not dotfiles_only:
+        ret = run_scanned_scripts(cfg, script_paths)
+        if ret != 0:
+            return ret
 
     return 0
