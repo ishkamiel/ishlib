@@ -7,7 +7,7 @@
 
 Provides the :class:`DotFile` value object that tracks a managed dotfile
 through the discover / prepare / apply pipeline, along with chezmoi-style
-``dot_`` name translation.
+``dot_`` and ``executable_`` name translation.
 
 Ignore-list constants and utilities live in :mod:`dotfile_ignore`.
 """
@@ -15,11 +15,14 @@ Ignore-list constants and utilities live in :mod:`dotfile_ignore`.
 from __future__ import annotations
 
 import filecmp
+import os
+import sys
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 DOT_PREFIX = "dot_"
+EXECUTABLE_PREFIX = "executable_"
 
 
 # ---------------------------------------------------------------------------
@@ -34,11 +37,19 @@ class ChangeType(Enum):
     MODIFIED = "modified"
 
 
+def is_executable_name(name: str) -> bool:
+    """Return *True* if *name* carries the ``executable_`` prefix."""
+    return name.startswith(EXECUTABLE_PREFIX)
+
+
 def translate_name(name: str) -> str:
     """Translate a single path component from dotfile repo naming.
 
-    Converts the ``dot_`` prefix to a literal ``.`` prefix.
+    Strips ``executable_`` first (so ``executable_dot_foo`` → ``.foo``),
+    then converts a remaining ``dot_`` prefix to a literal ``.`` prefix.
     """
+    if name.startswith(EXECUTABLE_PREFIX):
+        name = name[len(EXECUTABLE_PREFIX) :]
     if name.startswith(DOT_PREFIX):
         return "." + name[len(DOT_PREFIX) :]
     return name
@@ -53,13 +64,16 @@ def translate_path(rel_path: Path) -> Path:
     return Path(*parts) if parts else rel_path
 
 
-def reverse_translate_name(name: str) -> str:
+def reverse_translate_name(name: str, executable: bool = False) -> str:
     """Reverse-translate a single path component to dotfile repo naming.
 
-    Converts a leading ``.`` to the ``dot_`` prefix.
+    Converts a leading ``.`` to the ``dot_`` prefix and prepends
+    ``executable_`` when *executable* is ``True``.
     """
     if name.startswith(".") and name not in {".", ".."} and len(name) > 1:
-        return DOT_PREFIX + name[1:]
+        name = DOT_PREFIX + name[1:]
+    if executable:
+        name = EXECUTABLE_PREFIX + name
     return name
 
 
@@ -146,6 +160,14 @@ class DotFile:
         return self._scanned
 
     @property
+    def executable(self) -> bool:
+        """True if the source filename carries the ``executable_`` prefix.
+
+        When *True*, the applied file must be made executable (``chmod +x``).
+        """
+        return is_executable_name(self._rel_path.name)
+
+    @property
     def effective_source(self) -> Path:
         """The file to compare / copy: staged copy if available, else source."""
         return self._staged if self._staged is not None else self._source
@@ -155,14 +177,22 @@ class DotFile:
 
         Returns:
             :attr:`ChangeType.NEW` if the target does not exist,
-            :attr:`ChangeType.MODIFIED` if it differs, or *None* if
-            the files are identical.
+            :attr:`ChangeType.MODIFIED` if content differs or if the
+            target is missing its executable bit when the source carries
+            the ``executable_`` prefix, or *None* if everything matches.
         """
         if not self.target.exists():
             return ChangeType.NEW
         if not self.target.is_file():
             return ChangeType.MODIFIED
         if not filecmp.cmp(self.effective_source, self.target, shallow=False):
+            return ChangeType.MODIFIED
+        # exec bits are meaningless on Windows; skip the check there
+        if (
+            self.executable
+            and sys.platform != "win32"
+            and not os.access(self.target, os.X_OK)
+        ):
             return ChangeType.MODIFIED
         return None
 

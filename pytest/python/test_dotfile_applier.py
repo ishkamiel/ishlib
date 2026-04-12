@@ -22,6 +22,7 @@ from pyishlib.dotfile_applier import DotfileApplier
 from pyishlib.dotfile import (
     ChangeType,
     DotFile,
+    is_executable_name,
     translate_name,
     translate_path,
 )
@@ -64,6 +65,27 @@ class TestTranslateName:
 
     def test_contains_dot_not_prefix(self):
         assert translate_name("my_dot_file") == "my_dot_file"
+
+    def test_executable_prefix(self):
+        assert translate_name("executable_myscript") == "myscript"
+
+    def test_executable_dot_combo(self):
+        # executable_dot_foo → .foo  (executable_ stripped first, then dot_)
+        assert translate_name("executable_dot_foo") == ".foo"
+
+    def test_executable_only(self):
+        assert translate_name("executable_") == ""
+
+
+class TestIsExecutableName:
+    def test_plain_executable_prefix(self):
+        assert is_executable_name("executable_myscript") is True
+
+    def test_dot_only_not_executable(self):
+        assert is_executable_name("dot_bashrc") is False
+
+    def test_no_prefix_not_executable(self):
+        assert is_executable_name("script.sh") is False
 
 
 class TestTranslatePath:
@@ -154,6 +176,53 @@ class TestDotFile:
         r = repr(df)
         assert "dot_bashrc" in r
         assert ".bashrc" in r
+
+    # -- executable_ prefix --------------------------------------------------
+
+    def test_executable_property_true(self):
+        df = DotFile(Path("/repo/executable_myscript"), Path("executable_myscript"), Path("/home"))
+        assert df.executable is True
+
+    def test_executable_property_false_for_dot(self):
+        df = DotFile(Path("/repo/dot_bashrc"), Path("dot_bashrc"), Path("/home"))
+        assert df.executable is False
+
+    def test_executable_target_name(self):
+        df = DotFile(Path("/repo/executable_myscript"), Path("executable_myscript"), Path("/home"))
+        assert df.target.name == "myscript"
+
+    def test_executable_dot_combo_target_name(self):
+        df = DotFile(
+            Path("/repo/executable_dot_localbin"),
+            Path("executable_dot_localbin"),
+            Path("/home"),
+        )
+        assert df.target.name == ".localbin"
+        assert df.executable is True
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    def test_change_type_modified_when_not_executable(self):
+        """File with executable_ prefix is MODIFIED if target lacks exec bit."""
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+            src = _make_file(Path(src_dir) / "executable_myscript", "#!/bin/sh\necho hi\n")
+            # Install target with same content but no exec bit
+            target = Path(tgt) / "myscript"
+            target.write_text("#!/bin/sh\necho hi\n")
+            target.chmod(0o644)
+
+            df = DotFile(src, Path("executable_myscript"), Path(tgt))
+            assert df.get_change_type() == ChangeType.MODIFIED
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    def test_change_type_none_when_executable_and_correct_bit(self):
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+            src = _make_file(Path(src_dir) / "executable_myscript", "#!/bin/sh\necho hi\n")
+            target = Path(tgt) / "myscript"
+            target.write_text("#!/bin/sh\necho hi\n")
+            target.chmod(0o755)
+
+            df = DotFile(src, Path("executable_myscript"), Path(tgt))
+            assert df.get_change_type() is None
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +353,42 @@ class TestDiscover:
             dotfiles = applier.discover(files=[Path("nonexistent")])
 
             assert dotfiles == []
+
+    def test_discover_executable_prefix(self):
+        """executable_-prefixed files appear in discovery with stripped target name."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "executable_myscript", "#!/bin/sh\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].translated.name == "myscript"
+            assert dotfiles[0].executable is True
+
+    def test_discover_by_target_name_finds_executable_source(self):
+        """Filtering by target name resolves to the executable_-prefixed source."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "executable_myscript", "#!/bin/sh\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            # Ask for "myscript" (the target name) — should find executable_myscript
+            dotfiles = applier.discover(files=[Path("myscript")])
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].source.name == "executable_myscript"
+
+    def test_discover_by_absolute_target_finds_executable_source(self):
+        """Filtering by absolute target path resolves to executable_-prefixed source."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "executable_myscript", "#!/bin/sh\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            abs_target = str(Path(tgt) / "myscript")
+            dotfiles = applier.discover(files=[Path(abs_target)])
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].source.name == "executable_myscript"
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +554,69 @@ class TestApplyChanges:
 
             assert applied == 1
             assert not (Path(tgt) / ".bashrc").exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    def test_apply_executable_sets_exec_bit(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "executable_myscript", "#!/bin/sh\necho hi\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
+            applier.apply_changes(changes)
+
+            target = Path(tgt) / "myscript"
+            assert target.exists()
+            assert os.access(target, os.X_OK), "target should be executable"
+
+    def test_apply_executable_target_name_stripped(self):
+        """executable_ prefix is removed from the installed filename."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "executable_myscript", "#!/bin/sh\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
+            applier.apply_changes(changes)
+
+            assert not (Path(tgt) / "executable_myscript").exists()
+            assert (Path(tgt) / "myscript").exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    def test_apply_executable_dot_combo(self):
+        """executable_dot_foo → .foo with exec bit."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "executable_dot_localscript", "#!/bin/sh\n")
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
+            applier.apply_changes(changes)
+
+            target = Path(tgt) / ".localscript"
+            assert target.exists(), ".localscript should be installed"
+            assert os.access(target, os.X_OK), ".localscript should be executable"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    def test_apply_executable_missing_bit_triggers_reapply(self):
+        """Already-installed file with wrong permissions is re-applied."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            content = "#!/bin/sh\necho hi\n"
+            _make_file(Path(src) / "executable_myscript", content)
+            target = Path(tgt) / "myscript"
+            target.write_text(content)
+            target.chmod(0o644)  # correct content, missing exec bit
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+            dotfiles = applier.prepare(dotfiles)
+            changes = applier.get_changes(dotfiles)
+            assert len(changes) == 1, "missing exec bit should appear as a change"
+            applier.apply_changes(changes)
+            assert os.access(target, os.X_OK)
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -268,6 +269,9 @@ class DotfileApplier:
     def apply_changes(self, changes: List[DotFile]) -> int:
         """Copy changed files into the target directory.
 
+        Files whose source name carries the ``executable_`` prefix are made
+        executable (``chmod +x``) after copying.
+
         Args:
             changes: Dotfiles from :meth:`get_changes`.
 
@@ -278,6 +282,11 @@ class DotfileApplier:
         applied = 0
         for dotfile in changes:
             if self.runner.copy(dotfile.effective_source, dotfile.target):
+                if dotfile.executable and sys.platform != "win32":
+                    if self.runner.dry_run:
+                        print(f"chmod +x {dotfile.target}")
+                    else:
+                        dotfile.target.chmod(dotfile.target.stat().st_mode | 0o111)
                 applied += 1
                 log.info("Applied %s -> %s", dotfile.effective_source, dotfile.target)
         return applied

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+from pathlib import Path
 
 from ...userio import prompt_yes_no_always
 from ...ish_config import IshConfig
@@ -54,11 +56,80 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=run)
 
 
+_SELF_LINK_NAMES = ["ishfiles", "isholate"]
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Return True if *a* and *b* refer to the same filesystem object."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _install_self_links(cfg: IshConfig) -> int:
+    """Create ``~/.local/bin`` symlinks for ``ishfiles`` and ``isholate``.
+
+    Links ``{target}/.local/bin/{name}`` → ``{source}/ishlib/bin/{name}``
+    for each tool.  Existing correct symlinks are silently skipped.
+    Stale symlinks (wrong target) are replaced.  Regular files at the
+    destination are left untouched with a warning.
+
+    Returns 0 on success, 1 if any link could not be created.
+    """
+    source = Path(cfg.get_opt("source")).expanduser().resolve()
+    target = Path(cfg.get_opt("target")).expanduser().resolve()
+    bin_src = source / "ishlib" / "bin"
+    bin_dst = target / ".local" / "bin"
+
+    had_error = False
+
+    for name in _SELF_LINK_NAMES:
+        src = bin_src / name
+        dst = bin_dst / name
+
+        if not src.exists():
+            log.warning("Self-link: source not found, skipping: %s", src)
+            had_error = True
+            continue
+
+        try:
+            if dst.is_symlink():
+                if _same_file(dst, src):
+                    log.debug("Self-link already correct: %s", dst)
+                    continue
+                # Stale symlink — replace it
+                if cfg.dry_run:
+                    print(f"ln -sf {src} {dst}")
+                    continue
+                dst.unlink()
+            elif dst.exists():
+                log.warning("Self-link: %s exists as a regular file; skipping", dst)
+                had_error = True
+                continue
+            else:
+                if cfg.dry_run:
+                    print(f"ln -s {src} {dst}")
+                    continue
+
+            bin_dst.mkdir(parents=True, exist_ok=True)
+            os.symlink(src, dst)
+            if not cfg.quiet:
+                print(f"Linked: {dst} -> {src}")
+        except OSError as exc:
+            log.warning("Self-link: failed to link %s: %s", name, exc)
+            had_error = True
+
+    return 1 if had_error else 0
+
+
 def run(cfg: IshConfig) -> int:
     """Execute the apply command.
 
-    The pipeline runs in five phases:
+    The pipeline runs in six phases:
 
+    0. **Self-links** -- create ``~/.local/bin`` symlinks for ``ishfiles``
+       and ``isholate`` so the tools are on the user's PATH.
     1. **Scan** -- discover dotfiles and scripts, read metadata, apply
        OS/tag filtering, and collect embedded package declarations.
     2. **Merge** -- combine metadata packages with the main package list.
@@ -73,6 +144,14 @@ def run(cfg: IshConfig) -> int:
     force_scripts_arg = cfg.get_opt("force_scripts")
     # None → not passed; [] → flag present with no args (force all)
     force_scripts = force_scripts_arg  # None means "respect state"
+
+    # -- Phase 0: Self-links -------------------------------------------------
+    # Best-effort: self-link failures are warnings only.  The most common
+    # cause (ishlib/bin/ missing because the submodule hasn't been
+    # initialised yet) should not abort the rest of apply.
+    log.info("Phase 0: Installing self-links in ~/.local/bin")
+    _install_self_links(cfg)
+    had_errors = False
 
     finder = make_finder(cfg)
     applier = make_applier(cfg, finder=finder)
@@ -125,10 +204,8 @@ def run(cfg: IshConfig) -> int:
         if ext_ret != 0:
             log.warning("Some externals failed to fetch; continuing with scripts")
             had_errors = True
-        else:
-            had_errors = False
     else:
-        had_errors = False
+        pass  # had_errors already set from Phase 0
 
     # -- Phase 5: Run scripts ------------------------------------------------
     if not dotfiles_only and script_paths:
