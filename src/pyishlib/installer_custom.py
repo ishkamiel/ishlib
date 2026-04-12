@@ -26,10 +26,11 @@ This will look for a script named ``install_my-tool`` (or
 
 import logging
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, List, Optional
 
 from .command_runner import CommandRunner
 from .dotfile_script import DotfileScript
+from .environment import detect_distro, detect_os, normalise_os
 from .file_preprocessor import FilePreprocessor
 from .ish_config import IshConfig
 
@@ -125,24 +126,68 @@ class InstallerCustom:
     def _find_script(self, pkg_name: str) -> Optional[Path]:
         """Find the install script for a package.
 
-        Looks for ``install_<pkg_name>`` with any extension (or none)
-        in the installers directory.
+        Searches the installers directory for a matching script using the
+        following precedence (first match wins):
+
+        1. ``install_<pkg>.<current-os>.<ext>``  (e.g. ``linux``, ``darwin``, ``windows``)
+        2. ``install_<pkg>.<current-family>.<ext>``  (e.g. ``debian``, ``fedora``)
+        3. ``install_<pkg>.unixlike.<ext>``  (matches Linux and macOS)
+        4. ``install_<pkg>.<ext>`` (no OS tag):
+           - ``.sh`` / ``.bash`` treated as ``unixlike``
+           - ``.ps1`` treated as ``windows``
+        5. ``install_<pkg>`` (no extension, any OS)
 
         Returns:
-            Path to the script, or None if not found.
+            Path to the matching script, or None if not found.
         """
         if self.installers_dir is None:
             return None
 
-        # Try exact name first (no extension)
-        exact = self.installers_dir / f"install_{pkg_name}"
+        stem = f"install_{pkg_name}"
+        current_os = detect_os()  # "linux", "macos", "windows"
+        current_family = detect_distro()  # "debian", "fedora", or None
+
+        # Build ordered list of OS tags to try (most specific first).
+        os_tags: List[str] = [current_os]
+        if current_family:
+            os_tags.append(current_family)
+        if current_os in ("linux", "macos"):
+            os_tags.append("unixlike")
+
+        all_files = sorted(f for f in self.installers_dir.iterdir() if f.is_file())
+
+        # 1–3: ``install_<pkg>.<ostag>.<ext>`` (ostag in preferred order)
+        for tag in os_tags:
+            for candidate in all_files:
+                parts = candidate.name.split(".")
+                # Expect at least 3 parts: install_pkg, <ostag>, ext
+                if len(parts) < 3:
+                    continue
+                # stem part may contain underscores; reconstruct up to last two dots
+                candidate_stem = ".".join(parts[:-2])
+                candidate_tag = parts[-2]
+                if candidate_stem == stem and normalise_os(
+                    candidate_tag
+                ) == normalise_os(tag):
+                    return candidate
+
+        # 4: ``install_<pkg>.<ext>`` with no OS tag — select by extension convention.
+        for candidate in all_files:
+            parts = candidate.name.split(".")
+            if len(parts) != 2:
+                continue
+            candidate_stem, ext = parts[0], parts[1]
+            if candidate_stem != stem:
+                continue
+            if ext in ("sh", "bash") and current_os in ("linux", "macos"):
+                return candidate
+            if ext == "ps1" and current_os == "windows":
+                return candidate
+
+        # 5: exact name with no extension
+        exact = self.installers_dir / stem
         if exact.is_file():
             return exact
-
-        # Try with common extensions
-        for candidate in sorted(self.installers_dir.iterdir()):
-            if candidate.is_file() and candidate.stem == f"install_{pkg_name}":
-                return candidate
 
         return None
 
