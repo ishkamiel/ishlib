@@ -5,35 +5,42 @@
 # Distributed under terms of the MIT license.
 """Per-run structured logging for ishfiles script execution.
 
-Every ishscript automatically receives ``ish_info``, ``ish_warn``,
-``ish_error``, and ``ish_fatal`` bash functions that write structured
-messages to a named pipe.  A background thread reads those messages and
-writes them to a timestamped log file under
-``<target>/.local/state/ishfiles/logs/``.
+Every ishscript automatically receives the full ``ishlib.sh`` shell library
+(sourced via ``ISHLIB_SH``) which provides ``ish_info``, ``ish_warn``,
+``ish_error``, and ``ish_fatal``.  When ``ISHLIB_LOG_OUT`` is set in the
+environment those functions write structured ``level<TAB>message`` lines to
+that path (a named FIFO owned by :class:`ScriptLogger`) instead of stderr.
 
-All script stdout/stderr is also captured and appended to the same log
-file.  ``ish_fatal`` sets an abort flag that prevents subsequent scripts
-from running.
+A background thread reads those lines and writes them to a timestamped log
+file under ``<target>/.local/state/ishfiles/logs/``.  All script
+stdout/stderr is also captured and appended to the same log file.
+``ish_fatal`` sets an abort flag that prevents subsequent scripts from
+running.
 
 Public API
 ----------
 - :class:`ScriptLogger` -- context manager owning one run log.
 - :func:`inject_prelude`  -- add the bash helper snippet after the shebang.
 
-Bash helpers injected into every shell script
----------------------------------------------
+Prelude injected into every shell script
+-----------------------------------------
 
 .. code-block:: bash
 
-    _ish_log() { printf '%s\\t%s\\n' "$1" "$2" >> "$ISHFILES_LOG_FIFO"; }
-    ish_info()  { _ish_log info  "$*"; }
-    ish_warn()  { _ish_log warn  "$*"; }
-    ish_error() { _ish_log error "$*"; }
-    ish_fatal() { _ish_log fatal "$*"; exit 1; }
+    # Source ishlib.sh for ish_info/warn/error/fatal (which honour ISHLIB_LOG_OUT).
+    if [ -n "${ISHLIB_SH:-}" ] && [ -f "${ISHLIB_SH}" ]; then
+      . "${ISHLIB_SH}"
+    else
+      # Minimal fallback when ishlib.sh is unavailable.
+      ish_info()  { printf 'info\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_warn()  { printf 'warn\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_error() { printf 'error\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_fatal() { printf 'fatal\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; exit 1; }
+    fi
 
-The helpers write via append (``>>``) to a named FIFO.  Append-mode
-opens do not block because the Python side keeps the FIFO open with
-``O_RDWR`` for the entire run.
+``ISHLIB_LOG_OUT`` points to the FIFO.  Append-mode writes do not block
+because the Python side keeps the FIFO open with ``O_RDWR`` for the entire
+run.
 """
 
 from __future__ import annotations
@@ -60,18 +67,24 @@ _LOG_DIR_SUFFIX: str = ".local/state/ishfiles/logs"
 # Format written to the log file for structured messages.
 _LOG_TIMESTAMP_FMT: str = "%H:%M:%S"
 
+# Path to the compiled ishlib.sh shell library, resolved relative to this file.
+# Layout: script_logger.py → ishfiles/ → pyishlib/ → src/ → ishlib root
+_ISHLIB_SH: Path = Path(__file__).resolve().parent.parent.parent.parent / "ishlib.sh"
+
 # Bash snippet injected after the shebang of every shell script.
-# ISHFILES_LOG_FIFO is set in the subprocess environment by ScriptLogger.
-# Appending (>>) instead of truncating (>) avoids blocking when the FIFO
-# write-end was already closed by a previous script in the same run.
+# Sources ishlib.sh (which honours ISHLIB_LOG_OUT for ish_info/warn/error/fatal).
+# Falls back to minimal inline definitions when ishlib.sh is unavailable.
 BASH_PRELUDE: str = """\
-# -- ishfiles helpers (auto-injected) --
-_ish_log() { printf '%s\\t%s\\n' "$1" "$2" >> "$ISHFILES_LOG_FIFO" 2>/dev/null || true; }
-ish_info()  { _ish_log info  "$*"; }
-ish_warn()  { _ish_log warn  "$*"; }
-ish_error() { _ish_log error "$*"; }
-ish_fatal() { _ish_log fatal "$*"; exit 1; }
-# -- end ishfiles helpers --
+# -- ishfiles (auto-injected) --
+if [ -n "${ISHLIB_SH:-}" ] && [ -f "${ISHLIB_SH}" ]; then
+  . "${ISHLIB_SH}"
+else
+  ish_info()  { printf 'info\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_warn()  { printf 'warn\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_error() { printf 'error\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_fatal() { printf 'fatal\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; exit 1; }
+fi
+# -- end ishfiles --
 """
 
 _LEVELS = ("info", "warn", "error", "fatal")
@@ -190,10 +203,18 @@ class ScriptLogger:
     def env(self) -> Dict[str, str]:
         """Environment variables to set in script subprocesses.
 
-        Returns a dict containing ``ISHFILES_LOG_FIFO`` (path to the FIFO
-        that :data:`BASH_PRELUDE` writes to).
+        Returns a dict containing:
+
+        - ``ISHLIB_LOG_OUT``: path to the FIFO that ``ish_info``/``ish_warn``/
+          ``ish_error``/``ish_fatal`` write structured messages to.
+        - ``ISHLIB_SH``: path to the compiled ``ishlib.sh`` shell library, so
+          the :data:`BASH_PRELUDE` can source it.  Omitted when the file does
+          not exist (e.g. in a clean checkout before ``make ishlib.sh``).
         """
-        return {"ISHFILES_LOG_FIFO": str(self._fifo_path)}
+        result: Dict[str, str] = {"ISHLIB_LOG_OUT": str(self._fifo_path)}
+        if _ISHLIB_SH.is_file():
+            result["ISHLIB_SH"] = str(_ISHLIB_SH)
+        return result
 
     @staticmethod
     def bash_prelude() -> str:
