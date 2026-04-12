@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 
 from ...ish_config import IshConfig
+from ..script_logger import ScriptLogger
 from ..script_runner import run_scripts
+from ..script_state import ScriptState
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -25,6 +27,17 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Restrict to specific script names (default: all)",
     )
+    parser.add_argument(
+        "--force",
+        nargs="*",
+        metavar="SCRIPT",
+        default=None,
+        dest="force_scripts",
+        help=(
+            "Ignore run_when state for named scripts and re-run them. "
+            "With no arguments, force-runs all scripts."
+        ),
+    )
     parser.set_defaults(func=run)
 
 
@@ -35,4 +48,22 @@ def run(cfg: IshConfig) -> int:
         0 on success, 1 on error.
     """
     scripts = cfg.get_opt("scripts") or None
-    return run_scripts(cfg, scripts=scripts)
+    force_scripts = cfg.get_opt("force_scripts")  # None = respect state
+
+    with ScriptLogger(cfg) as slog:
+        state = ScriptState.from_cfg(cfg)
+        ret = run_scripts(
+            cfg,
+            scripts=scripts,
+            script_logger=slog,
+            script_state=state,
+            force_scripts=force_scripts,
+        )
+        if not cfg.quiet:
+            summary = slog.summary_line()
+            if slog.log_path:
+                print(f"Scripts done: {summary}. Log: {slog.log_path}")
+            else:
+                print(f"Scripts done: {summary}.")
+
+    return ret

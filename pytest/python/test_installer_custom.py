@@ -12,6 +12,7 @@ import sys
 import tempfile
 import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -173,18 +174,22 @@ class TestInstallerCustom:
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             assert custom._find_script("nonexistent") is None
 
-    def test_find_script_prefers_exact_name(self):
+    def test_find_script_sh_preferred_over_no_extension_on_linux(self):
+        # Bare .sh is treated as unixlike-specific (step 4) and therefore
+        # preferred over the no-extension universal fallback (step 5) on Linux.
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            exact = installers / "install_mytool"
-            exact.write_text("#!/bin/sh\necho exact\n", encoding="utf-8")
+            no_ext = installers / "install_mytool"
+            no_ext.write_text("#!/bin/sh\necho exact\n", encoding="utf-8")
             with_ext = installers / "install_mytool.sh"
             with_ext.write_text("#!/bin/sh\necho ext\n", encoding="utf-8")
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
-            found = custom._find_script("mytool")
-            assert found.resolve() == exact.resolve()
+            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
+                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+                found = custom._find_script("mytool")
+            assert found is not None and found.name == "install_mytool.sh"
 
     def test_update_custom_pkgs_noop(self):
         custom = InstallerCustom(make_runner())

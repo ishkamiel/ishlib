@@ -369,7 +369,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
             {},
             b"[pkg]\napt = \"p\"\ntags = [\"totally_unknown_tag\"]\n",
         )
-        with self.assertLogs("pyishlib.installer_config", level="WARNING"):
+        with self.assertLogs("pyishlib.tag_filter", level="WARNING"):
             pkgs = config.get_pkgs()
         assert not any(p["name"] == "pkg" for p in pkgs)
 

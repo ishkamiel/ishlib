@@ -24,10 +24,13 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from .command_runner import CommandRunner
 from .file_preprocessor import FilePreprocessor
+
+if TYPE_CHECKING:
+    from .ishfiles.script_logger import ScriptLogger
 
 log = logging.getLogger(__name__)
 
@@ -93,21 +96,41 @@ class DotfileScript:
         self._preprocessed_text = text
         return text
 
-    def execute(self, env: Optional[Dict[str, str]] = None) -> bool:
+    def execute(
+        self,
+        env: Optional[Dict[str, str]] = None,
+        script_logger: Optional["ScriptLogger"] = None,
+    ) -> bool:
         """Preprocess and execute the script.
 
         The preprocessed script is written to a temporary file which is
         then executed.  The interpreter is chosen based on the shebang
         line or file extension.
 
+        When *script_logger* is provided, the bash helper prelude
+        (``ish_info``, ``ish_warn``, ``ish_error``, ``ish_fatal``) is
+        injected after the shebang line of shell scripts, and all
+        stdout/stderr from the script is captured and written to the run
+        log.
+
         Args:
-            env: Optional extra environment variables to set for the
-                 script process (merged with the current environment).
+            env:           Optional extra environment variables to set for
+                           the script process (merged with the current
+                           environment).
+            script_logger: Optional :class:`~pyishlib.ishfiles.script_logger.ScriptLogger`
+                           for structured logging and output capture.
 
         Returns:
             True if the script exited successfully (returncode 0).
         """
         text = self.preprocess()
+
+        # Inject the log-helper prelude for shell scripts when a logger is set.
+        if script_logger is not None and self._is_shell_script(text):
+            from .ishfiles.script_logger import inject_prelude
+
+            text = inject_prelude(text)
+
         interpreter = self._detect_interpreter(text)
 
         with tempfile.NamedTemporaryFile(
@@ -125,28 +148,58 @@ class DotfileScript:
             tmp_path.chmod(tmp_path.stat().st_mode | stat.S_IEXEC)
 
             cmd = interpreter + [str(tmp_path)]
-            script_env = None
+            script_env = dict(os.environ)
             if env:
-                script_env = dict(os.environ)
                 script_env.update(env)
+            if script_logger is not None:
+                script_env.update(script_logger.env())
 
-            log.info("Executing custom script: %s", self._path.name)
-            self._runner.run(
-                cmd,
-                check=True,
-                env=script_env,
-            )
+            log.info("Executing script: %s", self._path.name)
+
+            if script_logger is not None and not self._runner.dry_run:
+                # Capture stdout+stderr for the log file.
+                result = subprocess.run(
+                    cmd,
+                    env=script_env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                output = result.stdout.decode("utf-8", errors="replace")
+                script_logger.log_script_output(self._path.name, output)
+                if result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        result.returncode, cmd, output=result.stdout
+                    )
+            else:
+                self._runner.run(
+                    cmd,
+                    check=True,
+                    env=script_env,
+                )
             return True
         except subprocess.CalledProcessError as e:
             log.error(
-                "Script %s failed with exit code %d: %s",
+                "Script %s failed with exit code %d",
                 self._path.name,
                 e.returncode,
-                e,
             )
             raise
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _is_shell_script(text: str) -> bool:
+        """True if the script appears to be a shell script.
+
+        Checks the shebang line for ``sh``, ``bash``, ``zsh``, or ``dash``.
+        Scripts with no shebang also default to shell execution.
+        """
+        first_line = text.split("\n", 1)[0].strip()
+        if not first_line.startswith("#!"):
+            return True  # No shebang: default /bin/sh execution
+        shebang = first_line[2:].strip()
+        return any(shell in shebang for shell in ("sh", "bash", "zsh", "dash"))
 
     @staticmethod
     def _detect_interpreter(text: str) -> list:

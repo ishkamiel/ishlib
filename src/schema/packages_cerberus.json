@@ -7,6 +7,12 @@
       "apt": {
         "type": "string"
       },
+      "apt-key": {
+        "type": "string"
+      },
+      "apt-repo": {
+        "type": "string"
+      },
       "brew": {
         "type": "string"
       },
@@ -20,6 +26,15 @@
         "type": "string"
       },
       "dnf": {
+        "type": "string"
+      },
+      "dnf-copr": {
+        "type": "string"
+      },
+      "dnf-key": {
+        "type": "string"
+      },
+      "dnf-repo": {
         "type": "string"
       },
       "ignore_on": {
@@ -41,6 +56,9 @@
         "type": "list"
       },
       "type": {
+        "type": "string"
+      },
+      "ubuntu-ppa": {
         "type": "string"
       },
       "winget": {

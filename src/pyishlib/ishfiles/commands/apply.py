@@ -14,7 +14,9 @@ from ...userio import prompt_yes_no_always
 from ...ish_config import IshConfig
 from ..applier import make_applier, make_finder
 from ..installer_helper import run_install
+from ..script_logger import ScriptLogger
 from ..script_runner import run_scanned_scripts, scan_scripts
+from ..script_state import ScriptState
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +39,17 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default=False,
         help="Skip package installation and scripts; apply dotfiles only",
     )
+    parser.add_argument(
+        "--force-scripts",
+        nargs="*",
+        metavar="SCRIPT",
+        default=None,
+        dest="force_scripts",
+        help=(
+            "Ignore run_when state for named scripts and re-run them. "
+            "With no arguments, force-runs all scripts."
+        ),
+    )
     parser.set_defaults(func=run)
 
 
@@ -46,16 +59,19 @@ def run(cfg: IshConfig) -> int:
     The pipeline runs in five phases:
 
     1. **Scan** -- discover dotfiles and scripts, read metadata, apply
-       OS filtering, and collect embedded package declarations.
+       OS/tag filtering, and collect embedded package declarations.
     2. **Merge** -- combine metadata packages with the main package list.
     3. **Install** -- install all packages (main + metadata).
     4. **Apply** -- preprocess and install changed dotfiles.
-    5. **Scripts** -- execute scripts.
+    5. **Scripts** -- execute scripts (with logging and run_when gating).
 
     Returns:
         0 on success, 1 on error.
     """
     dotfiles_only = cfg.get_opt("dotfiles_only", default=False)
+    force_scripts_arg = cfg.get_opt("force_scripts")
+    # None → not passed; [] → flag present with no args (force all)
+    force_scripts = force_scripts_arg  # None means "respect state"
 
     finder = make_finder(cfg)
     applier = make_applier(cfg, finder=finder)
@@ -102,9 +118,29 @@ def run(cfg: IshConfig) -> int:
             print(f"Applied {applied} file(s).")
 
     # -- Phase 5: Run scripts ------------------------------------------------
-    if not dotfiles_only:
-        ret = run_scanned_scripts(cfg, script_paths)
+    if not dotfiles_only and script_paths:
+        with ScriptLogger(cfg) as slog:
+            state = ScriptState.from_cfg(cfg)
+            ret = run_scanned_scripts(
+                cfg,
+                script_paths,
+                script_logger=slog,
+                script_state=state,
+                force_scripts=force_scripts,
+            )
+            _print_log_summary(slog, cfg)
         if ret != 0:
             return ret
 
     return 0
+
+
+def _print_log_summary(slog: ScriptLogger, cfg: IshConfig) -> None:
+    """Print run summary and log path (unless quiet)."""
+    if cfg.quiet:
+        return
+    summary = slog.summary_line()
+    if slog.log_path:
+        print(f"Scripts done: {summary}. Log: {slog.log_path}")
+    else:
+        print(f"Scripts done: {summary}.")

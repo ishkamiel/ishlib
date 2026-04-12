@@ -12,7 +12,6 @@ from typing import Any, Mapping, Iterable, Optional
 
 from .environment import should_skip_for_os
 from .schema_validation import validate_packages
-from .userio import normalise_bool, normalise_str
 
 try:
     import jsonschema
@@ -52,72 +51,18 @@ class InstallerConfig:
         """Get the configuration file name"""
         return self._config_file
 
-    def _ctx_get(self, key: str, default: str = "") -> str:
-        """Get a value from the IshConfig context, or return *default*."""
-        if self._cfg is not None and hasattr(self._cfg, "context"):
-            return self._cfg.context.get(key, default)
-        return default
-
     def _passes_tag_filter(self, pkg: dict) -> bool:
         """Return True if *pkg* should be included given its tags.
 
-        Tag semantics are derived entirely from ``cfg.data_template`` — no
-        tag names are hard-coded here.  Supported patterns:
-
-        - ``<var>``   — where ``var`` is a ``bool`` key: include when truthy.
-        - ``!<var>``  — negation of the above.
-        - ``<val>``   — where ``val`` appears in a ``tags`` variable's
-                        ``values`` list: include when the variable == val.
-        - ``<val>``   — where ``val`` appears in an ``ordered_tags`` variable's
-                        ``values`` list: include when the variable's index ≥ val's.
+        Delegates to the shared :func:`~pyishlib.tag_filter.passes_tags`
+        helper so that packages and scripts use identical semantics.
 
         Packages without tags are always included.
         """
+        from .tag_filter import passes_tags
+
         tags = pkg.get("tags", []) or []
-        if not tags:
-            return True
-
-        template: dict = {}
-        if self._cfg is not None:
-            template = getattr(self._cfg, "data_template", None) or {}
-
-        for tag in tags:
-            negated = tag.startswith("!")
-            name = tag[1:] if negated else tag
-            matched = self._tag_matches(name, template, pkg)
-            if negated:
-                matched = not matched
-            if not matched:
-                return False
-        return True
-
-    def _tag_matches(self, tag: str, template: dict, pkg: dict) -> bool:
-        """Return True if *tag* is satisfied by the current context and template."""
-        ntag = normalise_str(tag)
-
-        # 1. tag == a bool variable name
-        for var, vspec in template.items():
-            if normalise_str(var) == ntag and vspec.get("type") == "bool":
-                return normalise_bool(self._ctx_get(var)) == "true"
-
-        # 2. tag is a value declared in a tags / ordered_tags variable
-        for var, vspec in template.items():
-            t = vspec.get("type")
-            if t not in ("tags", "ordered_tags"):
-                continue
-            nvalues = [normalise_str(v) for v in vspec.get("values", [])]
-            if ntag not in nvalues:
-                continue
-            ncurrent = normalise_str(self._ctx_get(var))
-            if t == "tags":
-                return ncurrent == ntag
-            # ordered_tags: current index must be >= tag index (higher implies lower)
-            if ncurrent not in nvalues:
-                return False
-            return nvalues.index(ncurrent) >= nvalues.index(ntag)
-
-        log.warning("Unknown package tag %r on %s", tag, pkg.get("name"))
-        return False
+        return passes_tags(tags, self._cfg, label=pkg.get("name", ""))
 
     def get_pkgs(self) -> Iterable[dict]:
         """Get the packages from the configuration, applying OS and tag filters."""
