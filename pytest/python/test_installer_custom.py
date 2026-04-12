@@ -95,15 +95,32 @@ class TestInstallerCustom:
             assert custom.can_use_custom(pkg) is True
 
     def test_can_use_custom_with_extension(self):
+        # The platform-native extension (.sh on Unix, .ps1 on Windows) is found.
+        ext = "ps1" if sys.platform == "win32" else "sh"
+        content = "Write-Output hi\n" if sys.platform == "win32" else "#!/bin/sh\necho hello\n"
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            script = installers / "install_mytool.sh"
-            script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
+            script = installers / f"install_mytool.{ext}"
+            script.write_text(content, encoding="utf-8")
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             pkg = {"name": "mytool", "custom": "mytool"}
             assert custom.can_use_custom(pkg) is True
+
+    def test_can_use_custom_ignored_when_only_wrong_platform_extension(self):
+        # A script with the wrong platform's extension is not surfaced.
+        other_ext = "sh" if sys.platform == "win32" else "ps1"
+        content = "#!/bin/sh\necho hello\n" if sys.platform == "win32" else "Write-Output hi\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            installers = Path(tmpdir) / "ishinstallers"
+            installers.mkdir()
+            script = installers / f"install_mytool.{other_ext}"
+            script.write_text(content, encoding="utf-8")
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
+            pkg = {"name": "mytool", "custom": "mytool"}
+            assert custom.can_use_custom(pkg) is False
 
     def test_can_use_custom_no_pkg(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -156,15 +173,31 @@ class TestInstallerCustom:
             assert found.resolve() == script.resolve()
 
     def test_find_script_with_extension(self):
+        # The platform-native extension is found.
+        ext = "ps1" if sys.platform == "win32" else "sh"
+        content = "Write-Output hi\n" if sys.platform == "win32" else "#!/bin/sh\necho hello\n"
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            script = installers / "install_mytool.sh"
-            script.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
+            script = installers / f"install_mytool.{ext}"
+            script.write_text(content, encoding="utf-8")
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             found = custom._find_script("mytool")
+            assert found is not None
             assert found.resolve() == script.resolve()
+
+    def test_find_script_returns_none_for_wrong_platform_extension(self):
+        # Only the wrong platform's extension exists: _find_script returns None.
+        other_ext = "sh" if sys.platform == "win32" else "ps1"
+        content = "#!/bin/sh\necho hello\n" if sys.platform == "win32" else "Write-Output hi\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            installers = Path(tmpdir) / "ishinstallers"
+            installers.mkdir()
+            (installers / f"install_mytool.{other_ext}").write_text(content, encoding="utf-8")
+            cfg = make_cfg(source=tmpdir)
+            custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
+            assert custom._find_script("mytool") is None
 
     def test_find_script_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:

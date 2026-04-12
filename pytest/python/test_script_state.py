@@ -127,12 +127,13 @@ class TestScriptStateFromCfg(unittest.TestCase):
     def test_from_cfg_uses_target(self):
         from types import SimpleNamespace
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = str(Path(raw_tmp).resolve())
             cfg = SimpleNamespace(
-                get_opt=lambda name, default=None: str(tmp) if name == "target" else None,
+                get_opt=lambda name, default=None: tmp if name == "target" else None,
             )
             state = ScriptState.from_cfg(cfg)
-            assert str(tmp) in str(state.path)
+            assert tmp in str(state.path.resolve())
 
 
 if __name__ == "__main__":

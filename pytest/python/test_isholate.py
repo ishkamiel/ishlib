@@ -18,6 +18,11 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="isholate requires Incus and Linux uid/gid mapping; Linux-only",
+)
+
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )

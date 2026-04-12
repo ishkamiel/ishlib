@@ -52,9 +52,14 @@ import select
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, IO, Optional
+
+# FIFOs are a POSIX-only feature.  On Windows we fall back to a plain file
+# that scripts append to and the reader thread polls.
+_USE_FIFO: bool = hasattr(os, "mkfifo")
 
 log = logging.getLogger(__name__)
 
@@ -89,19 +94,34 @@ fi
 
 _LEVELS = ("info", "warn", "error", "fatal")
 
+# PowerShell equivalent of BASH_PRELUDE.  Appends structured ``level<TAB>msg``
+# lines to ``$env:ISHLIB_LOG_OUT`` using ``Add-Content`` (thread-safe append).
+PS_PRELUDE: str = """\
+# -- ishfiles (auto-injected) --
+function ish_info  { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "info`t$m" } }
+function ish_warn  { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warn`t$m" } }
+function ish_error { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "error`t$m" } }
+function ish_fatal { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "fatal`t$m" }; exit 1 }
+# -- end ishfiles --
+"""
 
-def inject_prelude(text: str) -> str:
-    """Insert :data:`BASH_PRELUDE` after the shebang line (if any).
 
-    If the first line is a shebang (``#!``), the prelude is inserted after
-    it.  Otherwise it is prepended to the text.
+def inject_prelude(text: str, ext: str = "") -> str:
+    """Insert the appropriate log-helper prelude into a script.
+
+    For PowerShell scripts (``ext=".ps1"``) :data:`PS_PRELUDE` is prepended.
+    For all other scripts :data:`BASH_PRELUDE` is inserted after the shebang
+    line (if any), or prepended when there is no shebang.
 
     Args:
         text: The preprocessed script text.
+        ext:  File extension of the original script (e.g. ``".ps1"``).
 
     Returns:
         Script text with the prelude injected.
     """
+    if ext == ".ps1":
+        return PS_PRELUDE + text
     lines = text.split("\n", 1)
     if lines and lines[0].startswith("#!"):
         return lines[0] + "\n" + BASH_PRELUDE + (lines[1] if len(lines) > 1 else "")
@@ -109,7 +129,10 @@ def inject_prelude(text: str) -> str:
 
 
 class ScriptLogger:
-    """Context manager that owns a per-run log file and structured FIFO.
+    """Context manager that owns a per-run log file and structured log sink.
+
+    On POSIX systems the sink is a named FIFO; on Windows a plain file that
+    the reader thread polls.  Both appear to scripts as ``ISHLIB_LOG_OUT``.
 
     Usage::
 
@@ -128,8 +151,8 @@ class ScriptLogger:
         self._log_dir_override = log_dir
 
         self._log_path: Optional[Path] = None
-        self._fifo_path: Optional[Path] = None
-        self._fifo_fd: Optional[int] = None
+        self._sink_path: Optional[Path] = None  # FIFO on POSIX, plain file on Windows
+        self._fifo_fd: Optional[int] = None  # only used on POSIX
         self._reader_thread: Optional[threading.Thread] = None
         self._stop_event: threading.Event = threading.Event()
         self._counts: Dict[str, int] = {k: 0 for k in _LEVELS}
@@ -151,21 +174,29 @@ class ScriptLogger:
             self._log_path, "w", encoding="utf-8"
         )
 
-        # Create FIFO in a temporary directory.
+        # Create the log sink (FIFO on POSIX, plain file on Windows) in a
+        # temporary directory so it is cleaned up by __exit__.
         self._tmp_dir = tempfile.TemporaryDirectory(prefix="ishfiles_log_")
-        self._fifo_path = Path(self._tmp_dir.name) / "log.fifo"
-        os.mkfifo(self._fifo_path)
 
-        # Open with O_RDWR | O_NONBLOCK so:
-        # - No blocking on open (no need for a writer to be present first).
-        # - Python acts as both reader and writer, preventing premature EOF.
-        # - Reads return EAGAIN when no data is available.
-        self._fifo_fd = os.open(str(self._fifo_path), os.O_RDWR | os.O_NONBLOCK)
+        if _USE_FIFO:
+            self._sink_path = Path(self._tmp_dir.name) / "log.fifo"
+            os.mkfifo(self._sink_path)
+            # Open with O_RDWR | O_NONBLOCK so:
+            # - No blocking on open (no need for a writer to be present first).
+            # - Python acts as both reader and writer, preventing premature EOF.
+            # - Reads return EAGAIN when no data is available.
+            self._fifo_fd = os.open(str(self._sink_path), os.O_RDWR | os.O_NONBLOCK)
+        else:
+            # Windows: plain append-mode file.  Scripts write with Add-Content;
+            # the reader thread polls for new bytes.
+            self._sink_path = Path(self._tmp_dir.name) / "log.sink"
+            self._sink_path.write_bytes(b"")
 
         # Start background reader thread.
         self._stop_event.clear()
+        reader_target = self._reader_loop if _USE_FIFO else self._reader_loop_polled
         self._reader_thread = threading.Thread(
-            target=self._reader_loop, daemon=True, name="ish-log-reader"
+            target=reader_target, daemon=True, name="ish-log-reader"
         )
         self._reader_thread.start()
 
@@ -180,7 +211,7 @@ class ScriptLogger:
         if self._reader_thread is not None:
             self._reader_thread.join(timeout=5)
 
-        # Close the FIFO FD.
+        # Close the FIFO FD (POSIX only).
         if self._fifo_fd is not None:
             try:
                 os.close(self._fifo_fd)
@@ -193,7 +224,7 @@ class ScriptLogger:
             self._log_fh.close()
             self._log_fh = None
 
-        # Clean up the temp dir (removes the FIFO).
+        # Clean up the temp dir (removes the sink file/FIFO).
         if self._tmp_dir is not None:
             self._tmp_dir.cleanup()
             self._tmp_dir = None
@@ -205,13 +236,14 @@ class ScriptLogger:
 
         Returns a dict containing:
 
-        - ``ISHLIB_LOG_OUT``: path to the FIFO that ``ish_info``/``ish_warn``/
-          ``ish_error``/``ish_fatal`` write structured messages to.
+        - ``ISHLIB_LOG_OUT``: path to the log sink (a FIFO on POSIX, a plain
+          file on Windows) that ``ish_info``/``ish_warn``/``ish_error``/
+          ``ish_fatal`` write structured messages to.
         - ``ISHLIB_SH``: path to the compiled ``ishlib.sh`` shell library, so
           the :data:`BASH_PRELUDE` can source it.  Omitted when the file does
           not exist (e.g. in a clean checkout before ``make ishlib.sh``).
         """
-        result: Dict[str, str] = {"ISHLIB_LOG_OUT": str(self._fifo_path)}
+        result: Dict[str, str] = {"ISHLIB_LOG_OUT": str(self._sink_path)}
         if _ISHLIB_SH.is_file():
             result["ISHLIB_SH"] = str(_ISHLIB_SH)
         return result
@@ -220,6 +252,11 @@ class ScriptLogger:
     def bash_prelude() -> str:
         """Return the bash snippet that defines ish_info/warn/error/fatal."""
         return BASH_PRELUDE
+
+    @staticmethod
+    def powershell_prelude() -> str:
+        """Return the PowerShell snippet that defines ish_info/warn/error/fatal."""
+        return PS_PRELUDE
 
     @property
     def aborted(self) -> bool:
@@ -303,6 +340,30 @@ class ScriptLogger:
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 self._dispatch(line.decode("utf-8", errors="replace"))
+
+    def _reader_loop_polled(self) -> None:
+        """Background thread: poll a plain file and dispatch structured lines.
+
+        Used on Windows where POSIX FIFOs are not available.  The sink file
+        is opened once; the thread reads new bytes as they arrive and feeds
+        them through the same dispatch path as the FIFO reader.
+        """
+        buf = b""
+        offset = 0
+        with open(self._sink_path, "rb") as fh:  # type: ignore[arg-type]
+            while not self._stop_event.is_set():
+                chunk = fh.read(4096)
+                if not chunk:
+                    time.sleep(0.05)
+                    continue
+                offset += len(chunk)
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    self._dispatch(line.decode("utf-8", errors="replace"))
+        # Drain any remaining data after stop is signalled.
+        if buf.strip():
+            self._dispatch(buf.decode("utf-8", errors="replace"))
 
     def _dispatch(self, line: str) -> None:
         """Parse and handle one structured log line (``"level\\tmessage"``)."""
