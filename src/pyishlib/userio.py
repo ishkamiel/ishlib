@@ -11,10 +11,12 @@ non-interactive environments, testing, and cross-platform differences.
 
 Public API
 ----------
+- :func:`normalise_str`        -- strip non-alphanumeric chars and lowercase
 - :func:`normalise_bool`       -- parse boolean synonyms to ``"true"``/``"false"``
 - :func:`getch`                -- read one keypress without requiring Enter
 - :func:`prompt_string`        -- prompt for an arbitrary string value
 - :func:`prompt_bool`          -- prompt for yes/no (single keypress)
+- :func:`prompt_choice`        -- prompt to pick one value from a list
 - :class:`Choice`              -- enum for y/n/always selections
 - :func:`prompt_yes_no_always` -- prompt for y/n/always (single keypress)
 """
@@ -22,11 +24,35 @@ Public API
 from __future__ import annotations
 
 import logging
+import string
 import sys
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# String normalisation
+# ---------------------------------------------------------------------------
+
+_NORMALISE_KEEP = frozenset(string.ascii_lowercase + string.digits + "_-+")
+
+
+def normalise_str(value: str) -> str:
+    """Lowercase *value* and drop any character outside ``[a-z0-9_\\-+]``.
+
+    Used for case-insensitive, punctuation-tolerant comparisons of tag names
+    and values when reading user-supplied or hand-edited config files.
+
+    >>> normalise_str("MyStuff")
+    'mystuff'
+    >>> normalise_str("build tools!")
+    'build tools'
+    >>> normalise_str("hello-world_1+2")
+    'hello-world_1+2'
+    """
+    return "".join(c for c in value.lower() if c in _NORMALISE_KEEP)
+
 
 # ---------------------------------------------------------------------------
 # Boolean normalisation
@@ -174,6 +200,64 @@ def prompt_bool(
             return default
         # Any other key: reprint the prompt
         sys.stdout.write("\n")
+
+
+# ---------------------------------------------------------------------------
+# Multi-choice prompt (one of a declared list)
+# ---------------------------------------------------------------------------
+
+
+def prompt_choice(
+    message: str,
+    values: List[str],
+    default: Optional[str] = None,
+    *,
+    name: str = "",
+) -> str:
+    """Prompt the user to pick one value from *values*.
+
+    Comparison is case-insensitive (via :func:`normalise_str`), but the
+    returned string is always the original-cased entry from *values*.  On
+    Enter without input, *default* is used if set; otherwise the first
+    element of *values* is used.
+
+    In non-interactive environments the default (or ``values[0]``) is
+    returned with a warning.  Invalid input causes the prompt to repeat.
+
+    Args:
+        message: The question to display.
+        values:  Allowed choices (original casing preserved in return value).
+        default: Preferred value; must appear in *values* or be *None*.
+        name:    Optional variable name used in non-interactive warnings.
+    """
+    if not values:
+        raise ValueError("prompt_choice requires at least one value")
+
+    fallback = default if default is not None else values[0]
+    nvalues = [normalise_str(v) for v in values]
+    nfallback = normalise_str(fallback)
+
+    if not sys.stdin.isatty():
+        label = f"'{name}'" if name else "prompt"
+        log.warning(
+            "Non-interactive session, using default for %s: %s", label, fallback
+        )
+        return fallback
+
+    hint = "/".join(v.upper() if normalise_str(v) == nfallback else v for v in values)
+
+    while True:
+        sys.stdout.write(f"{message} [{hint}]: ")
+        sys.stdout.flush()
+        raw = sys.stdin.readline().strip()
+        if not raw:
+            return fallback
+        normalised = normalise_str(raw)
+        if normalised in nvalues:
+            return values[nvalues.index(normalised)]
+        sys.stdout.write(
+            f"Invalid choice {raw!r}. Please choose one of: {', '.join(values)}\n"
+        )
 
 
 # ---------------------------------------------------------------------------

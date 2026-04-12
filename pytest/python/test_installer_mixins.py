@@ -576,16 +576,22 @@ class TestInstallerConfigIntegration:
         assert len(pkgs) == 1
         assert pkgs[0]["name"] == "pkg1"
 
-    @patch("pyishlib.installer_config.is_gnome", return_value=False)
-    def test_installer_config_get_pkgs_filters_gnome_tag(self, _mock):
-        """get_pkgs() excludes gnome-tagged packages when not on GNOME."""
+    def test_installer_config_get_pkgs_filters_bool_tag(self):
+        """get_pkgs() excludes bool-tagged packages when the flag is false."""
+        from types import SimpleNamespace
         from pyishlib.installer_config import InstallerConfig
+        from pyishlib.dotfile_context import DotfileContext
 
+        ctx = DotfileContext({"isGnome": "false"})
+        cfg = SimpleNamespace(
+            context=ctx,
+            data_template={"isGnome": {"type": "bool"}},
+        )
         config = {
             "pkg1": {"apt": "pkg1"},
-            "pkg2": {"apt": "pkg2", "tags": ["gnome"]},
+            "pkg2": {"apt": "pkg2", "tags": ["isGnome"]},
         }
-        ic = InstallerConfig(config, config_fn=Path("/fake/path"))
+        ic = InstallerConfig(config, config_fn=Path("/fake/path"), cfg=cfg)
         pkgs = ic.get_pkgs()
         assert len(pkgs) == 1
         assert pkgs[0]["name"] == "pkg1"

@@ -19,7 +19,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from .environment import EnvironmentNamespace
-from .userio import normalise_bool, prompt_bool as _io_prompt_bool
+from .userio import normalise_bool, normalise_str, prompt_bool as _io_prompt_bool
+from .userio import prompt_choice as _io_prompt_choice
 from .userio import prompt_string as _io_prompt_string
 
 log = logging.getLogger(__name__)
@@ -143,6 +144,38 @@ class DotfileContext:
             )
         result = _io_prompt_bool(message, default, name=key)
         value = "true" if result else "false"
+        self._vars[key] = value
+        return value
+
+    def prompt_choice(
+        self,
+        key: str,
+        message: str,
+        values: list,
+        default: Optional[str] = None,
+    ) -> str:
+        """Return the stored value for *key*, or prompt the user to pick from *values*.
+
+        If *key* is already set and its normalised value matches one of the
+        normalised *values*, returns the stored value without prompting.
+        Invalid stored values are treated as unset and fall through to the
+        prompt path.  Delegates I/O to :func:`~pyishlib.userio.prompt_choice`.
+
+        The returned string is always from the *values* list (original casing)
+        for freshly-prompted values; existing stored values are kept as-is.
+        """
+        existing = self._vars.get(key)
+        if existing:
+            nvalues = [normalise_str(v) for v in values]
+            if normalise_str(existing) in nvalues:
+                return existing
+            log.warning(
+                "Invalid choice for '%s': %r — not in %s, treating as unset",
+                key,
+                existing,
+                values,
+            )
+        value = _io_prompt_choice(message, values, default, name=key)
         self._vars[key] = value
         return value
 
