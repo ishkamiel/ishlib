@@ -31,6 +31,12 @@ _ISHLIB_ROOT: Path = Path(__file__).resolve().parents[3]
 _ISHOLATE_RUN_DIR = "/run/isholate"
 
 
+def _say(msg: str, *, quiet: bool = False) -> None:
+    """Print an isholate progress message to stderr unless *quiet*."""
+    if not quiet:
+        print(f"isholate: {msg}", file=sys.stderr, flush=True)
+
+
 def get_host_user_info() -> "tuple[str, Path, Path]":
     """Return (username, home, cwd) for the current host user."""
     username = os.environ.get("USER") or os.environ.get("LOGNAME") or "user"
@@ -62,11 +68,12 @@ def _run(cmd: List[str], **kwargs: Any) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, **kwargs)
 
 
-def purge_containers(username: str) -> int:
+def purge_containers(username: str, *, quiet: bool = False) -> int:
     """Delete all isholate containers belonging to the given username.
 
     Args:
         username: The host username whose containers should be purged.
+        quiet:    Suppress isholate's own progress messages.
 
     Returns:
         0 if all deletions succeeded, 1 if any failed.
@@ -83,15 +90,15 @@ def purge_containers(username: str) -> int:
     ]
 
     if not containers:
-        print(f"No isholate containers found for user '{username}'.")
+        _say(f"no isholate containers found for user '{username}'", quiet=quiet)
         return 0
 
     failed = False
     for name in containers:
-        print(f"Deleting {name}...")
+        _say(f"deleting {name}...", quiet=quiet)
         r = _run(["incus", "delete", name, "--force"], check=False)
         if r.returncode != 0:
-            print(f"  Failed to delete {name}", file=sys.stderr)
+            print(f"isholate: failed to delete {name}", file=sys.stderr)
             failed = True
 
     return 1 if failed else 0
@@ -125,6 +132,9 @@ def _provision(
     host_config_dir: Optional[Path],
     host_source: Optional[Path],
     project_overlay: Optional[Path],
+    *,
+    verbose: int = 0,
+    quiet: bool = False,
 ) -> None:
     """Run ishfiles inside the container to bootstrap the user's environment.
 
@@ -146,9 +156,19 @@ def _provision(
                          absolute path inside the container.
         project_overlay: Project ``.isholate/`` directory, mounted
                          read-only at ``/run/isholate/ishsrc-project``.
+        verbose:         0 keeps apt/ishfiles quiet; 1 streams their
+                         output; 2+ also passes ``--debug`` to ishfiles.
+        quiet:           Suppress isholate's own progress messages.
     """
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_home = f"/home/{username}"
+
+    # Ishfiles verbosity flags (global flags, before the subcommand).
+    ishfiles_flags: List[str] = []
+    if verbose >= 2:
+        ishfiles_flags.append("--debug")
+    elif verbose >= 1:
+        ishfiles_flags.append("-v")
 
     # Create the /run/isholate staging directory.
     _run(
@@ -165,6 +185,20 @@ def _provision(
     )
 
     # Install python3 and sudo (needed by ishfiles' apt backend).
+    # First-run image initialisation (apt update + install) is the
+    # slowest part of provisioning, so announce it and -- unless running
+    # without -v -- stream the output so users can see progress.
+    _say(
+        "installing base packages in container (python3, sudo); "
+        "this can take a minute on first run...",
+        quiet=quiet,
+    )
+    apt_update = "apt-get update" if verbose else "apt-get update -qq"
+    apt_install = (
+        "apt-get install -y --no-install-recommends python3 sudo"
+        if verbose
+        else "apt-get install -qq -y --no-install-recommends python3 sudo"
+    )
     _run(
         [
             "incus",
@@ -173,9 +207,8 @@ def _provision(
             "--",
             "/bin/sh",
             "-c",
-            "if command -v apt-get >/dev/null 2>&1; then "
-            "apt-get update -qq && "
-            "apt-get install -y --no-install-recommends python3 sudo; "
+            f"if command -v apt-get >/dev/null 2>&1; then "
+            f"{apt_update} && {apt_install}; "
             "elif command -v dnf >/dev/null 2>&1; then "
             "dnf install -y python3 sudo; "
             "fi",
@@ -185,6 +218,7 @@ def _provision(
 
     # --- Pass 1: host ishfiles ---
     if host_source is not None:
+        _say("applying host ishfiles (pass 1)...", quiet=quiet)
         # Mount host config dir at its natural container path so ishfiles
         # discovers it without any -c override.
         if host_config_dir is not None and host_config_dir.is_dir():
@@ -212,6 +246,7 @@ def _provision(
                 "--",
                 "python3",
                 ishfiles_bin,
+                *ishfiles_flags,
                 "--home",
                 container_home,
                 "apply",
@@ -221,6 +256,7 @@ def _provision(
 
     # --- Pass 2: project overlay ---
     if project_overlay is not None:
+        _say("applying project overlay (pass 2)...", quiet=quiet)
         _add_ro_device(
             name,
             "isholate-overlay",
@@ -237,6 +273,7 @@ def _provision(
                 "--",
                 "python3",
                 ishfiles_bin,
+                *ishfiles_flags,
                 "--home",
                 container_home,
                 "-s",
@@ -247,6 +284,7 @@ def _provision(
         )
 
     # Fix ownership of the user's home after root-driven provisioning.
+    _say("finalising ownership of container home...", quiet=quiet)
     _run(
         [
             "incus",
@@ -295,7 +333,17 @@ def launch_and_exec(
     name: str = args.name or generate_name(username)
     started = False
 
+    # Tolerate args namespaces that don't carry the new verbose/quiet
+    # fields (e.g. older test fixtures).
+    verbose: int = int(getattr(args, "verbose", 0) or 0)
+    quiet: bool = bool(getattr(args, "quiet", False))
+
     # 1. Create container without starting it for cleaner error handling.
+    _say(
+        f"creating container '{name}' from {args.image} "
+        "(may pull the image on first use)...",
+        quiet=quiet,
+    )
     _run(
         ["incus", "init", args.image, name],
         check=True,
@@ -303,6 +351,7 @@ def launch_and_exec(
 
     try:
         # 2. Start the container
+        _say(f"starting container '{name}'...", quiet=quiet)
         try:
             _run(["incus", "start", name], check=True)
             started = True
@@ -322,6 +371,7 @@ def launch_and_exec(
         # 3. Create a user with the same username as on the host.
         # Remove the default 'ubuntu' user first (UID 1000) so our user
         # naturally gets UID 1000, which is what shift=true maps host files to.
+        _say(f"creating user '{username}' inside container...", quiet=quiet)
         _run(
             ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
             check=False,  # may not exist in non-Ubuntu images
@@ -348,6 +398,8 @@ def launch_and_exec(
                 host_config_dir if host_config_dir.is_dir() else None,
                 host_ishfiles_source,
                 project_overlay,
+                verbose=verbose,
+                quiet=quiet,
             )
 
         # 5. Add disk devices for bind mounts
@@ -428,8 +480,10 @@ def launch_and_exec(
 
         if command:
             exec_cmd.extend(command)
+            _say(f"running command in '{name}'...", quiet=quiet)
         else:
             exec_cmd.append(args.shell)
+            _say(f"launching {args.shell} in '{name}'...", quiet=quiet)
 
         result = _run(exec_cmd, check=False)
         return result.returncode
@@ -437,5 +491,6 @@ def launch_and_exec(
     finally:
         # 7. Stop and delete the container (only if it started successfully)
         if started:
+            _say(f"stopping and deleting '{name}'...", quiet=quiet)
             _run(["incus", "stop", name, "--force"], check=False)
             _run(["incus", "delete", name, "--force"], check=False)
