@@ -59,6 +59,12 @@ _CONSTANTS = {
     "package_files": ["packages.toml", "packages.json"],
     # Data template filename inside config_dir
     "data_file": "data.toml",
+    # Externals config filename inside config_dir
+    "externals_config_file": "externals.toml",
+    # Reserved directory name inside source root for external git-repo caches
+    "externals_cache_dirname": ".cache",
+    # Externals state filename inside <target>/.config/ishfiles/
+    "externals_state_filename": "externals-state.json",
 }
 
 

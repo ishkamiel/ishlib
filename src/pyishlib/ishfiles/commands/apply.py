@@ -17,6 +17,7 @@ from ..installer_helper import run_install
 from ..script_logger import ScriptLogger
 from ..script_runner import run_scanned_scripts, scan_scripts
 from ..script_state import ScriptState
+from .external import apply_externals_stage
 
 log = logging.getLogger(__name__)
 
@@ -117,6 +118,18 @@ def run(cfg: IshConfig) -> int:
         if applied and not cfg.quiet:
             print(f"Applied {applied} file(s).")
 
+    # -- Phase 4b: Apply externals -------------------------------------------
+    if not dotfiles_only:
+        log.info("Phase 4b: Applying externals")
+        ext_ret = apply_externals_stage(cfg)
+        if ext_ret != 0:
+            log.warning("Some externals failed to fetch; continuing with scripts")
+            had_errors = True
+        else:
+            had_errors = False
+    else:
+        had_errors = False
+
     # -- Phase 5: Run scripts ------------------------------------------------
     if not dotfiles_only and script_paths:
         with ScriptLogger(cfg) as slog:
@@ -132,7 +145,7 @@ def run(cfg: IshConfig) -> int:
         if ret != 0:
             return ret
 
-    return 0
+    return 1 if had_errors else 0
 
 
 def _print_log_summary(slog: ScriptLogger, cfg: IshConfig) -> None:
