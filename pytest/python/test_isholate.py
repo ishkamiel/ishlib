@@ -4,6 +4,9 @@
 #
 # Distributed under terms of the MIT license.
 
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+
 #
 # Tests for the isholate tool (CLI and container lifecycle)
 
@@ -20,6 +23,11 @@ sys.path.insert(
 )
 
 from pyishlib.isholate.cli import build_parser, main as cli_main
+from pyishlib.isholate.config import (
+    discover_host_ishfiles_source,
+    discover_project_overlay,
+    load_project_config,
+)
 from pyishlib.isholate.container import (
     generate_name,
     get_host_user_info,
@@ -51,6 +59,8 @@ def _make_args(**overrides):
         "ro_home": False,
         "rw_cwd": False,
         "ro_cwd": False,
+        "no_host_ishfiles": False,
+        "no_project_overlay": False,
         "command": [],
     }
     defaults.update(overrides)
@@ -105,7 +115,7 @@ class TestGetHostUserInfo:
 
 
 class TestLaunchAndExec:
-    def _run_with_mocks(self, args, fake_run_returns=None):
+    def _run_with_mocks(self, args, fake_run_returns=None, **launch_kwargs):
         """Run launch_and_exec with _run and subprocess.run mocked.
 
         Returns (all_calls, returncode).
@@ -133,7 +143,7 @@ class TestLaunchAndExec:
                     "pyishlib.isholate.container.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
-                    rc = launch_and_exec(args)
+                    rc = launch_and_exec(args, **launch_kwargs)
                     return mock_run.call_args_list, rc
 
     def _cmds(self, calls):
@@ -317,6 +327,149 @@ class TestLaunchAndExec:
 
 
 # ---------------------------------------------------------------------------
+# launch_and_exec -- provisioning
+# ---------------------------------------------------------------------------
+
+
+class TestProvisioning:
+    """Tests for the ishfiles provisioning step inside the container."""
+
+    def _run_with_mocks(self, args, host_source=None, overlay=None):
+        default = SimpleNamespace(returncode=0)
+
+        def fake_run(cmd, **kwargs):
+            return default
+
+        with patch(
+            "pyishlib.isholate.container.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.container._run", side_effect=fake_run
+            ) as mock_run:
+                with patch(
+                    "pyishlib.isholate.container.subprocess.run",
+                    side_effect=_fake_subprocess_run,
+                ):
+                    # host_config_dir.is_dir() is called inside _provision;
+                    # patch Path.is_dir to return True for the fake config dir.
+                    with patch.object(Path, "is_dir", return_value=True):
+                        rc = launch_and_exec(
+                            args,
+                            host_ishfiles_source=host_source,
+                            project_overlay=overlay,
+                        )
+                        return mock_run.call_args_list, rc
+
+    def _cmds(self, calls):
+        return [c.args[0] for c in calls]
+
+    def test_no_provisioning_when_no_sources(self):
+        """With neither host source nor overlay, no provisioning calls occur."""
+        args = _make_args()
+        calls, _ = self._run_with_mocks(args, host_source=None, overlay=None)
+        cmds = self._cmds(calls)
+
+        # No mkdir, no apt, no ishfiles apply, no chown for provisioning
+        assert not any("/run/isholate" in str(c) for c in cmds)
+        assert not any("ishfiles" in str(c) for c in cmds)
+        assert not any("chown" in str(c) for c in cmds)
+
+    def test_host_source_adds_ishlib_device(self):
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        device_adds = [c for c in cmds if "device" in c and "add" in c]
+        assert any("isholate-ishlib" in c for c in device_adds)
+
+    def test_host_source_mounts_at_same_path(self):
+        """The host source must be mounted at its own absolute path inside the
+        container so the config file's `source = ...` entry resolves correctly."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        device_adds = [c for c in cmds if "device" in c and "add" in c]
+        ishsrc_cmd = next(c for c in device_adds if "isholate-ishsrc" in c)
+        assert f"source={fake_src}" in ishsrc_cmd
+        assert f"path={fake_src}" in ishsrc_cmd
+
+    def test_host_source_runs_ishfiles_apply(self):
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert len(apply_cmds) >= 1
+        # Pass 1 must NOT include an explicit -s override
+        pass1 = apply_cmds[0]
+        assert "-s" not in pass1
+
+    def test_overlay_adds_project_device(self):
+        args = _make_args()
+        fake_overlay = Path("/work/myproject/.isholate")
+        calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
+        cmds = self._cmds(calls)
+
+        device_adds = [c for c in cmds if "device" in c and "add" in c]
+        assert any("isholate-overlay" in c for c in device_adds)
+
+    def test_overlay_runs_ishfiles_apply_with_source_flag(self):
+        args = _make_args()
+        fake_overlay = Path("/work/myproject/.isholate")
+        calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert len(apply_cmds) >= 1
+        # The overlay apply must use -s pointing at the mounted project source
+        overlay_apply = apply_cmds[-1]
+        assert "-s" in overlay_apply
+        assert "/run/isholate/ishsrc-project" in overlay_apply
+
+    def test_both_sources_run_two_apply_passes(self):
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        fake_overlay = Path("/work/myproject/.isholate")
+        calls, _ = self._run_with_mocks(
+            args, host_source=fake_src, overlay=fake_overlay
+        )
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert len(apply_cmds) == 2
+
+    def test_chown_called_after_provisioning(self):
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        chown_cmds = [c for c in cmds if "chown" in c]
+        assert len(chown_cmds) == 1
+        chown_cmd = chown_cmds[0]
+        assert f"{_FAKE_CONTAINER_UID}:{_FAKE_CONTAINER_UID}" in chown_cmd
+        assert f"/home/{_FAKE_USER}" in chown_cmd
+
+    def test_installs_python3_and_sudo(self):
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        # The bootstrap step uses /bin/sh -c with an apt-get / dnf block
+        sh_cmds = [c for c in cmds if "/bin/sh" in c]
+        assert len(sh_cmds) == 1
+        script = sh_cmds[0][-1]  # the -c argument
+        assert "python3" in script
+        assert "sudo" in script
+
+
+# ---------------------------------------------------------------------------
 # CLI parser
 # ---------------------------------------------------------------------------
 
@@ -332,6 +485,8 @@ class TestParser:
         assert args.ro_home is False
         assert args.rw_cwd is False
         assert args.ro_cwd is False
+        assert args.no_host_ishfiles is False
+        assert args.no_project_overlay is False
         assert args.command == []
 
     def test_rw_cwd_and_ro_cwd_are_mutually_exclusive(self):
@@ -348,6 +503,16 @@ class TestParser:
         parser = build_parser()
         args = parser.parse_args(["--image", "images:ubuntu/22.04"])
         assert args.image == "images:ubuntu/22.04"
+
+    def test_no_host_ishfiles_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-host-ishfiles"])
+        assert args.no_host_ishfiles is True
+
+    def test_no_project_overlay_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-project-overlay"])
+        assert args.no_project_overlay is True
 
     def test_command_passthrough(self):
         parser = build_parser()
@@ -370,3 +535,145 @@ class TestParser:
         with patch("sys.platform", "darwin"):
             rc = cli_main([])
         assert rc == 1
+
+    def test_project_config_overrides_image_default(self, tmp_path):
+        """Image from .isholate/ishconfig/isholate.toml becomes the argparse default."""
+        overlay = tmp_path / ".isholate"
+        (overlay / "ishconfig").mkdir(parents=True)
+        (overlay / "ishconfig" / "isholate.toml").write_text(
+            'image = "images:debian/12"\n'
+        )
+        with patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=overlay
+        ):
+            with patch(
+                "pyishlib.isholate.cli.load_project_config",
+                return_value={"image": "images:debian/12"},
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.get_host_user_info",
+                    return_value=_fake_user_info(),
+                ):
+                    with patch(
+                        "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                        return_value=None,
+                    ):
+                        with patch(
+                            "pyishlib.isholate.cli.launch_and_exec",
+                            return_value=0,
+                        ) as mock_launch:
+                            cli_main([])
+                            called_args = mock_launch.call_args[0][0]
+                            assert called_args.image == "images:debian/12"
+
+    def test_cli_image_flag_overrides_project_config(self, tmp_path):
+        """--image CLI flag takes priority over .isholate/ishconfig/isholate.toml."""
+        with patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
+        ):
+            with patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=_fake_user_info(),
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    return_value=None,
+                ):
+                    with patch(
+                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    ) as mock_launch:
+                        cli_main(["--image", "images:ubuntu/22.04"])
+                        called_args = mock_launch.call_args[0][0]
+                        assert called_args.image == "images:ubuntu/22.04"
+
+
+# ---------------------------------------------------------------------------
+# config.py — discovery helpers
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoverProjectOverlay:
+    def test_finds_isholate_in_cwd(self, tmp_path):
+        overlay = tmp_path / ".isholate"
+        overlay.mkdir()
+        result = discover_project_overlay(tmp_path)
+        assert result == overlay
+
+    def test_finds_isholate_in_parent(self, tmp_path):
+        overlay = tmp_path / ".isholate"
+        overlay.mkdir()
+        subdir = tmp_path / "subdir" / "deep"
+        subdir.mkdir(parents=True)
+        result = discover_project_overlay(subdir)
+        assert result == overlay
+
+    def test_returns_none_when_not_found(self, tmp_path):
+        result = discover_project_overlay(tmp_path)
+        assert result is None
+
+    def test_stops_at_first_match(self, tmp_path):
+        """Nested .isholate/ directories: the innermost (deepest) wins."""
+        outer = tmp_path / ".isholate"
+        outer.mkdir()
+        inner_dir = tmp_path / "sub"
+        inner_dir.mkdir()
+        inner = inner_dir / ".isholate"
+        inner.mkdir()
+        result = discover_project_overlay(inner_dir)
+        assert result == inner
+
+
+class TestLoadProjectConfig:
+    def test_returns_empty_when_no_file(self, tmp_path):
+        overlay = tmp_path / ".isholate"
+        overlay.mkdir()
+        result = load_project_config(overlay)
+        assert result == {}
+
+    def test_reads_image_and_shell(self, tmp_path):
+        overlay = tmp_path / ".isholate"
+        (overlay / "ishconfig").mkdir(parents=True)
+        (overlay / "ishconfig" / "isholate.toml").write_text(
+            'image = "images:ubuntu/22.04"\nshell = "/bin/zsh"\n'
+        )
+        result = load_project_config(overlay)
+        assert result["image"] == "images:ubuntu/22.04"
+        assert result["shell"] == "/bin/zsh"
+
+    def test_returns_empty_for_empty_toml(self, tmp_path):
+        overlay = tmp_path / ".isholate"
+        (overlay / "ishconfig").mkdir(parents=True)
+        (overlay / "ishconfig" / "isholate.toml").write_text("")
+        result = load_project_config(overlay)
+        assert result == {}
+
+
+class TestDiscoverHostIshfilesSource:
+    def test_returns_none_when_source_does_not_exist(self, tmp_path):
+        # Neither config file nor default source dir exists in tmp_path
+        result = discover_host_ishfiles_source(tmp_path)
+        assert result is None
+
+    def test_reads_source_from_config(self, tmp_path):
+        src = tmp_path / "mysource"
+        src.mkdir()
+        config_dir = tmp_path / ".config" / "ishfiles"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.toml").write_text(f'source = "{src}"\n')
+        result = discover_host_ishfiles_source(tmp_path)
+        assert result == src
+
+    def test_falls_back_to_default_path(self, tmp_path):
+        default_src = tmp_path / ".local" / "share" / "ishfiles"
+        default_src.mkdir(parents=True)
+        result = discover_host_ishfiles_source(tmp_path)
+        assert result == default_src
+
+    def test_source_from_config_must_exist(self, tmp_path):
+        config_dir = tmp_path / ".config" / "ishfiles"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.toml").write_text(
+            'source = "/nonexistent/path"\n'
+        )
+        result = discover_host_ishfiles_source(tmp_path)
+        assert result is None

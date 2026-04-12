@@ -3,6 +3,9 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
+
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Command-line interface for isholate.
 
 Entry point for the ``isholate`` tool.  Launches an ephemeral Incus
@@ -13,8 +16,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import List, Optional
 
+from .config import (
+    discover_host_ishfiles_source,
+    discover_project_overlay,
+    load_project_config,
+)
 from .container import (
     get_host_user_info,
     launch_and_exec,
@@ -75,6 +84,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--no-host-ishfiles",
+        action="store_true",
+        default=False,
+        help="Skip applying the host user's ishfiles inside the container",
+    )
+    parser.add_argument(
+        "--no-project-overlay",
+        action="store_true",
+        default=False,
+        help=("Skip applying the project .isholate/ overlay inside the container"),
+    )
+
+    parser.add_argument(
         "--purge",
         action="store_true",
         default=False,
@@ -103,11 +125,42 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("isholate: error: isholate is only supported on Linux", file=sys.stderr)
         return 1
 
+    _, home, cwd = get_host_user_info()
+
+    # Discover the project overlay (if any) before parsing args so that
+    # image/shell overrides from .isholate/ishconfig/isholate.toml can be
+    # applied as argparse defaults (CLI flags still take precedence).
+    overlay_dir = discover_project_overlay(cwd)
+    project_cfg = load_project_config(overlay_dir) if overlay_dir is not None else {}
+
     parser = build_parser()
+    if project_cfg.get("image"):
+        parser.set_defaults(image=project_cfg["image"])
+    if project_cfg.get("shell"):
+        parser.set_defaults(shell=project_cfg["shell"])
+
     args = parser.parse_args(argv)
 
     if args.purge:
         username, _, _ = get_host_user_info()
         return purge_containers(username)
 
-    return launch_and_exec(args)
+    # Resolve provisioning sources (skip if the respective --no-* flag is set).
+    host_source: Optional[Path] = None
+    if not args.no_host_ishfiles:
+        host_source = discover_host_ishfiles_source(home)
+        if host_source is None:
+            print(
+                "isholate: host ishfiles source not found; skipping pass 1",
+                file=sys.stderr,
+            )
+
+    resolved_overlay: Optional[Path] = None
+    if not args.no_project_overlay and overlay_dir is not None:
+        resolved_overlay = overlay_dir
+
+    return launch_and_exec(
+        args,
+        host_ishfiles_source=host_source,
+        project_overlay=resolved_overlay,
+    )
