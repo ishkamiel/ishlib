@@ -215,7 +215,7 @@ class FilePreprocessor:
         """
         text = path.read_text(encoding="utf-8")
         meta = read_metadata(path)
-        return self._preprocess_text_with_meta(text, meta)
+        return self._preprocess_text_with_meta(text, meta, source=path)
 
     def preprocess_text(self, text: str, meta: Optional[dict] = None) -> str:
         """Preprocess text content directly.
@@ -231,7 +231,10 @@ class FilePreprocessor:
         return result
 
     def _preprocess_text_with_meta(
-        self, text: str, meta: Optional[dict]
+        self,
+        text: str,
+        meta: Optional[dict],
+        source: Optional[Path] = None,
     ) -> Tuple[str, Optional[dict]]:
         """Core preprocessing pipeline shared by all entry points."""
         # 1. Seed context from metadata [vars] (as defaults only)
@@ -242,7 +245,7 @@ class FilePreprocessor:
         text = remove_metadata_blocks(text)
 
         # 3. Process directive lines and conditionals
-        text = self._process_directives(text)
+        text = self._process_directives(text, source=source)
 
         # 4. Substitute variables
         text = _substitute_variables(text, self._context.as_dict())
@@ -251,16 +254,18 @@ class FilePreprocessor:
 
     # -- directive processing ------------------------------------------------
 
-    def _process_directives(self, text: str) -> str:
+    def _process_directives(self, text: str, source: Optional[Path] = None) -> str:
         """Process all @ish directives in *text*, returning cleaned output."""
         lines = text.splitlines(True)
         output: List[str] = []
         cond_stack: List[_CondFrame] = []
+        src = str(source) if source else "<unknown>"
 
-        for line in lines:
+        for lineno, line in enumerate(lines, 1):
             m = _RE_DIRECTIVE.match(line.rstrip("\n\r"))
             if m:
-                self._handle_directive(m.group("command").strip(), cond_stack)
+                loc = f"{src}:{lineno}"
+                self._handle_directive(m.group("command").strip(), cond_stack, loc)
                 continue  # directive line is consumed
 
             # Non-directive line: emit only if all enclosing conditions are active
@@ -269,14 +274,18 @@ class FilePreprocessor:
 
         if cond_stack:
             log.warning(
-                "Unterminated @ish if block (%d level(s) deep)", len(cond_stack)
+                "%s: Unterminated @ish if block (%d level(s) deep)",
+                src,
+                len(cond_stack),
             )
 
         return "".join(output)
 
-    def _handle_directive(self, command: str, cond_stack: List[_CondFrame]) -> None:
+    def _handle_directive(
+        self, command: str, cond_stack: List[_CondFrame], loc: str = ""
+    ) -> None:
         """Dispatch a single directive command."""
-        if self._handle_conditional(command, cond_stack):
+        if self._handle_conditional(command, cond_stack, loc):
             return
 
         # Non-conditional directives only execute in active branches
@@ -297,9 +306,11 @@ class FilePreprocessor:
                     parsed_bool[0], parsed_bool[1], parsed_bool[2]
                 )
                 return
-            log.warning("Unknown @ish directive: %s", command)
+            log.warning("%s: Unknown @ish directive: %s", loc, command)
 
-    def _handle_conditional(self, command: str, cond_stack: List[_CondFrame]) -> bool:
+    def _handle_conditional(
+        self, command: str, cond_stack: List[_CondFrame], loc: str = ""
+    ) -> bool:
         """Handle if/elif/else/fi directives.  Returns True if handled."""
         if command.startswith("if "):
             expr = command[3:].strip()
@@ -311,24 +322,26 @@ class FilePreprocessor:
             return True
 
         if command.startswith("elif "):
-            return self._handle_elif(command[5:].strip(), cond_stack)
+            return self._handle_elif(command[5:].strip(), cond_stack, loc)
 
         if command == "else":
-            return self._handle_else(cond_stack)
+            return self._handle_else(cond_stack, loc)
 
         if command == "fi":
             if not cond_stack:
-                log.warning("@ish fi without matching if")
+                log.warning("%s: @ish fi without matching if", loc)
             else:
                 cond_stack.pop()
             return True
 
         return False
 
-    def _handle_elif(self, expr: str, cond_stack: List[_CondFrame]) -> bool:
+    def _handle_elif(
+        self, expr: str, cond_stack: List[_CondFrame], loc: str = ""
+    ) -> bool:
         """Process an elif directive."""
         if not cond_stack:
-            log.warning("@ish elif without matching if")
+            log.warning("%s: @ish elif without matching if", loc)
             return True
         frame = cond_stack[-1]
         if frame.satisfied:
@@ -341,10 +354,10 @@ class FilePreprocessor:
         return True
 
     @staticmethod
-    def _handle_else(cond_stack: List[_CondFrame]) -> bool:
+    def _handle_else(cond_stack: List[_CondFrame], loc: str = "") -> bool:
         """Process an else directive."""
         if not cond_stack:
-            log.warning("@ish else without matching if")
+            log.warning("%s: @ish else without matching if", loc)
             return True
         frame = cond_stack[-1]
         frame.active = not frame.satisfied
