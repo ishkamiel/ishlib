@@ -265,6 +265,32 @@ class TestCommandRunnerSudo:
             assert result is True
             assert runner._always_sudo is True
 
+    def test_check_sudo_skips_prompt_when_root(self):
+        runner = CommandRunner()
+        with patch("pyishlib.command_runner.os.geteuid", return_value=0):
+            assert runner._check_sudo(["sudo", "echo"]) is True
+
+    def test_run_sudo_as_root_omits_sudo_prefix(self):
+        """When already root, `sudo=True` must not prepend `sudo` to the command.
+
+        `sudo` requires a TTY for authentication; prepending it in a
+        non-interactive container (stdin=/dev/null) would fail even though
+        the process is already root.
+        """
+        runner = CommandRunner(cfg=IshConfig(dry_run=True))
+        with patch("pyishlib.command_runner.os.geteuid", return_value=0):
+            result = runner.run(["echo", "test"], sudo=True)
+        # dry_run returns a fake CompletedProcess; verify no KeyboardInterrupt
+        assert result.returncode == 0
+
+    def test_check_sudo_prompts_when_not_root(self):
+        runner = CommandRunner()
+        with patch("pyishlib.command_runner.os.geteuid", return_value=1000), patch(
+            "pyishlib.command_runner.prompt_yes_no_always",
+            return_value=Choice.NO,
+        ):
+            assert runner._check_sudo(["sudo", "echo"]) is False
+
 
 if __name__ == "__main__":
     pytest.main()

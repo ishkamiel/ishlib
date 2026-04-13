@@ -95,9 +95,14 @@ class CommandRunner:
         if sudo:
             if self.on_windows:
                 raise OSError("sudo is not available on Windows")
-            command = ["sudo"] + command
-            if not self._check_sudo(command, force_sudo):
-                raise KeyboardInterrupt("User aborted sudo command")
+            if os.geteuid() != 0:
+                # Only prepend sudo when not already root.  Running `sudo`
+                # as root still works, but sudo requires a TTY for
+                # authentication which breaks non-interactive container
+                # provisioning (stdin=/dev/null).
+                command = ["sudo"] + command
+                if not self._check_sudo(command, force_sudo):
+                    raise KeyboardInterrupt("User aborted sudo command")
 
         if "check" not in kwargs:
             kwargs["check"] = True
@@ -245,6 +250,10 @@ class CommandRunner:
 
         if self.dry_run:
             log.info("Dry run, skipping sudo check")
+            return True
+
+        if os.geteuid() == 0:
+            log.debug("Already root, skipping sudo confirmation")
             return True
 
         choice = prompt_yes_no_always(f"Going to run {' '.join(command)}")

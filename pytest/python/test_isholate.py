@@ -320,8 +320,8 @@ class TestLaunchAndExec:
         device_cmds = [c for c in cmds if "device" in c and "add" in c]
         assert len(device_cmds) == 2
 
-    def test_stop_called_even_if_exec_raises(self):
-        """incus stop must be called in the finally block."""
+    def test_stop_called_even_if_exec_fails(self):
+        """incus stop must be called in the finally block even when a step fails."""
         import subprocess
 
         def fake_run(cmd, **kwargs):
@@ -340,13 +340,13 @@ class TestLaunchAndExec:
                     "pyishlib.isholate.container.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
-                    with pytest.raises(Exception):
-                        launch_and_exec(_make_args())
+                    rc = launch_and_exec(_make_args())
 
-                    cmds = [c.args[0] for c in mock_run.call_args_list]
-                    assert any(
-                        c[:3] == ["incus", "stop", "test-container"] for c in cmds
-                    )
+                assert rc == 1
+                cmds = [c.args[0] for c in mock_run.call_args_list]
+                assert any(
+                    c[:3] == ["incus", "stop", "test-container"] for c in cmds
+                )
 
     def test_auto_generated_name_when_none(self):
         args = _make_args(name=None)
@@ -537,12 +537,25 @@ class TestProvisioning:
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
         cmds = self._cmds(calls)
 
-        # The bootstrap step uses /bin/sh -c with an apt-get / dnf block
+        # Two /bin/sh calls: IPv4 force step + apt-get bootstrap
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        assert len(sh_cmds) == 1
-        script = sh_cmds[0][-1]  # the -c argument
+        assert len(sh_cmds) == 2
+        # The bootstrap is the second sh call (after IPv4 forcing)
+        script = sh_cmds[1][-1]  # the -c argument
         assert "python3" in script
         assert "sudo" in script
+
+    def test_forces_ipv4_before_apt(self):
+        """Provisioning writes a force-IPv4 apt config before running apt-get."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        sh_cmds = [c for c in cmds if "/bin/sh" in c]
+        ipv4_script = sh_cmds[0][-1]
+        assert "ForceIPv4" in ipv4_script
+        assert "apt.conf.d" in ipv4_script
 
     def test_apt_bootstrap_is_noninteractive(self):
         """Regression: base-package install must not hang on debconf prompts.
@@ -559,8 +572,12 @@ class TestProvisioning:
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
 
-        # Find the apt-bootstrap call (the /bin/sh -c one).
-        bootstrap_call = next(c for c in calls if "/bin/sh" in c.args[0])
+        # Find the apt-bootstrap call: the /bin/sh -c call that has DEBIAN_FRONTEND
+        bootstrap_call = next(
+            c
+            for c in calls
+            if "/bin/sh" in c.args[0] and "DEBIAN_FRONTEND=noninteractive" in c.args[0]
+        )
         cmd = bootstrap_call.args[0]
 
         # DEBIAN_FRONTEND=noninteractive must be passed via `incus exec --env`.
@@ -578,7 +595,7 @@ class TestProvisioning:
         cmds = self._cmds(calls)
 
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        script = sh_cmds[0][-1]
+        script = sh_cmds[1][-1]  # bootstrap is the second sh call
         # -qq should not appear when verbose
         assert "-qq" not in script
 
@@ -601,7 +618,7 @@ class TestProvisioning:
         cmds = self._cmds(calls)
 
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        script = sh_cmds[0][-1]
+        script = sh_cmds[1][-1]  # bootstrap is the second sh call
         assert "-qq" in script
 
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]

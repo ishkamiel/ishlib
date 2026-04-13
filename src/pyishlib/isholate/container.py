@@ -68,6 +68,32 @@ def _run(cmd: List[str], **kwargs: Any) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, **kwargs)
 
 
+def _run_checked(
+    cmd: List[str], step: str, **kwargs: Any
+) -> subprocess.CompletedProcess:
+    """Run *cmd* with ``check=True``; on failure flush output and re-raise with a
+    labelled message so the user knows which provisioning step broke.
+
+    Args:
+        cmd:  Command to run.
+        step: Human-readable label for this step (shown on failure).
+    """
+    kwargs["check"] = True
+    try:
+        return _run(cmd, **kwargs)
+    except subprocess.CalledProcessError as exc:
+        # Flush both streams so any container output printed before the
+        # failure appears before our error message.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        print(
+            f"\nisholate: {step} failed (exit {exc.returncode})",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise
+
+
 def purge_containers(username: str, *, quiet: bool = False) -> int:
     """Delete all isholate containers belonging to the given username.
 
@@ -174,9 +200,9 @@ def _provision(
         ishfiles_flags.append("-v")
 
     # Create the /run/isholate staging directory.
-    _run(
+    _run_checked(
         ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
-        check=True,
+        "create staging directory",
         stdin=subprocess.DEVNULL,
     )
 
@@ -203,11 +229,30 @@ def _provision(
         if verbose
         else "apt-get install -qq -y --no-install-recommends python3 sudo"
     )
+    # Force apt to use IPv4.  Incus bridges typically provide IPv4 NAT but
+    # may not route IPv6, causing apt to waste time on unreachable addresses
+    # before falling back to IPv4.
+    _run(
+        [
+            "incus",
+            "exec",
+            name,
+            "--",
+            "/bin/sh",
+            "-c",
+            "mkdir -p /etc/apt/apt.conf.d && "
+            "printf 'Acquire::ForceIPv4 \"true\";\\n' "
+            "> /etc/apt/apt.conf.d/99isholate-force-ipv4",
+        ],
+        check=False,  # best-effort: non-apt images silently skip this
+        stdin=subprocess.DEVNULL,
+    )
+
     # Pass DEBIAN_FRONTEND=noninteractive so debconf (e.g. the tzdata
     # postinst pulled in by python3) uses the non-interactive frontend
     # instead of prompting on stdin.  Also detach stdin from the
     # controlling terminal so no postinst hook can read from it.
-    _run(
+    _run_checked(
         [
             "incus",
             "exec",
@@ -223,7 +268,7 @@ def _provision(
             "dnf install -y python3 sudo; "
             "fi",
         ],
-        check=True,
+        "bootstrap (python3 + sudo install)",
         stdin=subprocess.DEVNULL,
     )
 
@@ -247,7 +292,7 @@ def _provision(
             host_source,
             str(host_source),
         )
-        _run(
+        _run_checked(
             [
                 "incus",
                 "exec",
@@ -262,7 +307,7 @@ def _provision(
                 container_home,
                 "apply",
             ],
-            check=True,
+            "ishfiles apply (pass 1: host dotfiles)",
             stdin=subprocess.DEVNULL,
         )
 
@@ -275,7 +320,7 @@ def _provision(
             project_overlay,
             f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
         )
-        _run(
+        _run_checked(
             [
                 "incus",
                 "exec",
@@ -292,13 +337,13 @@ def _provision(
                 f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
                 "apply",
             ],
-            check=True,
+            "ishfiles apply (pass 2: project overlay)",
             stdin=subprocess.DEVNULL,
         )
 
     # Fix ownership of the user's home after root-driven provisioning.
     _say("finalising ownership of container home...", quiet=quiet)
-    _run(
+    _run_checked(
         [
             "incus",
             "exec",
@@ -309,7 +354,7 @@ def _provision(
             f"{uid}:{uid}",
             container_home,
         ],
-        check=True,
+        "finalise container home ownership",
         stdin=subprocess.DEVNULL,
     )
 
@@ -501,6 +546,19 @@ def launch_and_exec(
 
         result = _run(exec_cmd, check=False)
         return result.returncode
+
+    except subprocess.CalledProcessError as exc:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        print(
+            f"\nisholate: provisioning failed — see output above for details.\n"
+            f"  Failed command: {' '.join(str(a) for a in exc.cmd)}\n"
+            f"  Exit status: {exc.returncode}\n"
+            "  Tip: re-run with -vv to stream full debug output from inside the container.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
 
     finally:
         # 7. Stop and delete the container (only if it started successfully)
