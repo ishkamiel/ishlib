@@ -5,8 +5,7 @@
 # Distributed under terms of the MIT license.
 """Common utilities for pyishlib: logging setup and process helpers.
 
-Interactive prompting has moved to :mod:`pyishlib.userio`.  ``Choice`` and
-``prompt_yes_no_always`` are re-exported here for backward compatibility.
+Interactive prompting lives in :mod:`pyishlib.userio`.
 """
 
 import logging
