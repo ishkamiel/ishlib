@@ -54,6 +54,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         ),
     )
     parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        default=False,
+        dest="yes",
+        help="Skip confirmation prompts and apply all changes automatically",
+    )
+    parser.add_argument(
         "--isholate",
         action="store_true",
         default=False,
@@ -194,10 +202,12 @@ def run(cfg: IshConfig) -> int:
 
     if changes:
         if not cfg.dry_run:
-            choice = prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
-            if choice.no:
-                print("Aborted.")
-                return 0
+            yes = cfg.get_opt("yes", default=False)
+            if not yes:
+                choice = prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
+                if choice.no:
+                    print("Aborted.")
+                    return 0
 
         applied = applier.apply_changes(changes)
         if applied and not cfg.quiet:
@@ -235,6 +245,15 @@ def _print_log_summary(slog: ScriptLogger, cfg: IshConfig) -> None:
     """Print run summary and log path (unless quiet)."""
     if cfg.quiet:
         return
+    issues = slog.script_issues()
+    if issues:
+        for name, counts in issues:
+            parts = [
+                f"{counts[lvl]} {lvl}"
+                for lvl in ("warn", "error", "fatal")
+                if counts.get(lvl)
+            ]
+            print(f"  {name}: {', '.join(parts)}")
     summary = slog.summary_line()
     if slog.log_path:
         print(f"Scripts done: {summary}. Log: {slog.log_path}")

@@ -22,6 +22,7 @@ import logging
 import os
 import stat
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional
@@ -185,6 +186,15 @@ class DotfileScript:
                 self._path.name,
                 e.returncode,
             )
+            if e.output:
+                raw = e.output if isinstance(e.output, bytes) else e.output.encode()
+                output_text = raw.decode("utf-8", errors="replace").rstrip("\n")
+                if output_text:
+                    sys.stderr.write(
+                        f"--- output from {self._path.name} ---\n"
+                        f"{output_text}\n"
+                        f"--- end output ---\n"
+                    )
             raise
         finally:
             tmp_path.unlink(missing_ok=True)

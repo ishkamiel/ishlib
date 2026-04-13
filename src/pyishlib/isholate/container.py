@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import socket
 import string
 import subprocess
 import sys
@@ -277,6 +278,30 @@ def _extract_container_ip(addr_output: str) -> str:
     return "unknown"
 
 
+def _host_apt_cacher_running() -> bool:
+    """Return True if apt-cacher-ng appears to be listening on localhost:3142."""
+    try:
+        with socket.create_connection(("localhost", 3142), timeout=1):
+            return True
+    except (ConnectionRefusedError, OSError):
+        return False
+
+
+def _get_incus_bridge_ip() -> Optional[str]:
+    """Return the IPv4 address of the incusbr0 bridge, or None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "addr", "show", "incusbr0"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        ip = _extract_container_ip(result.stdout)
+        return ip if ip != "unknown" else None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
 def _provision(
     name: str,
     username: str,
@@ -374,6 +399,39 @@ def _provision(
         stdin=subprocess.DEVNULL,
     )
 
+    # If apt-cacher-ng is running on the host, point containers at it via the
+    # bridge IP so they benefit from the local package cache.  Containers
+    # cannot use "localhost" because that resolves to the container itself;
+    # the bridge IP (incusbr0) is the host-side address reachable from inside.
+    bridge_ip = _get_incus_bridge_ip()
+    if bridge_ip and _host_apt_cacher_running():
+        _say(
+            f"apt-cacher-ng detected on host — configuring proxy ({bridge_ip}:3142) in container...",
+            quiet=quiet,
+        )
+        _run(
+            [
+                "incus",
+                "exec",
+                name,
+                "--",
+                "/bin/sh",
+                "-c",
+                "mkdir -p /etc/apt/apt.conf.d && "
+                f"printf 'Acquire::http::Proxy \"http://{bridge_ip}:3142\";\\n' "
+                "> /etc/apt/apt.conf.d/01proxy",
+            ],
+            check=False,  # best-effort: non-apt images silently skip this
+            stdin=subprocess.DEVNULL,
+        )
+    elif not quiet:
+        print(
+            "isholate: tip: install apt-cacher-ng on the host to cache apt downloads\n"
+            "  across container runs (speeds up repeated provisioning significantly):\n"
+            "    sudo apt-get install apt-cacher-ng",
+            file=sys.stderr,
+        )
+
     # Pass DEBIAN_FRONTEND=noninteractive so debconf (e.g. the tzdata
     # postinst pulled in by python3) uses the non-interactive frontend
     # instead of prompting on stdin.  Also detach stdin from the
@@ -433,7 +491,7 @@ def _provision(
                 f"{_ISHOLATE_RUN_DIR}/ishconf",
             )
             pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
-        pass1_cmd += ["apply", "--isholate"]
+        pass1_cmd += ["apply", "--isholate", "--yes"]
         _run_checked(
             pass1_cmd,
             "ishfiles apply (pass 1: host dotfiles)",
@@ -466,6 +524,7 @@ def _provision(
                 f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
                 "apply",
                 "--isholate",
+                "--yes",
             ],
             "ishfiles apply (pass 2: project overlay)",
             stdin=subprocess.DEVNULL,
