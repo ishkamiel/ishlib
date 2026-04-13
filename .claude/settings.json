@@ -7,6 +7,7 @@
       "Bash(make verify * | head *)",
       "Bash(make verify * | rg *)",
       "Bash(make verify * | tail *)",
+      "Bash(mdl *)",
       "Bash(pre-commit run *)",
       "Bash(pytest *)",
       "Bash(python -m mpyp *)",
