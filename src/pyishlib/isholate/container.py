@@ -333,7 +333,7 @@ def _provision(
                          via ``-c`` so it never lands inside the user home.
         host_source:     Host ishfiles source tree, mounted read-only at
                          ``/run/isholate/ishsrc`` and passed via ``-s``.
-        project_overlay: Project ``.isholate/`` directory, mounted
+        project_overlay: Project ``.ishfiles/`` directory, mounted
                          read-only at ``/run/isholate/ishsrc-project``.
         verbose:         0 keeps apt/ishfiles quiet; 1 streams their
                          output; 2+ also passes ``--debug`` to ishfiles.

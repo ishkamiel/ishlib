@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-ishfiles",
         action="store_true",
         default=False,
-        help="Skip all ishfiles provisioning (host dotfiles and project overlay)",
+        help="Skip all ishfiles provisioning (host dotfiles and project ishfiles)",
     )
     parser.add_argument(
         "--no-host-ishfiles",
@@ -90,10 +90,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip applying the host user's ishfiles inside the container",
     )
     parser.add_argument(
-        "--no-project-overlay",
+        "--no-project-ishfiles",
         action="store_true",
         default=False,
-        help=("Skip applying the project .isholate/ overlay inside the container"),
+        help=("Skip applying the project .ishfiles/ source tree inside the container"),
     )
 
     parser.add_argument(
@@ -166,7 +166,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --no-ishfiles is a shorthand that implies both granular skip flags.
     if args.no_ishfiles:
         args.no_host_ishfiles = True
-        args.no_project_overlay = True
+        args.no_project_ishfiles = True
 
     # Resolve provisioning sources (skip if the respective --no-* flag is set).
     host_source: Optional[Path] = None
@@ -179,7 +179,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
 
     resolved_overlay: Optional[Path] = None
-    if not args.no_project_overlay and overlay_dir is not None:
+    if not args.no_project_ishfiles and overlay_dir is not None:
         resolved_overlay = overlay_dir
 
     return launch_and_exec(
