@@ -154,6 +154,129 @@ def _add_ro_device(
     )
 
 
+def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> None:
+    """Probe outbound IPv4 connectivity inside the container.
+
+    Runs before apt so that network failures produce actionable diagnostics
+    instead of a wall of apt timeout messages.
+
+    Raises:
+        RuntimeError: if the container cannot reach the internet.
+    """
+    _say("checking container network connectivity...", quiet=quiet)
+
+    def _probe(cmd: List[str]) -> "tuple[int, str]":
+        r = _run(
+            ["incus", "exec", name, "--"] + cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+        return r.returncode, (r.stdout or "").strip()
+
+    _, route_out = _probe(["ip", "-4", "route", "show", "default"])
+    _, addr_out = _probe(["ip", "-4", "addr", "show"])
+    dns_rc, dns_out = _probe(["getent", "hosts", "archive.ubuntu.com"])
+
+    # Test raw IPv4 egress using ping (available in all Ubuntu base images;
+    # avoids the curl dependency that isn't present before bootstrapping).
+    raw_rc, _ = _probe(["ping", "-c", "1", "-W", "5", "1.1.1.1"])
+
+    if raw_rc != 0:
+        # No raw IPv4 egress → bridge/NAT/firewall problem.
+        dns_status = "ok" if dns_rc == 0 else "fail"
+        container_ip = _extract_container_ip(addr_out)
+        default_route = route_out or "none"
+        docker_running = Path("/run/docker.sock").exists()
+        docker_hint = (
+            "  * Docker is running (detected) and its FORWARD DROP policy blocks\n"
+            "    incus bridge traffic.  Use a systemd drop-in so the fix persists\n"
+            "    across reboots and Docker restarts (avoids iptables-persistent):\n"
+            "      sudo mkdir -p /etc/systemd/system/docker.service.d\n"
+            "      sudo tee /etc/systemd/system/docker.service.d/incus-forward.conf <<'EOF'\n"
+            "    [Service]\n"
+            "    ExecStartPost=/sbin/iptables -I DOCKER-USER -i incusbr0 -j ACCEPT\n"
+            "    ExecStartPost=/sbin/iptables -I DOCKER-USER -o incusbr0 -j ACCEPT\n"
+            "    EOF\n"
+            "      sudo systemctl daemon-reload && sudo systemctl restart docker\n"
+        )
+        other_hints = (
+            "  * ufw is active and blocking forwarded traffic.\n"
+            "    Fix:  sudo ufw allow in on incusbr0\n"
+            "          sudo ufw route allow in on incusbr0\n"
+            "\n"
+            "  * firewalld is active and the 'incusbr0' zone is missing.\n"
+            "    Fix:  sudo firewall-cmd --zone=trusted "
+            "--change-interface=incusbr0 --permanent\n"
+            "          sudo firewall-cmd --reload\n"
+            "\n"
+            "  * net.ipv4.ip_forward is 0.\n"
+            "    Check: sysctl net.ipv4.ip_forward\n"
+            "    Fix:   sudo sysctl -w net.ipv4.ip_forward=1\n"
+            "\n"
+            "  * Docker is running and its FORWARD DROP policy blocks incus traffic.\n"
+            "    Fix:  sudo mkdir -p /etc/systemd/system/docker.service.d\n"
+            "    (see Docker-detected variant above for full persistent fix)\n"
+            "\n"
+            "  * Incus bridge NAT is stale after an upgrade.\n"
+            "    Fix:   sudo systemctl restart incus\n"
+        )
+        hints = (docker_hint + "\n" + other_hints) if docker_running else other_hints
+        print(
+            f"\nisholate: container has no outbound IPv4 connectivity.\n"
+            f"\n"
+            f"  default route:  {default_route}\n"
+            f"  container IP:   {container_ip}\n"
+            f"  DNS:            {dns_status}\n"
+            f"  ping 1.1.1.1:   timeout\n"
+            f"\n"
+            f"The container can't reach the internet at all.  The host can, so this\n"
+            f"is almost certainly an incus bridge / host firewall issue.  Common\n"
+            f"causes on a plain LAN:\n"
+            f"\n"
+            f"{hints}\n"
+            f"Retry isholate after applying one of the fixes above.\n",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise RuntimeError("container has no outbound IPv4 connectivity")
+
+    # Test mirror reachability (DNS + egress).
+    mirror_rc, _ = _probe(["ping", "-c", "1", "-W", "10", "archive.ubuntu.com"])
+
+    if mirror_rc != 0:
+        container_ip = _extract_container_ip(addr_out)
+        print(
+            f"\nisholate: container reaches the internet (1.1.1.1 ok) but "
+            f"cannot reach archive.ubuntu.com.\n"
+            f"\n"
+            f"  container IP:    {container_ip}\n"
+            f"  ping 1.1.1.1:    ok\n"
+            f"  ping archive.ubuntu: timeout\n"
+            f"\n"
+            f"This is an upstream / mirror problem, not a container-setup issue.\n"
+            f"Try again later.\n",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise RuntimeError("container cannot reach archive.ubuntu.com")
+
+    if verbose:
+        print("isholate: network pre-flight ok", file=sys.stderr)
+
+
+def _extract_container_ip(addr_output: str) -> str:
+    """Extract the first non-loopback IPv4 address from `ip addr show` output."""
+    import re
+
+    for line in addr_output.splitlines():
+        m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", line)
+        if m and not m.group(1).startswith("127."):
+            return m.group(1)
+    return "unknown"
+
+
 def _provision(
     name: str,
     username: str,
@@ -223,6 +346,9 @@ def _provision(
         "this can take a minute on first run...",
         quiet=quiet,
     )
+    # Pre-flight network probe before apt so failures produce clear diagnostics.
+    _network_preflight(name, verbose=verbose, quiet=quiet)
+
     apt_update = "apt-get update" if verbose else "apt-get update -qq"
     apt_install = (
         "apt-get install -y --no-install-recommends python3 sudo"
@@ -381,7 +507,7 @@ def launch_and_exec(
 
     Args:
         args: Parsed argparse namespace with fields: name, image, shell,
-              ro_home, rw_cwd, ro_cwd, command.
+              rw_cwd, ro_cwd, command.
         host_ishfiles_source: Host ishfiles source tree to apply (pass 1).
             When ``None``, pass 1 is skipped.
         project_overlay: Project ``.isholate/`` source tree to apply
@@ -464,24 +590,6 @@ def launch_and_exec(
             )
 
         # 5. Add disk devices for bind mounts
-        if args.ro_home:
-            _run(
-                [
-                    "incus",
-                    "config",
-                    "device",
-                    "add",
-                    name,
-                    "hosthome",
-                    "disk",
-                    f"source={home}",
-                    f"path=/home/{username}",
-                    "readonly=true",
-                    "shift=true",
-                ],
-                check=True,
-            )
-
         if args.rw_cwd:
             _run(
                 [
@@ -560,6 +668,10 @@ def launch_and_exec(
             file=sys.stderr,
             flush=True,
         )
+        return 1
+
+    except RuntimeError:
+        # Raised by _network_preflight with a message already printed.
         return 1
 
     finally:

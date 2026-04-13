@@ -351,6 +351,8 @@ Key modules:
 
 When editing isholate, keep the boundary with `pyishlib` clean: reuse `environment.py` for platform checks and `command_runner.py` for subprocess execution rather than re-implementing them.
 
+`_provision` runs a **network pre-flight probe** (`_network_preflight`) before apt. It tests raw IPv4 egress to 1.1.1.1 and then to archive.ubuntu.com. On failure it prints a focused diagnostic (firewall hints, sysctl, incus restart) and raises `RuntimeError`, which is caught in `launch_and_exec` so the container is still stopped cleanly.
+
 ## ishfiles Manual Testing Safety
 
 **Never run `ishfiles apply`, `install`, or `runscripts` against the real home directory.** These commands modify files and install packages. Only use `ishfiles diff` for manual testing, and always point to safe temporary directories:
