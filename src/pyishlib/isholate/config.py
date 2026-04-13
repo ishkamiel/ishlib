@@ -42,6 +42,10 @@ OVERLAY_DIR_NAME = ".isholate"
 _OVERLAY_CONFIG_DIR = "ishconfig"
 _ISHOLATE_CONFIG_FILE = "isholate.toml"
 
+# XDG state directory under $HOME where logs from failed containers are saved.
+# Full path: <home> / FAILED_LOGS_STATE_DIR / <container-name> / logs/
+FAILED_LOGS_STATE_DIR = Path(".local") / "state" / "isholate" / "failed-logs"
+
 
 def discover_project_overlay(cwd: Path) -> Optional[Path]:
     """Walk up from *cwd* looking for a ``.isholate/`` directory.

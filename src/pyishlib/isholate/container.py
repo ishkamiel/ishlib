@@ -24,6 +24,8 @@ import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
+from .config import FAILED_LOGS_STATE_DIR
+
 # Root of the ishlib checkout — used to mount the ishfiles CLI into containers.
 # Path: container.py -> isholate/ -> pyishlib/ -> src/ -> ishlib/
 _ISHLIB_ROOT: Path = Path(__file__).resolve().parents[3]
@@ -548,6 +550,65 @@ def _provision(
     )
 
 
+def _pull_container_logs(
+    name: str,
+    container_home: str,
+    *,
+    quiet: bool = False,
+) -> Optional[Path]:
+    """Pull the ishfiles log directory from a (still-running) container to the host.
+
+    Args:
+        name:           Incus container name.
+        container_home: Home directory path inside the container.
+        quiet:          Suppress isholate's own progress messages.
+
+    Returns:
+        Local path where logs were written, or None if pull failed / no logs found.
+    """
+    log_dir_in_container = f"{container_home}/.local/state/ishfiles/logs"
+
+    # Check whether the log directory exists inside the container before
+    # attempting a pull (avoids a confusing incus error on fresh failures).
+    check = _run(
+        ["incus", "exec", name, "--", "test", "-d", log_dir_in_container],
+        check=False,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+    )
+    if check.returncode != 0:
+        return None
+
+    local_log_root = Path.home() / FAILED_LOGS_STATE_DIR
+    local_log_root.mkdir(parents=True, exist_ok=True)
+    dest = local_log_root / name
+    dest.mkdir(parents=True, exist_ok=True)
+
+    result = _run(
+        [
+            "incus",
+            "file",
+            "pull",
+            "--recursive",
+            f"{name}{log_dir_in_container}",
+            str(dest),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        if not quiet:
+            print(
+                f"isholate: warning: could not pull logs from container: {result.stderr.strip()}",
+                file=sys.stderr,
+            )
+        return None
+
+    return dest
+
+
 def launch_and_exec(
     args: Any,
     *,
@@ -729,6 +790,15 @@ def launch_and_exec(
             file=sys.stderr,
             flush=True,
         )
+        # Pull ishfiles logs out of the container before it is deleted.
+        if started:
+            log_dest = _pull_container_logs(name, f"/home/{username}", quiet=quiet)
+            if log_dest is not None:
+                print(
+                    f"isholate: logs saved to {log_dest}",
+                    file=sys.stderr,
+                    flush=True,
+                )
         return 1
 
     except RuntimeError:
