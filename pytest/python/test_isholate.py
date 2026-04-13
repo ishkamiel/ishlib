@@ -937,24 +937,6 @@ class TestNetworkPreflight:
         assert "firewalld" in err
         assert "ip_forward" in err
 
-    def test_preflight_mirror_unreachable_message(self, capsys):
-        """When 1.1.1.1 ok but archive fails, Diagnostic B appears (no ufw hints)."""
-        args = _make_args()
-        fake_src = Path("/home/testuser/.local/share/ishfiles")
-
-        def fake_run(cmd, **kwargs):
-            if "archive.ubuntu.com" in str(cmd):
-                return SimpleNamespace(returncode=1, stdout="", stderr="")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        _, rc = self._run_with_mocks_custom(args, fake_run, host_source=fake_src)
-        err = capsys.readouterr().err
-
-        assert rc != 0
-        assert "1.1.1.1" in err
-        assert "upstream" in err or "mirror" in err
-        assert "ufw" not in err
-
 
 # ---------------------------------------------------------------------------
 # CLI parser

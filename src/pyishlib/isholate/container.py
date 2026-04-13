@@ -93,10 +93,13 @@ def generate_name(username: str) -> str:
 def _image_tag(image: str) -> str:
     """Derive a short, filesystem-safe tag from an Incus image string.
 
+    The scheme/remote prefix (everything up to and including the first ``:``)
+    is stripped before sanitising.
+
     Examples::
 
         "images:ubuntu/24.04"  ->  "ubuntu-24-04"
-        "ubuntu:22.04"         ->  "ubuntu-22-04"
+        "ubuntu:22.04"         ->  "22-04"
     """
     tag = re.sub(r"^[^:]+:", "", image)  # strip scheme
     tag = re.sub(r"[^a-z0-9]+", "-", tag.lower())
@@ -283,8 +286,14 @@ def _source_fingerprint(source: Path) -> str:
 def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> None:
     """Probe outbound IPv4 connectivity inside the container.
 
-    Runs before apt so that network failures produce actionable diagnostics
-    instead of a wall of apt timeout messages.
+    Runs before the package manager so that network failures produce
+    actionable diagnostics instead of a wall of timeout messages.
+
+    Uses ``ping`` to test raw IPv4 egress.  If ``ping`` is not present in
+    the image (exit 127) the check is skipped — minimal images that lack
+    ``ping`` typically still have working network configured by Incus.
+    Similarly ``ip`` and ``getent`` are used for diagnostic output only; a
+    missing tool degrades gracefully rather than aborting.
 
     Raises:
         RuntimeError: if the container cannot reach the internet.
@@ -303,12 +312,22 @@ def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> N
 
     _, route_out = _probe(["ip", "-4", "route", "show", "default"])
     _, addr_out = _probe(["ip", "-4", "addr", "show"])
-    dns_rc, dns_out = _probe(["getent", "hosts", "archive.ubuntu.com"])
+    dns_rc, _ = _probe(["getent", "hosts", "1.1.1.1"])
 
     raw_rc, _ = _probe(["ping", "-c", "1", "-W", "5", "1.1.1.1"])
 
+    # Exit 127 means the tool is not installed — skip the check rather than
+    # misreporting a connectivity failure.
+    if raw_rc == 127:
+        if verbose:
+            print(
+                "isholate: ping not found in image — skipping network pre-flight",
+                file=sys.stderr,
+            )
+        return
+
     if raw_rc != 0:
-        dns_status = "ok" if dns_rc == 0 else "fail"
+        dns_status = "ok" if dns_rc == 0 else ("unknown" if dns_rc == 127 else "fail")
         container_ip = _extract_container_ip(addr_out)
         default_route = route_out or "none"
         docker_running = Path("/run/docker.sock").exists()
@@ -364,25 +383,6 @@ def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> N
             flush=True,
         )
         raise RuntimeError("container has no outbound IPv4 connectivity")
-
-    mirror_rc, _ = _probe(["ping", "-c", "1", "-W", "10", "archive.ubuntu.com"])
-
-    if mirror_rc != 0:
-        container_ip = _extract_container_ip(addr_out)
-        print(
-            f"\nisholate: container reaches the internet (1.1.1.1 ok) but "
-            f"cannot reach archive.ubuntu.com.\n"
-            f"\n"
-            f"  container IP:    {container_ip}\n"
-            f"  ping 1.1.1.1:    ok\n"
-            f"  ping archive.ubuntu: timeout\n"
-            f"\n"
-            f"This is an upstream / mirror problem, not a container-setup issue.\n"
-            f"Try again later.\n",
-            file=sys.stderr,
-            flush=True,
-        )
-        raise RuntimeError("container cannot reach archive.ubuntu.com")
 
     if verbose:
         print("isholate: network pre-flight ok", file=sys.stderr)
@@ -894,7 +894,6 @@ def ensure_project_base(
     host_base: str,
     username: str,
     project_overlay: Path,
-    shell: str,
     *,
     verbose: int = 0,
     quiet: bool = False,
@@ -910,7 +909,6 @@ def ensure_project_base(
         host_base:        Name of the (stopped) host-base container.
         username:         Host username (already mirrored from the host base).
         project_overlay:  Project ``.ishfiles/`` directory.
-        shell:            Login shell (must match what the host base was built with).
         verbose:          Verbosity level.
         quiet:            Suppress isholate progress messages.
         rebuild:          Force rebuild even if fingerprint matches.
@@ -1552,7 +1550,6 @@ def launch_and_exec(
                     parent_base,
                     username,
                     project_overlay,
-                    args.shell,
                     verbose=verbose,
                     quiet=quiet,
                     rebuild=rebuild_project_base,

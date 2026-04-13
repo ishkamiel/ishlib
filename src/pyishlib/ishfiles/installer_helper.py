@@ -247,7 +247,10 @@ def run_install(
 
     if not to_install:
         if cfg.verbose:
-            print("All packages are already installed.")
+            if missing:
+                print("All installable packages are already installed.")
+            else:
+                print("All packages are already installed.")
         return 0
 
     if not cfg.quiet:
