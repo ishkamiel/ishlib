@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import sys
 
 from ...ish_config import IshConfig
@@ -42,11 +43,22 @@ def run(cfg: IshConfig) -> int:
         )
         return 1
 
+    shell_str = os.environ.get("SHELL", "sh")
+    shell_argv = shlex.split(shell_str) or ["sh"]
+
+    if cfg.dry_run:
+        print(f"cd {source_dir}", file=sys.stderr)
+        print(f"exec {shell_str}", file=sys.stderr)
+        return 0
+
     print(
         f"ishfiles cd: spawning a subshell in {source_dir}\n"
         '  (for a real cd, add `eval "$(ishfiles init)"` to your shell rc)',
         file=sys.stderr,
     )
-    shell = os.environ.get("SHELL", "sh")
-    os.chdir(source_dir)
-    os.execvp(shell, [shell])  # does not return
+    try:
+        os.chdir(source_dir)
+        os.execvp(shell_argv[0], shell_argv)  # does not return
+    except OSError as exc:
+        print(f"ishfiles cd: {exc}", file=sys.stderr)
+        return 1

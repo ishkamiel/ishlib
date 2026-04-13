@@ -568,6 +568,42 @@ class TestCdCommand:
         assert "spawning a subshell" in captured.err
         assert "ishfiles init" in captured.err
 
+    def test_cd_shell_with_args(self, capsys, monkeypatch):
+        """`ishfiles cd` splits SHELL values containing arguments."""
+        import os
+
+        execvp_calls: list = []
+        monkeypatch.setenv("SHELL", "/bin/bash -l")
+        monkeypatch.setattr(os, "execvp", lambda f, a: execvp_calls.append((f, a)))
+        monkeypatch.setattr(os, "chdir", lambda p: None)
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            cli_main(["--source", src, "--target", tgt, "cd"])
+
+        assert execvp_calls == [("/bin/bash", ["/bin/bash", "-l"])]
+
+    def test_cd_dry_run(self, capsys):
+        """`ishfiles cd` in dry-run mode prints what it would do and returns 0."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "cd"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "exec" in captured.err
+
+    def test_cd_execvp_failure(self, capsys, monkeypatch):
+        """`ishfiles cd` returns 1 and prints a message when execvp fails."""
+        import os
+
+        monkeypatch.setenv("SHELL", "/nonexistent/shell")
+        monkeypatch.setattr(os, "execvp", lambda f, a: (_ for _ in ()).throw(FileNotFoundError(f)))
+        monkeypatch.setattr(os, "chdir", lambda p: None)
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "cd"])
+
+        assert ret == 1
+        assert "ishfiles cd:" in capsys.readouterr().err
+
     def test_cd_missing_source_returns_error(self, capsys):
         """`ishfiles cd` returns 1 and prints an error when source is missing."""
         with tempfile.TemporaryDirectory() as tgt:
