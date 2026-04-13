@@ -167,6 +167,27 @@ class TestScriptLoggerMessages(unittest.TestCase):
         counts = self._counts_after_messages([("bogus", "ignored")])
         assert all(v == 0 for v in counts.values())
 
+    def test_log_file_contains_script_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                slog.set_current_script("50_setup.sh")
+                slog.log_message("info", "doing stuff")
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "50_setup.sh" in content
+
+    def test_log_file_no_script_name_when_unset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                slog.log_message("info", "no script yet")
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "no script yet" in content
+            # No bracket-wrapped script name should appear
+            assert "[None]" not in content
+
     def test_log_file_contains_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)

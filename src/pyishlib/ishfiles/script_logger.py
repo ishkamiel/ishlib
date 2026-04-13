@@ -405,7 +405,6 @@ class ScriptLogger:
             return
 
         ts = datetime.now().strftime(_LOG_TIMESTAMP_FMT)
-        formatted = f"[{ts}] [{level.upper():5s}] {message}\n"
 
         with self._lock:
             self._counts[level] = self._counts.get(level, 0) + 1
@@ -413,6 +412,10 @@ class ScriptLogger:
                 self._script_counts[self._current_script][level] = (
                     self._script_counts[self._current_script].get(level, 0) + 1
                 )
+                script_label = f" [{self._current_script}]"
+            else:
+                script_label = ""
+            formatted = f"[{ts}] [{level.upper():5s}]{script_label} {message}\n"
             if self._log_fh is not None:
                 self._log_fh.write(formatted)
                 self._log_fh.flush()
