@@ -177,6 +177,7 @@ def _provision(
     _run(
         ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
         check=True,
+        stdin=subprocess.DEVNULL,
     )
 
     # Mount ishlib checkout so ishfiles CLI is reachable without pip.
@@ -202,11 +203,17 @@ def _provision(
         if verbose
         else "apt-get install -qq -y --no-install-recommends python3 sudo"
     )
+    # Pass DEBIAN_FRONTEND=noninteractive so debconf (e.g. the tzdata
+    # postinst pulled in by python3) uses the non-interactive frontend
+    # instead of prompting on stdin.  Also detach stdin from the
+    # controlling terminal so no postinst hook can read from it.
     _run(
         [
             "incus",
             "exec",
             name,
+            "--env",
+            "DEBIAN_FRONTEND=noninteractive",
             "--",
             "/bin/sh",
             "-c",
@@ -217,6 +224,7 @@ def _provision(
             "fi",
         ],
         check=True,
+        stdin=subprocess.DEVNULL,
     )
 
     # --- Pass 1: host ishfiles ---
@@ -255,6 +263,7 @@ def _provision(
                 "apply",
             ],
             check=True,
+            stdin=subprocess.DEVNULL,
         )
 
     # --- Pass 2: project overlay ---
@@ -284,6 +293,7 @@ def _provision(
                 "apply",
             ],
             check=True,
+            stdin=subprocess.DEVNULL,
         )
 
     # Fix ownership of the user's home after root-driven provisioning.
@@ -300,6 +310,7 @@ def _provision(
             container_home,
         ],
         check=True,
+        stdin=subprocess.DEVNULL,
     )
 
 
