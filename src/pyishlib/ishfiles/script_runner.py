@@ -252,6 +252,8 @@ def run_scanned_scripts(
         try:
             if not cfg.quiet:
                 print(f"  Running: {script_path.name}")
+            if script_logger is not None:
+                script_logger.set_current_script(script_path.name)
             script.execute(script_logger=script_logger)
         except subprocess.CalledProcessError:
             log.error("Script failed: %s", script_path.name)

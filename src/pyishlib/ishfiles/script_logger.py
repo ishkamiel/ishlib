@@ -55,7 +55,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, IO, Optional
+from typing import Dict, IO, List, Optional, Tuple
 
 # FIFOs are a POSIX-only feature.  On Windows we fall back to a plain file
 # that scripts append to and the reader thread polls.
@@ -156,6 +156,8 @@ class ScriptLogger:
         self._reader_thread: Optional[threading.Thread] = None
         self._stop_event: threading.Event = threading.Event()
         self._counts: Dict[str, int] = {k: 0 for k in _LEVELS}
+        self._current_script: Optional[str] = None
+        self._script_counts: Dict[str, Dict[str, int]] = {}
         self._aborted: bool = False
         self._tmp_dir: Optional[tempfile.TemporaryDirectory] = None
         self._log_fh: Optional[IO[str]] = None
@@ -274,6 +276,34 @@ class ScriptLogger:
         with self._lock:
             return dict(self._counts)
 
+    def set_current_script(self, name: str) -> None:
+        """Set the currently-running script for per-script message attribution.
+
+        Call this just before executing each script so that ``ish_warn`` /
+        ``ish_error`` messages are associated with the right script name.
+
+        Args:
+            name: Script filename (e.g. ``"50_setup_fzf.sh"``).
+        """
+        with self._lock:
+            self._current_script = name
+            if name not in self._script_counts:
+                self._script_counts[name] = {k: 0 for k in _LEVELS}
+
+    def script_issues(self) -> List[Tuple[str, Dict[str, int]]]:
+        """Return per-script issue counts for scripts that had warnings or errors.
+
+        Returns a list of ``(script_name, counts_dict)`` for every script
+        where at least one ``warn``, ``error``, or ``fatal`` message was
+        logged, in execution order.
+        """
+        with self._lock:
+            return [
+                (name, dict(counts))
+                for name, counts in self._script_counts.items()
+                if any(counts.get(lvl, 0) > 0 for lvl in ("warn", "error", "fatal"))
+            ]
+
     def summary_line(self) -> str:
         """One-line summary: ``"2 warn, 1 error"`` (omits zero counts)."""
         with self._lock:
@@ -379,6 +409,10 @@ class ScriptLogger:
 
         with self._lock:
             self._counts[level] = self._counts.get(level, 0) + 1
+            if self._current_script:
+                self._script_counts[self._current_script][level] = (
+                    self._script_counts[self._current_script].get(level, 0) + 1
+                )
             if self._log_fh is not None:
                 self._log_fh.write(formatted)
                 self._log_fh.flush()
