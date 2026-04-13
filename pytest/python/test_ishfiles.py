@@ -555,16 +555,19 @@ class TestCdCommand:
             captured = capsys.readouterr()
             assert captured.out.strip() == src
 
-    def test_cd_missing_source_returns_error(self, capsys):
-        """`ishfiles cd` still prints the path but exits non-zero when missing."""
+    def test_cd_missing_source_warns_but_succeeds(self, capsys):
+        """`ishfiles cd` prints the path and exits 0 even when missing.
+
+        Exit 0 is required so `cd "$(ishfiles cd)"` under ``set -e`` does
+        not abort the caller before ``cd`` runs; a stderr warning is
+        emitted for direct-invocation visibility.
+        """
         with tempfile.TemporaryDirectory() as tgt:
-            missing = str(Path("/nonexistent/ishfiles/dir"))
-            ret = cli_main(["--source", missing, "--target", tgt, "cd"])
-            assert ret == 1
+            missing = Path(tgt) / "missing"
+            ret = cli_main(["--source", str(missing), "--target", tgt, "cd"])
+            assert ret == 0
             captured = capsys.readouterr()
-            # Compare via Path so the expected and actual agree on separator
-            # style across POSIX and Windows.
-            assert Path(captured.out.strip()) == Path(missing)
+            assert Path(captured.out.strip()) == missing
             assert "does not exist" in captured.err
 
 
