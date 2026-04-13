@@ -547,28 +547,132 @@ class TestGitCommand:
 
 
 class TestCdCommand:
-    def test_cd_prints_source_dir(self, capsys):
-        """`ishfiles cd` prints the resolved source directory."""
+    def test_cd_execs_shell_in_source_dir(self, capsys, monkeypatch):
+        """`ishfiles cd` execs a new shell in the source directory."""
+        import os
+
+        execvp_calls: list = []
+
+        def fake_execvp(file, args):
+            execvp_calls.append((file, args))
+
+        monkeypatch.setenv("SHELL", "/bin/sh")
+        monkeypatch.setattr(os, "execvp", fake_execvp)
+        monkeypatch.setattr(os, "chdir", lambda p: None)
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            cli_main(["--source", src, "--target", tgt, "cd"])
+
+        assert execvp_calls == [("/bin/sh", ["/bin/sh"])]
+        captured = capsys.readouterr()
+        assert "spawning a subshell" in captured.err
+        assert "ishfiles init" in captured.err
+
+    def test_cd_shell_with_args(self, capsys, monkeypatch):
+        """`ishfiles cd` splits SHELL values containing arguments."""
+        import os
+
+        execvp_calls: list = []
+        monkeypatch.setenv("SHELL", "/bin/bash -l")
+        monkeypatch.setattr(os, "execvp", lambda f, a: execvp_calls.append((f, a)))
+        monkeypatch.setattr(os, "chdir", lambda p: None)
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            cli_main(["--source", src, "--target", tgt, "cd"])
+
+        assert execvp_calls == [("/bin/bash", ["/bin/bash", "-l"])]
+
+    def test_cd_dry_run(self, capsys):
+        """`ishfiles cd` in dry-run mode prints what it would do and returns 0."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "cd"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "exec" in captured.err
+
+    def test_cd_execvp_failure(self, capsys, monkeypatch):
+        """`ishfiles cd` returns 1 and prints a message when execvp fails."""
+        import os
+
+        monkeypatch.setenv("SHELL", "/nonexistent/shell")
+        monkeypatch.setattr(os, "execvp", lambda f, a: (_ for _ in ()).throw(FileNotFoundError(f)))
+        monkeypatch.setattr(os, "chdir", lambda p: None)
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             ret = cli_main(["--source", src, "--target", tgt, "cd"])
+
+        assert ret == 1
+        assert "ishfiles cd:" in capsys.readouterr().err
+
+    def test_cd_missing_source_returns_error(self, capsys):
+        """`ishfiles cd` returns 1 and prints an error when source is missing."""
+        with tempfile.TemporaryDirectory() as tgt:
+            missing = Path(tgt) / "missing"
+            ret = cli_main(["--source", str(missing), "--target", tgt, "cd"])
+            assert ret == 1
+            captured = capsys.readouterr()
+            assert "does not exist" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# pd subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestPdCommand:
+    def test_pd_prints_source_dir(self, capsys):
+        """`ishfiles pd` prints the resolved source directory."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "pd"])
             assert ret == 0
             captured = capsys.readouterr()
             assert captured.out.strip() == src
 
-    def test_cd_missing_source_warns_but_succeeds(self, capsys):
-        """`ishfiles cd` prints the path and exits 0 even when missing.
-
-        Exit 0 is required so `cd "$(ishfiles cd)"` under ``set -e`` does
-        not abort the caller before ``cd`` runs; a stderr warning is
-        emitted for direct-invocation visibility.
-        """
+    def test_pd_missing_source_warns_but_succeeds(self, capsys):
+        """`ishfiles pd` exits 0 with a stderr warning when source is missing."""
         with tempfile.TemporaryDirectory() as tgt:
             missing = Path(tgt) / "missing"
-            ret = cli_main(["--source", str(missing), "--target", tgt, "cd"])
+            ret = cli_main(["--source", str(missing), "--target", tgt, "pd"])
             assert ret == 0
             captured = capsys.readouterr()
             assert Path(captured.out.strip()) == missing
             assert "does not exist" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# init subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestInitCommand:
+    def _check_snippet(self, out: str) -> None:
+        assert "ishfiles()" in out
+        assert "command ishfiles pd" in out
+
+    def test_init_default(self, capsys):
+        """`ishfiles init` with no flag prints the POSIX shell snippet."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
+
+    def test_init_sh(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init", "--sh"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
+
+    def test_init_bash(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init", "--bash"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
+
+    def test_init_zsh(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init", "--zsh"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
 
 
 # ---------------------------------------------------------------------------

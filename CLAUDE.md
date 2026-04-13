@@ -17,7 +17,7 @@ src/
   pyishlib/       # Python installer framework (shared primitives)
     ishfiles/     # ishfiles CLI subcommand modules (dotfiles/packages/scripts/externals)
       commands/   # One module per subcommand: add, apply, cd, diff,
-                  #   external, git, install, log, runscripts
+                  #   external, git, init, install, log, pd, runscripts
     isholate/     # isholate CLI (Incus container launcher): cli, config, container
   schema/         # Config schemas (JSON)
   docs/           # Documentation *sources* (intro templates etc.)
@@ -224,9 +224,11 @@ Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` an
 
 - `add` — add a file to the dotfiles source
 - `apply` — the main pipeline (see below)
-- `cd` — print the dotfiles source directory (for shell `cd` wrappers)
+- `cd` — spawn a subshell in the dotfiles source directory (fallback; see `init` for a real cd)
 - `diff` — show pending dotfile changes without applying
 - `external` — manage external git-repo dotfiles (`apply`/`update`/`list`)
+- `init [--bash|--zsh|--sh]` — print shell integration; eval in your rc so `ishfiles cd` does a real cwd change
+- `pd` — print the dotfiles source directory path (used by the `init` shell wrapper)
 - `git` — proxy `git` commands against the dotfiles source
 - `install` — run the installer pipeline (packages only)
 - `log` — inspect script-run logs

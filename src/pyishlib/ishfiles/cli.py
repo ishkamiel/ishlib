@@ -16,7 +16,19 @@ import logging
 from typing import List, Optional
 
 from ..ish_comp import setup_logging
-from .commands import add, apply, cd, diff, external, git, install, log, runscripts
+from .commands import (
+    add,
+    apply,
+    cd,
+    diff,
+    external,
+    git,
+    init,
+    install,
+    log,
+    pd,
+    runscripts,
+)
 from .config import load_config
 from .data import process_data_template
 
@@ -93,8 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
     diff.register(subparsers)
     external.register(subparsers)
     git.register(subparsers)
+    init.register(subparsers)
     install.register(subparsers)
     log.register(subparsers)
+    pd.register(subparsers)
     runscripts.register(subparsers)
 
     return parser
