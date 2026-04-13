@@ -43,7 +43,7 @@ def _make_cfg(source: str, target: str) -> SimpleNamespace:
         get_opt=lambda name, default=None: {
             "source": source,
             "target": target,
-            "externals_cache_dirname": ".cache",
+            "externals_cache_dir": str(Path(source) / ".cache" / "externals"),
             "externals_state_filename": "externals-state.json",
         }.get(name, default),
     )

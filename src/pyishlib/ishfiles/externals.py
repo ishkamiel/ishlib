@@ -336,9 +336,10 @@ class ExternalsEngine:
     # -- private ---------------------------------------------------------------
 
     def _cache_dir(self, spec: ExternalSpec) -> Path:
-        source = Path(self._cfg.get_opt("source") or "").expanduser().resolve()
-        cache_dirname = self._cfg.get_opt("externals_cache_dirname")
-        return source / cache_dirname / "externals" / spec.path.lstrip("/")
+        cache_dir = (
+            Path(self._cfg.get_opt("externals_cache_dir") or "").expanduser().resolve()
+        )
+        return cache_dir / spec.path.lstrip("/")
 
 
 # ---------------------------------------------------------------------------

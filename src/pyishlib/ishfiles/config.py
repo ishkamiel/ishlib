@@ -17,6 +17,7 @@ on :class:`IshConfig` so that every component resolves them via
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -40,6 +41,18 @@ def _default_paths(home: Path) -> "tuple[Path, Path, Path]":
     )
 
 
+def _xdg_externals_cache_dir(home: Path) -> Path:
+    """Return the XDG-compliant path for the externals git cache.
+
+    Resolves to ``$XDG_CACHE_HOME/ishfiles/external`` when the environment
+    variable is set, otherwise falls back to ``~/.cache/ishfiles/external``.
+    """
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "ishfiles" / "external"
+    return home / ".cache" / "ishfiles" / "external"
+
+
 _SCHEMA: Path = (
     Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
 )
@@ -61,8 +74,6 @@ _CONSTANTS = {
     "data_file": "data.toml",
     # Externals config filename inside config_dir
     "externals_config_file": "externals.toml",
-    # Reserved directory name inside source root for external git-repo caches
-    "externals_cache_dirname": ".cache",
     # Externals state filename inside <target>/.config/ishfiles/
     "externals_state_filename": "externals-state.json",
 }
@@ -121,6 +132,9 @@ def load_config(
 
     # The resolved config file path is fixed for this invocation.
     cfg.set_constant("config_file", cfg_path)
+
+    # XDG-compliant externals cache directory (outside the source tree).
+    cfg.set_constant("externals_cache_dir", str(_xdg_externals_cache_dir(home)))
 
     # Seed the preprocessing context with any persisted [data] values.
     data = _load_data_section(cfg_path)

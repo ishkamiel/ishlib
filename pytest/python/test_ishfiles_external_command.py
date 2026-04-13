@@ -39,7 +39,7 @@ def _make_cfg(source: str, target: str) -> IshConfig:
     # Register the constants that load_config normally registers.
     cfg.set_constant("config_dir", "ishconfig")
     cfg.set_constant("externals_config_file", "externals.toml")
-    cfg.set_constant("externals_cache_dirname", ".cache")
+    cfg.set_constant("externals_cache_dir", str(source_path / ".cache" / "externals"))
     cfg.set_constant("externals_state_filename", "externals-state.json")
     cfg.set_default("source", str(source_path))
     cfg.set_default("target", str(target_path))

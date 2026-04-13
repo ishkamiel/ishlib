@@ -203,7 +203,7 @@ The `ishfiles` CLI tool (`src/pyishlib/ishfiles/`) manages dotfiles, packages, a
 
 All configuration — directory names, file names, defaults, and constants — flows through the `IshConfig` object built by `ishfiles/config.py:load_config()`. Components must **never** import path constants directly from other modules; instead, read them from the `cfg` (`IshConfig`) instance via `cfg.get_opt("name")`.
 
-- **Constants** (read-only): Reserved directory and file names (`config_dir`, `scripts_dir`, `installers_dir`, `ignore_file`, `package_files`, `data_file`, `externals_config_file`, `externals_cache_dirname`, `externals_state_filename`) plus the resolved `config_file` path for the current invocation are registered via `cfg.set_constant()` in `load_config()`. They cannot be overridden by CLI args, TOML config, or defaults. Attempting to shadow a constant via `set_default()` raises `ValueError`.
+- **Constants** (read-only): Reserved directory and file names (`config_dir`, `scripts_dir`, `installers_dir`, `ignore_file`, `package_files`, `data_file`, `externals_config_file`, `externals_state_filename`) plus the resolved `config_file` path and the XDG-compliant externals cache path (`externals_cache_dir`) are registered via `cfg.set_constant()` in `load_config()`. They cannot be overridden by CLI args, TOML config, or defaults. Attempting to shadow a constant via `set_default()` raises `ValueError`.
 - **Defaults** (overridable): Values like `source`, `target`, `patterns` that users can override via CLI args or TOML config.
 - **Lookup priority**: constants > args > conf > defaults.
 
@@ -267,7 +267,7 @@ External git-repo dotfiles are declared in `<source>/ishconfig/externals.toml`. 
 - `externals.py` — `ExternalsEngine` fetches, caches, applies, and checks for updates.
 - `externals_state.py` — persists resolved revisions to `<target>/.config/ishfiles/externals-state.json`.
 
-The `external` subcommand exposes `apply`, `update`, and `list`. `apply_externals_stage()` is the entry point called as Phase 4b of `apply`. The cache lives in `<source>/.cache/` (reserved, ignored for dotfile application).
+The `external` subcommand exposes `apply`, `update`, and `list`. `apply_externals_stage()` is the entry point called as Phase 4b of `apply`. The cache lives in `${XDG_CACHE_HOME:-~/.cache}/ishfiles/external` (outside the source tree; resolved via `externals_cache_dir` constant).
 
 ### Reserved Directories in Dotfile Source
 
@@ -276,7 +276,6 @@ The ishfiles source folder reserves these directories (ignored during dotfile ap
 - `ishconfig/` — package configuration (`packages.toml` / `packages.json`), data templates (`data.toml`), and externals config (`externals.toml`)
 - `ishscripts/` — user scripts executed on `apply` and `runscripts`
 - `ishinstallers/` — custom per-package install scripts
-- `.cache/` — externals fetch cache (managed by `ExternalsEngine`)
 
 ### Installer Backends
 
