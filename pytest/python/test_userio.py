@@ -13,7 +13,13 @@ from unittest.mock import patch
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.userio import normalise_str, prompt_choice
+from pyishlib.userio import (
+    getch,
+    normalise_str,
+    prompt_bool,
+    prompt_choice,
+    prompt_yes_no_always,
+)
 
 
 class TestNormaliseStr(unittest.TestCase):
@@ -104,6 +110,57 @@ class TestPromptChoiceInteractive(unittest.TestCase):
         """Return spec's casing, not the user's input casing."""
         result = self._run_choice(["MyStuff", "Other"], "MYSTUFF")
         assert result == "MyStuff"
+
+
+class TestGetchCtrlC(unittest.TestCase):
+    """getch() must raise KeyboardInterrupt on Ctrl-C (\x03)."""
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX-only test")
+    def test_posix_ctrl_c_raises(self):
+        """When stdin delivers \\x03, getch raises KeyboardInterrupt."""
+        with (
+            patch("sys.stdin.fileno", return_value=0),
+            patch("termios.tcgetattr", return_value=[]),
+            patch("termios.tcsetattr"),
+            patch("tty.setcbreak"),
+            patch("sys.stdin.read", return_value="\x03"),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                getch()
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX-only test")
+    def test_posix_normal_char_returned(self):
+        """Normal characters are returned unchanged."""
+        with (
+            patch("sys.stdin.fileno", return_value=0),
+            patch("termios.tcgetattr", return_value=[]),
+            patch("termios.tcsetattr"),
+            patch("tty.setcbreak"),
+            patch("sys.stdin.read", return_value="y"),
+        ):
+            assert getch() == "y"
+
+
+class TestPromptYesNoAlwaysCtrlC(unittest.TestCase):
+    """prompt_yes_no_always must propagate KeyboardInterrupt from getch."""
+
+    def test_ctrl_c_propagates(self):
+        with patch("sys.stdin.isatty", return_value=True):
+            with patch("pyishlib.userio.getch", side_effect=KeyboardInterrupt):
+                with patch("sys.stdout.write"), patch("sys.stdout.flush"):
+                    with self.assertRaises(KeyboardInterrupt):
+                        prompt_yes_no_always("Run sudo?")
+
+
+class TestPromptBoolCtrlC(unittest.TestCase):
+    """prompt_bool must propagate KeyboardInterrupt from getch."""
+
+    def test_ctrl_c_propagates(self):
+        with patch("sys.stdin.isatty", return_value=True):
+            with patch("pyishlib.userio.getch", side_effect=KeyboardInterrupt):
+                with patch("sys.stdout.write"), patch("sys.stdout.flush"):
+                    with self.assertRaises(KeyboardInterrupt):
+                        prompt_bool("Continue?")
 
 
 if __name__ == "__main__":

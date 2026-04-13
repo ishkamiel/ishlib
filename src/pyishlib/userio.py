@@ -102,6 +102,8 @@ def getch() -> str:
         import msvcrt  # type: ignore[import]
 
         ch = msvcrt.getwch()
+        if ch == "\x03":
+            raise KeyboardInterrupt
         return ch
     else:
         import termios
@@ -110,12 +112,14 @@ def getch() -> str:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         try:
-            tty.setraw(fd)
+            tty.setcbreak(fd)
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         if not ch:
             raise EOFError
+        if ch == "\x03":
+            raise KeyboardInterrupt
         return ch
 
 
