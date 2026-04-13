@@ -131,7 +131,7 @@ def scan_scripts(
         # -- OS filter --------------------------------------------------------
         if should_skip_for_os_from_metadata(meta):
             log.debug("Skipping %s (OS rules in metadata)", script_path.name)
-            if print_skipped:
+            if print_skipped and cfg.verbose:
                 print(f"  [skipped] {script_path.name} (OS rules)")
             continue
 
@@ -139,7 +139,7 @@ def scan_scripts(
         tags = (meta or {}).get("tags", []) or []
         if tags and not _passes_tag_filter(tags, cfg):
             log.debug("Skipping %s (tag filter)", script_path.name)
-            if print_skipped:
+            if print_skipped and cfg.verbose:
                 print(f"  [skipped] {script_path.name} (tags)")
             continue
 
@@ -187,7 +187,7 @@ def run_scanned_scripts(
 
     force_set = set(force_scripts or [])
 
-    if not cfg.quiet:
+    if cfg.verbose:
         names = [s.name for s in script_paths]
         print(f"Scripts to run ({len(script_paths)}): {', '.join(names)}")
 
@@ -224,7 +224,7 @@ def run_scanned_scripts(
                         "Skipping %s (run_when=once, already run)",
                         script_path.name,
                     )
-                    if not cfg.quiet:
+                    if cfg.verbose:
                         print(f"  [skip/once] {script_path.name}")
                     continue
             elif run_when == "onchange":
@@ -238,7 +238,7 @@ def run_scanned_scripts(
                         "Skipping %s (run_when=onchange, unchanged)",
                         script_path.name,
                     )
-                    if not cfg.quiet:
+                    if cfg.verbose:
                         print(f"  [skip/unchanged] {script_path.name}")
                     continue
 

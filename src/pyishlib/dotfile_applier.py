@@ -256,7 +256,8 @@ class DotfileApplier:
     def print_changes(self, changes: List[DotFile]) -> None:
         """Print a human-readable summary of pending changes."""
         if not changes:
-            print("No changes to apply.")
+            if self.cfg.verbose:
+                print("No changes to apply.")
             return
 
         print(f"Changes to apply ({len(changes)}):")

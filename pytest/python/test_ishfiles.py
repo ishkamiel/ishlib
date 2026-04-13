@@ -1078,7 +1078,7 @@ class TestInstallCommand:
         assert ret == 1
 
     def test_install_all_present_shows_message(self, capsys):
-        """When all packages are already installed, a message is shown."""
+        """When all packages are already installed, a message is shown in verbose mode."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
@@ -1088,7 +1088,7 @@ class TestInstallCommand:
                 f'{{"python": {{"cmd": "{exe}"}}}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "install"])
+            ret = cli_main(["--verbose", "--source", src, "--target", tgt, "install"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1151,13 +1151,13 @@ class TestApplyWithInstall:
 
 class TestScanScripts:
     def test_print_skipped_emits_message_for_os_filtered_script(self, capsys):
-        """scan_scripts prints a [skipped] line when print_skipped=True and a script is excluded by OS rules."""
+        """scan_scripts prints a [skipped] line when print_skipped=True and verbose and a script is excluded by OS rules."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             scripts_dir = Path(src) / "ishscripts"
             scripts_dir.mkdir()
             _make_file(scripts_dir / "os-only.sh", "#!/bin/sh\necho hello\n")
 
-            cfg = load_config(_make_args(source=src, target=tgt))
+            cfg = load_config(_make_args(source=src, target=tgt, verbose=True))
 
             with patch(
                 "pyishlib.ishfiles.script_runner.should_skip_for_os_from_metadata",

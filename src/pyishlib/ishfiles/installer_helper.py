@@ -223,7 +223,7 @@ def run_install(
     missing = list(installer.get_missing_pkgs(all_pkgs))
 
     if not missing:
-        if not cfg.quiet:
+        if cfg.verbose:
             print("All packages are already installed.")
         return 0
 
@@ -246,7 +246,7 @@ def run_install(
     to_install = required + available_optional
 
     if not to_install:
-        if not cfg.quiet:
+        if cfg.verbose:
             print("All packages are already installed.")
         return 0
 

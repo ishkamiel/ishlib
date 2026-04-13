@@ -131,30 +131,66 @@ class ExternalsEngine:
         cache_dir = self._cache_dir(spec)
         needs_fetch = force or self._state.is_stale(spec.path, spec.refresh_period)
 
+        verbose = getattr(self._cfg, "verbose", False)
         if not cache_dir.exists():
             log.info("Cloning %s into %s", spec.url, cache_dir)
             cache_dir.parent.mkdir(parents=True, exist_ok=True)
-            self._runner.git(
-                [
-                    "clone",
-                    "--filter=blob:none",
-                    "--no-checkout",
-                    spec.url,
-                    str(cache_dir),
-                ],
-            )
+            git_kwargs: dict = {} if verbose else {"capture_output": True, "text": True}
+            try:
+                self._runner.git(
+                    [
+                        "clone",
+                        "--filter=blob:none",
+                        "--no-checkout",
+                        spec.url,
+                        str(cache_dir),
+                    ],
+                    **git_kwargs,
+                )
+            except subprocess.CalledProcessError as exc:
+                log.error(
+                    "git clone failed for %s: %s\n%s",
+                    spec.path,
+                    exc,
+                    getattr(exc, "stderr", "") or "",
+                )
+                raise
             needs_fetch = True  # always checkout after a fresh clone
 
         if needs_fetch:
             log.info("Fetching tags for %s", spec.path)
+            git_kwargs = {} if verbose else {"capture_output": True, "text": True}
             try:
-                self._runner.git(["fetch", "--tags", spec.url], work_dir=cache_dir)
+                self._runner.git(
+                    ["fetch", "--tags", spec.url],
+                    work_dir=cache_dir,
+                    **git_kwargs,
+                )
             except subprocess.CalledProcessError as exc:
-                log.error("git fetch failed for %s: %s", spec.path, exc)
+                log.error(
+                    "git fetch failed for %s: %s\n%s",
+                    spec.path,
+                    exc,
+                    getattr(exc, "stderr", "") or "",
+                )
                 raise
 
         log.info("Checking out %s for %s", spec.revision, spec.path)
-        self._runner.git(["checkout", spec.revision], work_dir=cache_dir)
+        git_kwargs = {} if verbose else {"capture_output": True, "text": True}
+        try:
+            self._runner.git(
+                ["checkout", spec.revision],
+                work_dir=cache_dir,
+                **git_kwargs,
+            )
+        except subprocess.CalledProcessError as exc:
+            log.error(
+                "git checkout failed for %s: %s\n%s",
+                spec.path,
+                exc,
+                getattr(exc, "stderr", "") or "",
+            )
+            raise
 
         # Resolve HEAD to a commit SHA.
         commit_sha = ""
