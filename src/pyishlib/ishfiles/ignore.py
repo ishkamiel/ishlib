@@ -49,7 +49,6 @@ def build_ignore(
         cfg.get_opt("config_dir"),
         cfg.get_opt("scripts_dir"),
         cfg.get_opt("installers_dir"),
-        cfg.get_opt("externals_cache_dirname"),
     ]
     patterns = reserved_dirs + [ignore_file] + list(extra_patterns)
     return DotfileIgnore(

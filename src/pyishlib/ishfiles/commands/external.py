@@ -195,15 +195,16 @@ def run_list(cfg: IshConfig) -> int:
         return 0
 
     state = ExternalsState.from_cfg(cfg)
-    source = Path(cfg.get_opt("source") or "").expanduser().resolve()
-    cache_dirname = cfg.get_opt("externals_cache_dirname")
+    cache_dir_base = (
+        Path(cfg.get_opt("externals_cache_dir") or "").expanduser().resolve()
+    )
 
     print(f"{'PATH':<30} {'PINNED':>12}  {'CACHED SHA':>12}  CACHE")
     print("-" * 70)
     for spec in specs:
         record = state.get(spec.path)
         cached_sha = record["commit_sha"][:12] if record else "(none)"
-        cache_dir = source / cache_dirname / "externals" / spec.path.lstrip("/")
+        cache_dir = cache_dir_base / spec.path.lstrip("/")
         cache_status = "ok" if cache_dir.exists() else "missing"
         print(
             f"  {spec.path:<28} {spec.revision:>12}  {cached_sha:>12}  {cache_status}"
