@@ -547,28 +547,96 @@ class TestGitCommand:
 
 
 class TestCdCommand:
-    def test_cd_prints_source_dir(self, capsys):
-        """`ishfiles cd` prints the resolved source directory."""
+    def test_cd_execs_shell_in_source_dir(self, capsys, monkeypatch):
+        """`ishfiles cd` execs a new shell in the source directory."""
+        import os
+
+        execvp_calls: list = []
+
+        def fake_execvp(file, args):
+            execvp_calls.append((file, args))
+
+        monkeypatch.setenv("SHELL", "/bin/sh")
+        monkeypatch.setattr(os, "execvp", fake_execvp)
+        monkeypatch.setattr(os, "chdir", lambda p: None)
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "cd"])
+            cli_main(["--source", src, "--target", tgt, "cd"])
+
+        assert execvp_calls == [("/bin/sh", ["/bin/sh"])]
+        captured = capsys.readouterr()
+        assert "spawning a subshell" in captured.err
+        assert "ishfiles init" in captured.err
+
+    def test_cd_missing_source_returns_error(self, capsys):
+        """`ishfiles cd` returns 1 and prints an error when source is missing."""
+        with tempfile.TemporaryDirectory() as tgt:
+            missing = Path(tgt) / "missing"
+            ret = cli_main(["--source", str(missing), "--target", tgt, "cd"])
+            assert ret == 1
+            captured = capsys.readouterr()
+            assert "does not exist" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# pd subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestPdCommand:
+    def test_pd_prints_source_dir(self, capsys):
+        """`ishfiles pd` prints the resolved source directory."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "pd"])
             assert ret == 0
             captured = capsys.readouterr()
             assert captured.out.strip() == src
 
-    def test_cd_missing_source_warns_but_succeeds(self, capsys):
-        """`ishfiles cd` prints the path and exits 0 even when missing.
-
-        Exit 0 is required so `cd "$(ishfiles cd)"` under ``set -e`` does
-        not abort the caller before ``cd`` runs; a stderr warning is
-        emitted for direct-invocation visibility.
-        """
+    def test_pd_missing_source_warns_but_succeeds(self, capsys):
+        """`ishfiles pd` exits 0 with a stderr warning when source is missing."""
         with tempfile.TemporaryDirectory() as tgt:
             missing = Path(tgt) / "missing"
-            ret = cli_main(["--source", str(missing), "--target", tgt, "cd"])
+            ret = cli_main(["--source", str(missing), "--target", tgt, "pd"])
             assert ret == 0
             captured = capsys.readouterr()
             assert Path(captured.out.strip()) == missing
             assert "does not exist" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# init subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestInitCommand:
+    def _check_snippet(self, out: str) -> None:
+        assert "ishfiles()" in out
+        assert "command ishfiles pd" in out
+
+    def test_init_default(self, capsys):
+        """`ishfiles init` with no flag prints the POSIX shell snippet."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
+
+    def test_init_sh(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init", "--sh"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
+
+    def test_init_bash(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init", "--bash"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
+
+    def test_init_zsh(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "init", "--zsh"])
+        assert ret == 0
+        self._check_snippet(capsys.readouterr().out)
 
 
 # ---------------------------------------------------------------------------

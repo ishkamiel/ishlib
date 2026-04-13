@@ -1,3 +1,4 @@
+-r requirements.txt
 # Data validation
 cerberus
 jsonschema
