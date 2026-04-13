@@ -8,8 +8,10 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Command-line interface for isholate.
 
-Entry point for the ``isholate`` tool.  Launches an ephemeral Incus
-container with the host user mirrored and optional bind mounts.
+Entry point for the ``isholate`` tool.  Launches an Incus container with
+the host user mirrored and optional bind mounts.  Uses a three-tier
+persistent-base caching model to avoid re-running apt and ishfiles on every
+invocation.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="isholate",
         description=(
             "Launch an isolated Incus container with the host user mirrored. "
-            "The container is ephemeral and auto-deleted when it stops."
+            "Persistent base containers cache expensive provisioning steps so "
+            "subsequent runs start in seconds."
         ),
     )
 
@@ -55,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--name",
         metavar="NAME",
         default=None,
-        help="Container name (auto-generated if omitted)",
+        help="Ephemeral container name (auto-generated if omitted)",
     )
     parser.add_argument(
         "--shell",
@@ -63,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SHELL,
         help=f"Shell to run when no command is given (default: {DEFAULT_SHELL})",
     )
+
     cwd_group = parser.add_mutually_exclusive_group()
     cwd_group.add_argument(
         "--rw-cwd",
@@ -77,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mount the current working directory read-only into the container",
     )
 
+    # --- ishfiles provisioning control ---
     parser.add_argument(
         "--no-ishfiles",
         action="store_true",
@@ -93,16 +98,67 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-project-ishfiles",
         action="store_true",
         default=False,
-        help=("Skip applying the project .ishfiles/ source tree inside the container"),
+        help="Skip applying the project .ishfiles/ source tree inside the container",
     )
 
+    # --- Cache / rebuild control ---
     parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip persistent bases; provision a fresh container on every run "
+            "(original one-shot behaviour, useful for debugging or CI)"
+        ),
+    )
+    rebuild_group = parser.add_mutually_exclusive_group()
+    rebuild_group.add_argument(
+        "--rebuild",
+        action="store_true",
+        default=False,
+        help="Force rebuild of both the host base and the project base",
+    )
+    rebuild_group.add_argument(
+        "--rebuild-base",
+        action="store_true",
+        default=False,
+        help="Force rebuild of the host-ishfiles base (implies --rebuild-project-base)",
+    )
+    rebuild_group.add_argument(
+        "--rebuild-project-base",
+        action="store_true",
+        default=False,
+        help="Force rebuild of the project-overlay base only",
+    )
+
+    # --- Purge control ---
+    purge_group = parser.add_mutually_exclusive_group()
+    purge_group.add_argument(
         "--purge",
         action="store_true",
         default=False,
-        help="Delete all isholate containers belonging to the current user",
+        help=(
+            "Delete ephemeral isholate containers belonging to the current user "
+            "(persistent bases are preserved)"
+        ),
+    )
+    purge_group.add_argument(
+        "--purge-bases",
+        action="store_true",
+        default=False,
+        help=(
+            "Delete ephemeral containers AND persistent base containers "
+            "(isholate-base-* and isholate-pbase-*)"
+        ),
+    )
+    purge_group.add_argument(
+        "--purge-all",
+        action="store_true",
+        default=False,
+        help="Alias for --purge-bases (delete everything isholate created)",
     )
 
+    # --- Verbosity ---
     parser.add_argument(
         "-v",
         "--verbose",
@@ -146,7 +202,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     _, home, cwd = get_host_user_info()
 
     # Discover the project overlay (if any) before parsing args so that
-    # image/shell overrides from .isholate/ishconfig/isholate.toml can be
+    # image/shell overrides from .ishfiles/ishconfig/isholate.toml can be
     # applied as argparse defaults (CLI flags still take precedence).
     overlay_dir = discover_project_overlay(cwd)
     project_cfg = load_project_config(overlay_dir) if overlay_dir is not None else {}
@@ -159,14 +215,25 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if args.purge:
+    # --- Purge handling ---
+    include_bases = args.purge_bases or args.purge_all
+    if args.purge or include_bases:
         username, _, _ = get_host_user_info()
-        return purge_containers(username, quiet=args.quiet)
+        return purge_containers(username, quiet=args.quiet, include_bases=include_bases)
 
     # --no-ishfiles is a shorthand that implies both granular skip flags.
     if args.no_ishfiles:
         args.no_host_ishfiles = True
         args.no_project_ishfiles = True
+
+    # --rebuild implies both rebuild flags.
+    if args.rebuild:
+        args.rebuild_base = True
+        args.rebuild_project_base = True
+
+    # --rebuild-base cascades to the project base.
+    if args.rebuild_base:
+        args.rebuild_project_base = True
 
     # Resolve provisioning sources (skip if the respective --no-* flag is set).
     host_source: Optional[Path] = None
