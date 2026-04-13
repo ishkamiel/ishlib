@@ -542,6 +542,32 @@ class TestGitCommand:
 
 
 # ---------------------------------------------------------------------------
+# cd subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestCdCommand:
+    def test_cd_prints_source_dir(self, capsys):
+        """`ishfiles cd` prints the resolved source directory."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "cd"])
+            assert ret == 0
+            captured = capsys.readouterr()
+            assert captured.out.strip() == src
+
+    def test_cd_missing_source_returns_error(self, capsys):
+        """`ishfiles cd` still prints the path but exits non-zero when missing."""
+        with tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(
+                ["--source", "/nonexistent/ishfiles/dir", "--target", tgt, "cd"]
+            )
+            assert ret == 1
+            captured = capsys.readouterr()
+            assert captured.out.strip() == "/nonexistent/ishfiles/dir"
+            assert "does not exist" in captured.err
+
+
+# ---------------------------------------------------------------------------
 # add subcommand
 # ---------------------------------------------------------------------------
 

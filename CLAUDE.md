@@ -16,8 +16,8 @@ src/
   bash/           # Bash-only extensions (sourced into ishlib.sh)
   pyishlib/       # Python installer framework (shared primitives)
     ishfiles/     # ishfiles CLI subcommand modules (dotfiles/packages/scripts/externals)
-      commands/   # One module per subcommand: add, apply, diff, external,
-                  #   git, install, log, runscripts
+      commands/   # One module per subcommand: add, apply, cd, diff,
+                  #   external, git, install, log, runscripts
     isholate/     # isholate CLI (Incus container launcher): cli, config, container
   schema/         # Config schemas (JSON)
   docs/           # Documentation *sources* (intro templates etc.)
@@ -224,6 +224,7 @@ Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` an
 
 - `add` — add a file to the dotfiles source
 - `apply` — the main pipeline (see below)
+- `cd` — print the dotfiles source directory (for shell `cd` wrappers)
 - `diff` — show pending dotfile changes without applying
 - `external` — manage external git-repo dotfiles (`apply`/`update`/`list`)
 - `git` — proxy `git` commands against the dotfiles source
