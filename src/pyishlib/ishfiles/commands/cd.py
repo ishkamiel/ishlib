@@ -37,8 +37,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 def run(cfg: IshConfig) -> int:
     """Print the resolved source directory to stdout.
 
+    Always exits 0 so the canonical shell wrapper
+    ``cd "$(ishfiles cd)"`` works under ``set -e`` -- a non-zero status
+    inside the command substitution would abort the caller before ``cd``
+    runs.  If the source directory is missing, ``cd`` itself will fail
+    and surface the error; we also log a warning to stderr so the user
+    sees a diagnostic when running ``ishfiles cd`` directly.
+
     Returns:
-        0 if the source directory exists, 1 otherwise.
+        Always 0.
     """
     finder = make_finder(cfg)
     source_dir = finder.source_dir
@@ -47,8 +54,7 @@ def run(cfg: IshConfig) -> int:
 
     if not source_dir.is_dir():
         print(
-            f"Source directory does not exist: {source_dir}",
+            f"Warning: source directory does not exist: {source_dir}",
             file=sys.stderr,
         )
-        return 1
     return 0
