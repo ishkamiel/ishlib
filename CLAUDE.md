@@ -250,6 +250,7 @@ Flags:
 
 - `--dotfiles-only` skips phases 3, 4b, and 5 (package install, externals, scripts).
 - `--force-scripts [NAMES...]` re-runs named scripts (or all, with no names) ignoring `run_when` state.
+- `--isholate` (internal, used by `isholate` when provisioning containers): for each `data.toml` entry that carries an `isholate = <value>` key, uses that hardcoded value instead of the user's saved/prompted value. Overrides are never written back to the config file.
 
 ### Filename Prefixes for Dotfiles
 

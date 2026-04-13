@@ -676,6 +676,125 @@ class TestInitCommand:
 
 
 # ---------------------------------------------------------------------------
+# --isholate flag / data.toml isholate overrides
+# ---------------------------------------------------------------------------
+
+
+class TestDataTemplateIsholate:
+    """Tests for process_data_template with isholate=True."""
+
+    def _make_cfg(self, tmp_path, data_toml_content: str):
+        """Return an IshConfig pointing at a tmp source dir with given data.toml."""
+        from pyishlib.ishfiles.config import load_config
+
+        src = tmp_path / "source"
+        (src / "ishconfig").mkdir(parents=True)
+        (src / "ishconfig" / "data.toml").write_text(data_toml_content)
+        tgt = tmp_path / "target"
+        tgt.mkdir()
+        cfg_path = tmp_path / "config.toml"
+        args = SimpleNamespace(
+            home=None,
+            source=str(src),
+            target=str(tgt),
+            config=str(cfg_path),
+            dry_run=False,
+            verbose=False,
+            debug=False,
+            quiet=False,
+        )
+        return load_config(args=args)
+
+    def test_isholate_override_applied(self, tmp_path):
+        """With isholate=True, an entry with isholate key resolves to that value."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        cfg = self._make_cfg(
+            tmp_path,
+            '[machineType]\ntype = "ordered_tags"\nvalues = ["min", "def"]\n'
+            'default = "def"\nisholate = "min"\n',
+        )
+        with patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
+            process_data_template(cfg, isholate=True)
+        assert cfg.context.get("machineType") == "min"
+
+    def test_isholate_override_ignored_without_flag(self, tmp_path):
+        """Without the flag the isholate key is ignored; value resolves to default."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        cfg = self._make_cfg(
+            tmp_path,
+            '[machineType]\ntype = "ordered_tags"\nvalues = ["min", "def"]\n'
+            'default = "def"\nisholate = "min"\n',
+        )
+        with patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
+            process_data_template(cfg, isholate=False)
+        # isholate override must NOT have been applied; default "def" is used
+        assert cfg.context.get("machineType") != "min"
+
+    def test_isholate_bool_coercion(self, tmp_path):
+        """isholate = false on a bool entry resolves to 'false' in context."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        cfg = self._make_cfg(
+            tmp_path,
+            "[isGui]\ntype = \"bool\"\ndefault = false\nisholate = false\n",
+        )
+        with patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
+            process_data_template(cfg, isholate=True)
+        assert cfg.context.get("isGui") == "false"
+
+    def test_isholate_override_invalid_falls_back(self, tmp_path):
+        """An invalid isholate value logs a warning and falls back to normal resolution."""
+        from pyishlib.ishfiles.data import process_data_template
+
+        cfg = self._make_cfg(
+            tmp_path,
+            '[machineType]\ntype = "ordered_tags"\nvalues = ["min", "def"]\n'
+            'default = "def"\nisholate = "bogus"\n',
+        )
+        with patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
+            process_data_template(cfg, isholate=True)
+        # Invalid isholate override must not be used; falls back to default "def"
+        assert cfg.context.get("machineType") != "bogus"
+        assert cfg.context.get("machineType") == "def"
+
+    def test_isholate_override_not_saved(self, tmp_path):
+        """Isholate overrides must not trigger a save to the config file."""
+        from pyishlib.ishfiles.data import process_data_template, _save_data_section
+
+        cfg = self._make_cfg(
+            tmp_path,
+            '[machineType]\ntype = "ordered_tags"\nvalues = ["min", "def"]\n'
+            'default = "def"\nisholate = "min"\n',
+        )
+        with patch(
+            "pyishlib.ishfiles.data._save_data_section"
+        ) as mock_save, patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
+            process_data_template(cfg, isholate=True)
+        mock_save.assert_not_called()
+
+    def test_apply_isholate_flag_parses(self, tmp_path):
+        """``ishfiles apply --isholate`` must parse without error."""
+        src = tmp_path / "source"
+        src.mkdir()
+        tgt = tmp_path / "target"
+        tgt.mkdir()
+        ret = cli_main(
+            [
+                "--source",
+                str(src),
+                "--target",
+                str(tgt),
+                "--dry-run",
+                "apply",
+                "--isholate",
+            ]
+        )
+        assert ret == 0
+
+
+# ---------------------------------------------------------------------------
 # add subcommand
 # ---------------------------------------------------------------------------
 
