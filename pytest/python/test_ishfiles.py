@@ -558,12 +558,13 @@ class TestCdCommand:
     def test_cd_missing_source_returns_error(self, capsys):
         """`ishfiles cd` still prints the path but exits non-zero when missing."""
         with tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(
-                ["--source", "/nonexistent/ishfiles/dir", "--target", tgt, "cd"]
-            )
+            missing = str(Path("/nonexistent/ishfiles/dir"))
+            ret = cli_main(["--source", missing, "--target", tgt, "cd"])
             assert ret == 1
             captured = capsys.readouterr()
-            assert captured.out.strip() == "/nonexistent/ishfiles/dir"
+            # Compare via Path so the expected and actual agree on separator
+            # style across POSIX and Windows.
+            assert Path(captured.out.strip()) == Path(missing)
             assert "does not exist" in captured.err
 
 
