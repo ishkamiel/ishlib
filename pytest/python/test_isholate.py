@@ -544,6 +544,33 @@ class TestProvisioning:
         assert "python3" in script
         assert "sudo" in script
 
+    def test_apt_bootstrap_is_noninteractive(self):
+        """Regression: base-package install must not hang on debconf prompts.
+
+        The apt bootstrap in a fresh Ubuntu image pulls in tzdata (via
+        python3), whose postinst invokes debconf.  Without
+        DEBIAN_FRONTEND=noninteractive the container process would read
+        from the user's tty and hang forever.  We also detach stdin from
+        the controlling terminal as a belt-and-braces guard.
+        """
+        import subprocess as _sp
+
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+
+        # Find the apt-bootstrap call (the /bin/sh -c one).
+        bootstrap_call = next(c for c in calls if "/bin/sh" in c.args[0])
+        cmd = bootstrap_call.args[0]
+
+        # DEBIAN_FRONTEND=noninteractive must be passed via `incus exec --env`.
+        assert "--env" in cmd
+        env_idx = cmd.index("--env")
+        assert cmd[env_idx + 1] == "DEBIAN_FRONTEND=noninteractive"
+
+        # stdin must be detached so debconf cannot read from the host tty.
+        assert bootstrap_call.kwargs.get("stdin") is _sp.DEVNULL
+
     def test_verbose_drops_apt_qq_and_adds_ishfiles_verbose(self):
         args = _make_args(verbose=1)
         fake_src = Path("/home/testuser/.local/share/ishfiles")
