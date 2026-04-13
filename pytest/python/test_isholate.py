@@ -62,7 +62,6 @@ def _make_args(**overrides):
         "name": "test-container",
         "image": _FAKE_IMAGE,
         "shell": _FAKE_SHELL,
-        "ro_home": False,
         "rw_cwd": False,
         "ro_cwd": False,
         "no_host_ishfiles": False,
@@ -180,7 +179,7 @@ class TestLaunchAndExec:
         Returns (all_calls, returncode).
         """
         side_effects = fake_run_returns or []
-        default = SimpleNamespace(returncode=0)
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         call_count = [0]
 
@@ -275,19 +274,6 @@ class TestLaunchAndExec:
         device_cmds = [c for c in cmds if "device" in c and "add" in c]
         assert device_cmds == []
 
-    def test_ro_home_adds_readonly_device(self):
-        args = _make_args(ro_home=True)
-        calls, _ = self._run_with_mocks(args)
-        cmds = self._cmds(calls)
-
-        device_cmds = [c for c in cmds if "device" in c and "add" in c]
-        assert len(device_cmds) == 1
-        cmd = device_cmds[0]
-        assert f"source={_FAKE_HOME}" in cmd
-        assert f"path=/home/{_FAKE_USER}" in cmd
-        assert "readonly=true" in cmd
-        assert "shift=true" in cmd
-
     def test_rw_cwd_adds_device_without_readonly(self):
         args = _make_args(rw_cwd=True)
         calls, _ = self._run_with_mocks(args)
@@ -311,14 +297,6 @@ class TestLaunchAndExec:
         assert f"source={_FAKE_CWD}" in cmd
         assert "readonly=true" in cmd
         assert "shift=true" in cmd
-
-    def test_ro_home_and_rw_cwd_together(self):
-        args = _make_args(ro_home=True, rw_cwd=True)
-        calls, _ = self._run_with_mocks(args)
-        cmds = self._cmds(calls)
-
-        device_cmds = [c for c in cmds if "device" in c and "add" in c]
-        assert len(device_cmds) == 2
 
     def test_stop_called_even_if_exec_fails(self):
         """incus stop must be called in the finally block even when a step fails."""
@@ -411,7 +389,7 @@ class TestProvisioning:
     """Tests for the ishfiles provisioning step inside the container."""
 
     def _run_with_mocks(self, args, host_source=None, overlay=None):
-        default = SimpleNamespace(returncode=0)
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         def fake_run(cmd, **kwargs):
             return default
@@ -632,6 +610,122 @@ class TestProvisioning:
 
 
 # ---------------------------------------------------------------------------
+# Network pre-flight
+# ---------------------------------------------------------------------------
+
+
+class TestNetworkPreflight:
+    """Tests for _network_preflight behaviour in launch_and_exec."""
+
+    def _run_with_mocks_custom(self, args, fake_run_fn, host_source=None):
+        """Like TestProvisioning._run_with_mocks but accepts a custom fake_run."""
+        with patch(
+            "pyishlib.isholate.container.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.container._run", side_effect=fake_run_fn
+            ) as mock_run:
+                with patch(
+                    "pyishlib.isholate.container.subprocess.run",
+                    side_effect=_fake_subprocess_run,
+                ):
+                    with patch.object(Path, "is_dir", return_value=True):
+                        rc = launch_and_exec(
+                            args, host_ishfiles_source=host_source
+                        )
+                        return mock_run.call_args_list, rc
+
+    def _cmds(self, calls):
+        return [c.args[0] for c in calls]
+
+    def test_preflight_runs_before_apt(self):
+        """Network probe must execute before apt-get update."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        calls, _ = self._run_with_mocks_custom(args, fake_run, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        curl_indices = [i for i, c in enumerate(cmds) if "1.1.1.1" in str(c)]
+        apt_indices = [i for i, c in enumerate(cmds) if "apt-get" in str(c)]
+
+        assert len(curl_indices) >= 1, "curl 1.1.1.1 probe not found"
+        assert len(apt_indices) >= 1, "apt-get not found"
+        assert curl_indices[0] < apt_indices[0], "preflight must run before apt"
+
+    def test_preflight_failure_stops_container(self, capsys):
+        """When the 1.1.1.1 probe fails, launch_and_exec returns non-zero and
+        still stops the container (finally path)."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+
+        def fake_run(cmd, **kwargs):
+            if "1.1.1.1" in str(cmd):
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        calls, rc = self._run_with_mocks_custom(args, fake_run, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        assert rc != 0
+        assert any(c[:3] == ["incus", "stop", "test-container"] for c in cmds)
+
+    def test_preflight_passes_continues_to_apt(self):
+        """When probe passes, apt-get update still runs."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        calls, rc = self._run_with_mocks_custom(args, fake_run, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        assert any("apt-get" in str(c) for c in cmds), "apt-get must still run"
+        assert rc == 0
+
+    def test_preflight_error_message_mentions_ufw_firewalld_ip_forward(self, capsys):
+        """Diagnostic A (bridge broken) must name all common root causes."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+
+        def fake_run(cmd, **kwargs):
+            if "1.1.1.1" in str(cmd):
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        self._run_with_mocks_custom(args, fake_run, host_source=fake_src)
+        err = capsys.readouterr().err
+
+        assert "ufw" in err
+        assert "firewalld" in err
+        assert "ip_forward" in err
+
+    def test_preflight_mirror_unreachable_message(self, capsys):
+        """When 1.1.1.1 ok but archive fails, Diagnostic B appears (no ufw hints)."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+
+        def fake_run(cmd, **kwargs):
+            if "archive.ubuntu.com" in str(cmd):
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        _, rc = self._run_with_mocks_custom(args, fake_run, host_source=fake_src)
+        err = capsys.readouterr().err
+
+        assert rc != 0
+        assert "1.1.1.1" in err
+        assert "upstream" in err or "mirror" in err
+        # Diagnostic B must NOT show the firewall hints (wrong cause)
+        assert "ufw" not in err
+
+
+# ---------------------------------------------------------------------------
 # CLI parser
 # ---------------------------------------------------------------------------
 
@@ -644,7 +738,6 @@ class TestParser:
         args = parser.parse_args([])
         assert args.image == DEFAULT_IMAGE
         assert args.shell == DEFAULT_SHELL
-        assert args.ro_home is False
         assert args.rw_cwd is False
         assert args.ro_cwd is False
         assert args.no_host_ishfiles is False
@@ -657,11 +750,6 @@ class TestParser:
         parser = build_parser()
         with pytest.raises(SystemExit):
             parser.parse_args(["--rw-cwd", "--ro-cwd"])
-
-    def test_ro_home_flag(self):
-        parser = build_parser()
-        args = parser.parse_args(["--ro-home"])
-        assert args.ro_home is True
 
     def test_custom_image(self):
         parser = build_parser()

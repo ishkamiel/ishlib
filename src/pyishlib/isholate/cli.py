@@ -63,13 +63,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SHELL,
         help=f"Shell to run when no command is given (default: {DEFAULT_SHELL})",
     )
-    parser.add_argument(
-        "--ro-home",
-        action="store_true",
-        default=False,
-        help="Mount the host home directory read-only as the container home",
-    )
-
     cwd_group = parser.add_mutually_exclusive_group()
     cwd_group.add_argument(
         "--rw-cwd",
