@@ -2,8 +2,19 @@
   "permissions": {
     "allow": [
       "Bash(mpyp *)",
+      "Bash(make verify *)",
+      "Bash(make verify * | grep *)",
+      "Bash(make verify * | head *)",
+      "Bash(make verify * | rg *)",
+      "Bash(make verify * | tail *)",
       "Bash(pre-commit run *)",
+      "Bash(pytest *)",
       "Bash(python -m mpyp *)",
+      "Bash(python -m pytest *)",
+      "Bash(python -m pytest * | grep *)",
+      "Bash(python -m pytest * | head *)",
+      "Bash(python -m pytest * | rg *)",
+      "Bash(python -m pytest * | tail *)",
       "Read"
     ],
     "deny": [
