@@ -134,6 +134,19 @@ class Installer:
             log.error("Cannot check if %s is installed", package["name"])
         return False
 
+    def pkg_is_available(self, package: Mapping) -> bool:
+        """Return True if any backend that can handle *package* also reports it
+        as available in its repo/index.
+
+        Uses :attr:`Namespace.is_pkg_available` on each backend.  Falls back
+        to True for backends that don't override it (non-apt/dnf backends).
+        """
+        for i in self._backends:
+            ns = self.installer(i)
+            if ns.can_install(package) and ns.is_pkg_available(package):
+                return True
+        return False
+
     def install_pkg(self, pkg: dict) -> bool:
         """Install a package"""
         return self.install_pkgs([pkg])

@@ -19,10 +19,15 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 from pyishlib.installer import Installer
-from pyishlib.installer_apt import InstallerApt
+from pyishlib.installer_apt import (
+    InstallerApt,
+    _parse_reverse_provides,
+    _showpkg_has_versions_or_providers,
+)
 from pyishlib.installer_brew import InstallerBrew
 from pyishlib.installer_cargo import InstallerCargo
 from pyishlib.installer_custom import InstallerCustom
+from pyishlib.installer_dnf import InstallerDnf
 from pyishlib.installer_pip import InstallerPip
 from pyishlib.installer_winget import InstallerWinget
 from pyishlib.command_runner import CommandRunner
@@ -115,6 +120,195 @@ class TestInstallerApt:
             pkg = {"name": "test", "apt": "test-pkg"}
             result = apt.install_pkg_unless_found(pkg)
             assert result is True
+
+    def test_is_pkg_installed_transitional_via_provider(self):
+        """is_pkg_installed returns True when a provider package is installed."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "virtual-pkg", "apt": "virtual-pkg"}
+        dpkg_not_installed = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=b"", stderr=b""
+        )
+        dpkg_provider_installed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=b"install ok installed\n",
+            stderr=b"",
+        )
+        showpkg_output = (
+            b"Package: virtual-pkg\n"
+            b"Versions: \n\n"
+            b"Reverse Depends: \n\n"
+            b"Dependencies\n\n"
+            b"Provides: \n\n"
+            b"Reverse Provides:\n"
+            b"real-pkg 1.0\n\n"
+        )
+        showpkg_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=showpkg_output, stderr=b""
+        )
+
+        call_count = [0]
+
+        def mock_run(cmd, **kwargs):
+            call_count[0] += 1
+            if cmd[0] == "dpkg-query" and "virtual-pkg" in cmd:
+                return dpkg_not_installed
+            if cmd[0] == "apt-cache":
+                return showpkg_result
+            if cmd[0] == "dpkg-query" and "real-pkg" in cmd:
+                return dpkg_provider_installed
+            return dpkg_not_installed
+
+        runner.run = mock_run
+        assert apt.is_pkg_installed(pkg) is True
+
+    def test_is_pkg_installed_literal_package(self):
+        """is_pkg_installed returns True when dpkg finds the package directly."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "real-pkg", "apt": "real-pkg"}
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"install ok installed\n", stderr=b""
+            ),
+        ):
+            assert apt.is_pkg_installed(pkg) is True
+
+    def test_is_pkg_available_known_package(self):
+        """is_pkg_available returns True when showpkg shows version entries."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "tldr", "apt": "tldr"}
+        showpkg_out = (
+            b"Package: tldr\nVersions: \n0.5.0-1 (/var/lib/apt/lists/...)\n\n"
+        )
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=showpkg_out, stderr=b""
+            ),
+        ):
+            assert apt.is_pkg_available(pkg) is True
+
+    def test_is_pkg_available_virtual_package(self):
+        """is_pkg_available returns True when showpkg shows reverse provides."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "gnome-ext", "apt": "gnome-extensions-app"}
+        showpkg_out = (
+            b"Package: gnome-extensions-app\nVersions: \n\n"
+            b"Reverse Depends: \n\nDependencies\n\nProvides: \n\n"
+            b"Reverse Provides:\ngnome-shell-extension-prefs 49.0\n\n"
+        )
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=showpkg_out, stderr=b""
+            ),
+        ):
+            assert apt.is_pkg_available(pkg) is True
+
+    def test_is_pkg_available_unknown_package(self):
+        """is_pkg_available returns False when showpkg shows no versions or provides."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "ulauncher", "apt": "ulauncher"}
+        showpkg_out = (
+            b"Package: ulauncher\nVersions: \n\n"
+            b"Reverse Depends: \n\nDependencies\n\nProvides: \n\nReverse Provides: \n\n"
+        )
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=showpkg_out, stderr=b""
+            ),
+        ):
+            assert apt.is_pkg_available(pkg) is False
+
+    def test_apt_namespace_has_is_pkg_available(self):
+        apt = InstallerApt(make_runner({"apt": "/usr/bin/apt"}))
+        ns = apt.namespace
+        assert hasattr(ns, "is_pkg_available")
+
+
+class TestInstallerDnf:
+    def test_is_pkg_available_true(self):
+        runner = make_runner({"dnf": "/usr/bin/dnf"})
+        dnf = InstallerDnf(runner)
+        pkg = {"name": "tldr", "dnf": "tldr"}
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"", stderr=b""
+            ),
+        ):
+            assert dnf.is_pkg_available(pkg) is True
+
+    def test_is_pkg_available_false(self):
+        runner = make_runner({"dnf": "/usr/bin/dnf"})
+        dnf = InstallerDnf(runner)
+        pkg = {"name": "ulauncher", "dnf": "ulauncher"}
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=1, stdout=b"Error: No matching Packages\n", stderr=b""
+            ),
+        ):
+            assert dnf.is_pkg_available(pkg) is False
+
+    def test_is_pkg_available_no_dnf(self):
+        dnf = InstallerDnf(make_runner({}))
+        pkg = {"name": "tldr", "dnf": "tldr"}
+        assert dnf.is_pkg_available(pkg) is False
+
+
+class TestParseReverseProvides:
+    def test_single_provider(self):
+        output = "Package: virt\nVersions: \n\nReverse Provides:\nreal-pkg 1.0\n\n"
+        assert _parse_reverse_provides(output) == ["real-pkg"]
+
+    def test_multiple_providers(self):
+        output = (
+            "Package: virt\nVersions: \n\n"
+            "Reverse Provides:\npkg-a 1.0\npkg-b 2.0\n\n"
+        )
+        assert _parse_reverse_provides(output) == ["pkg-a", "pkg-b"]
+
+    def test_no_providers(self):
+        output = "Package: real\nVersions: \n0.5.0\n\nReverse Provides: \n\n"
+        assert _parse_reverse_provides(output) == []
+
+    def test_provider_on_same_line(self):
+        output = "Package: virt\nReverse Provides: real-pkg 1.0\n"
+        assert _parse_reverse_provides(output) == ["real-pkg"]
+
+
+class TestShowpkgHasVersionsOrProviders:
+    def test_real_package_has_version(self):
+        output = "Package: tldr\nVersions: \n0.5.0-1\n\nReverse Provides: \n\n"
+        assert _showpkg_has_versions_or_providers(output) is True
+
+    def test_virtual_package_has_provider(self):
+        output = (
+            "Package: gnome-extensions-app\nVersions: \n\n"
+            "Reverse Provides:\ngnome-shell-extension-prefs 49.0\n\n"
+        )
+        assert _showpkg_has_versions_or_providers(output) is True
+
+    def test_unknown_package_empty(self):
+        output = (
+            "Package: unknown\nVersions: \n\n"
+            "Reverse Provides: \n\n"
+        )
+        assert _showpkg_has_versions_or_providers(output) is False
 
 
 class TestInstallerPip:
@@ -487,6 +681,28 @@ class TestInstallerOrchestration:
             pkg = {"name": "test"}
             installer.install_pkg(pkg)
             mock.assert_called_once_with([pkg])
+
+    def test_pkg_is_available_true(self):
+        """pkg_is_available returns True when apt backend reports available."""
+        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
+        pkg = {"name": "tldr", "apt": "tldr"}
+        apt_backend = installer.get_backend("apt")
+        with patch.object(apt_backend, "is_pkg_available", return_value=True):
+            assert installer.pkg_is_available(pkg) is True
+
+    def test_pkg_is_available_false_no_backend(self):
+        """pkg_is_available returns False when no backend can handle the package."""
+        installer = make_installer(which_returns={})
+        pkg = {"name": "unknown-tool", "apt": "unknown-tool"}
+        assert installer.pkg_is_available(pkg) is False
+
+    def test_pkg_is_available_false_backend_unavailable(self):
+        """pkg_is_available returns False when backend reports unavailable."""
+        installer = make_installer(which_returns={"apt": "/usr/bin/apt"})
+        pkg = {"name": "ulauncher", "apt": "ulauncher"}
+        apt_backend = installer.get_backend("apt")
+        with patch.object(apt_backend, "is_pkg_available", return_value=False):
+            assert installer.pkg_is_available(pkg) is False
 
 
 class TestInstallerPipWindowsSupport:

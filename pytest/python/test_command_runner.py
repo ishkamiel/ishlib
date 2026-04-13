@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.command_runner import CommandRunner
+from pyishlib.command_runner import CommandRunner, UserDeclinedError
 from pyishlib.ish_config import IshConfig
 from pyishlib.userio import Choice
 
@@ -239,7 +239,7 @@ class TestCommandRunnerSudo:
         runner = CommandRunner()
         with patch("pyishlib.command_runner.prompt_yes_no_always") as mock_prompt:
             mock_prompt.return_value = Choice.NO
-            with pytest.raises(KeyboardInterrupt):
+            with pytest.raises(UserDeclinedError):
                 runner.run_sudo(["echo", "test"])
 
     def test_run_sudo_always_sudo(self):

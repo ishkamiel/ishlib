@@ -95,6 +95,7 @@ class InstallerCustom:
             install = self.install_custom_pkgs
             install_unless_found = self.install_custom_pkg_unless_found
             is_installed = self.is_custom_pkg_installed
+            is_pkg_available = self.can_use_custom
             update = self.update_custom_pkgs
             update_and_install_all = self.update_and_install_all
 
