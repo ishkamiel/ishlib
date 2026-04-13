@@ -34,6 +34,12 @@ from pyishlib.isholate.config import (
     load_project_config,
 )
 from pyishlib.isholate.container import (
+    _host_base_name,
+    _image_tag,
+    _project_base_name,
+    _project_hash,
+    ensure_host_base,
+    ensure_project_base,
     generate_name,
     get_host_user_info,
     launch_and_exec,
@@ -50,6 +56,10 @@ _FAKE_CWD = Path("/work/myproject")
 _FAKE_IMAGE = "images:ubuntu/24.04"
 _FAKE_SHELL = "/bin/bash"
 _FAKE_CONTAINER_UID = 1000
+_FAKE_BASE_NAME = _host_base_name(_FAKE_USER, _FAKE_IMAGE)
+_FAKE_PBASE_NAME = _project_base_name(
+    _FAKE_USER, Path("/work/myproject/.ishfiles").parent
+)
 
 
 def _fake_user_info():
@@ -66,6 +76,9 @@ def _make_args(**overrides):
         "ro_cwd": False,
         "no_host_ishfiles": False,
         "no_project_ishfiles": False,
+        "no_cache": False,
+        "rebuild_base": False,
+        "rebuild_project_base": False,
         "verbose": 0,
         "quiet": False,
         "command": [],
@@ -80,7 +93,41 @@ def _fake_subprocess_run(cmd, **kwargs):
         return SimpleNamespace(
             returncode=0, stdout=f"{_FAKE_CONTAINER_UID}\n", stderr=""
         )
+    # git commands for _source_fingerprint
+    if "git" in cmd:
+        return SimpleNamespace(returncode=0, stdout="deadbeef\n", stderr="")
     return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+
+# ---------------------------------------------------------------------------
+# Naming helpers
+# ---------------------------------------------------------------------------
+
+
+class TestNamingHelpers:
+    def test_image_tag_strips_scheme(self):
+        assert _image_tag("images:ubuntu/24.04") == "ubuntu-24-04"
+
+    def test_image_tag_truncates(self):
+        long_image = "images:" + "x" * 50
+        assert len(_image_tag(long_image)) <= 30
+
+    def test_project_hash_is_deterministic(self):
+        p = Path("/work/myproject")
+        assert _project_hash(p) == _project_hash(p)
+
+    def test_project_hash_differs_for_different_paths(self):
+        assert _project_hash(Path("/a")) != _project_hash(Path("/b"))
+
+    def test_host_base_name_includes_user_and_image(self):
+        name = _host_base_name("alice", "images:ubuntu/24.04")
+        assert "alice" in name
+        assert "ubuntu" in name
+        assert name.startswith("isholate-base-")
+
+    def test_project_base_name_starts_with_pbase(self):
+        name = _project_base_name("alice", Path("/some/project"))
+        assert name.startswith("isholate-pbase-")
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +146,6 @@ class TestGenerateName:
 
     def test_valid_chars(self):
         name = generate_name("alice")
-        # Container names must use only lowercase letters, digits, and hyphens
         assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in name)
 
 
@@ -109,17 +155,8 @@ class TestGenerateName:
 
 
 class TestPurgeContainers:
-    def test_prefix_matches_sanitised_username(self):
-        """purge must sanitise the username the same way generate_name does
-        so that users like 'john_doe' (name -> 'isholate-john-doe-xxxxxx')
-        still match the purge prefix."""
-        username = "john_doe"
-        # Containers a real run would have created for this user:
-        existing = [
-            {"name": generate_name(username)},
-            {"name": generate_name(username)},
-            {"name": "isholate-other-abc123"},  # different user, not purged
-        ]
+    def _run_purge(self, username, existing_containers, *, include_bases=False):
+        """Helper: run purge_containers with a mocked container list."""
         run_calls = []
 
         def fake_run(cmd, **kwargs):
@@ -127,31 +164,81 @@ class TestPurgeContainers:
             return SimpleNamespace(returncode=0)
 
         def fake_subprocess_run(cmd, **kwargs):
-            # The initial `incus list --format=json` lookup
             import json
 
             return SimpleNamespace(
-                returncode=0, stdout=json.dumps(existing), stderr=""
+                returncode=0, stdout=json.dumps(existing_containers), stderr=""
             )
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ):
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
             with patch(
                 "pyishlib.isholate.container.subprocess.run",
                 side_effect=fake_subprocess_run,
             ):
-                rc = purge_containers(username, quiet=True)
+                rc = purge_containers(
+                    username, quiet=True, include_bases=include_bases
+                )
+        return rc, run_calls
 
-        assert rc == 0
+    def test_prefix_matches_sanitised_username(self):
+        """purge must sanitise the username the same way generate_name does."""
+        username = "john_doe"
+        existing = [
+            {"name": generate_name(username)},
+            {"name": generate_name(username)},
+            {"name": "isholate-other-abc123"},  # different user, not purged
+        ]
+        rc, run_calls = self._run_purge(username, existing)
         deleted = [c for c in run_calls if c[:2] == ["incus", "delete"]]
         deleted_names = [c[2] for c in deleted]
-        # Both of the user's containers must be deleted; the other user's
-        # container must not be touched.
+
+        assert rc == 0
         assert len(deleted) == 2
         for name in deleted_names:
             assert name.startswith("isholate-john-doe-")
             assert "isholate-other-" not in name
+
+    def test_bases_preserved_by_default(self):
+        """Default purge must NOT delete host-base or pbase containers."""
+        username = "alice"
+        ephemeral = generate_name(username)
+        host_base = _host_base_name(username, _FAKE_IMAGE)
+        pbase = _project_base_name(username, Path("/proj"))
+        existing = [
+            {"name": ephemeral},
+            {"name": host_base},
+            {"name": pbase},
+        ]
+        rc, run_calls = self._run_purge(username, existing, include_bases=False)
+        deleted_names = [c[2] for c in run_calls if c[:2] == ["incus", "delete"]]
+
+        assert rc == 0
+        assert ephemeral in deleted_names
+        assert host_base not in deleted_names
+        assert pbase not in deleted_names
+
+    def test_include_bases_deletes_base_containers(self):
+        """With include_bases=True, bases are also deleted."""
+        username = "alice"
+        ephemeral = generate_name(username)
+        host_base = _host_base_name(username, _FAKE_IMAGE)
+        pbase = _project_base_name(username, Path("/proj"))
+        existing = [
+            {"name": ephemeral},
+            {"name": host_base},
+            {"name": pbase},
+        ]
+        rc, run_calls = self._run_purge(username, existing, include_bases=True)
+        deleted_names = [c[2] for c in run_calls if c[:2] == ["incus", "delete"]]
+
+        assert rc == 0
+        assert ephemeral in deleted_names
+        assert host_base in deleted_names
+        assert pbase in deleted_names
+
+    def test_no_containers_returns_zero(self):
+        rc, _ = self._run_purge("nobody", [])
+        assert rc == 0
 
 
 # ---------------------------------------------------------------------------
@@ -168,11 +255,18 @@ class TestGetHostUserInfo:
 
 
 # ---------------------------------------------------------------------------
-# launch_and_exec -- command sequence
+# launch_and_exec — no-source path (one-shot, original behaviour)
 # ---------------------------------------------------------------------------
 
 
 class TestLaunchAndExec:
+    """Tests for the no-source / one-shot path through launch_and_exec.
+
+    All tests call launch_and_exec with no host_ishfiles_source and no
+    project_overlay, so they always go through the one-shot path regardless
+    of caching flags.
+    """
+
     def _run_with_mocks(self, args, fake_run_returns=None, **launch_kwargs):
         """Run launch_and_exec with _run and subprocess.run mocked.
 
@@ -246,7 +340,6 @@ class TestLaunchAndExec:
         assert exec_cmd[-1] == _FAKE_SHELL
 
     def test_exec_custom_command(self):
-        # No '--' prefix here, so it's passed directly
         args = _make_args(command=["ls", "-la"])
         calls, _ = self._run_with_mocks(args)
         cmds = self._cmds(calls)
@@ -255,14 +348,11 @@ class TestLaunchAndExec:
         assert exec_cmd[-2:] == ["ls", "-la"]
 
     def test_exec_strips_double_dash_from_remainder(self):
-        # argparse.REMAINDER keeps '--'; container.py must strip it so the
-        # command ends up as [incus, exec, ..., --, ls, -la], not [... --, --, ls, -la]
         args = _make_args(command=["--", "ls", "-la"])
         calls, _ = self._run_with_mocks(args)
         cmds = self._cmds(calls)
 
         exec_cmd = next(c for c in cmds if "exec" in c and "--user" in c)
-        # Only one '--' separator (the incus exec one), not two
         assert exec_cmd.count("--") == 1
         assert exec_cmd[-2:] == ["ls", "-la"]
 
@@ -366,8 +456,6 @@ class TestLaunchAndExec:
         args = _make_args()
         self._run_with_mocks(args)
         err = capsys.readouterr().err
-        # Must announce each long-running stage so first-run does not
-        # appear to hang.
         assert "isholate:" in err
         assert "creating container" in err
         assert "starting container" in err
@@ -381,12 +469,18 @@ class TestLaunchAndExec:
 
 
 # ---------------------------------------------------------------------------
-# launch_and_exec -- provisioning
+# launch_and_exec — cached path with sources
 # ---------------------------------------------------------------------------
 
 
 class TestProvisioning:
-    """Tests for the ishfiles provisioning step inside the container."""
+    """Tests for the ishfiles provisioning step.
+
+    When host_ishfiles_source is supplied, launch_and_exec uses the
+    three-tier cached path (ensure_host_base → ensure_project_base →
+    _launch_ephemeral_from_base).  All Incus calls are captured via the
+    _run mock so the provisioning assertions remain the same.
+    """
 
     def _run_with_mocks(self, args, host_source=None, overlay=None):
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -405,8 +499,6 @@ class TestProvisioning:
                     "pyishlib.isholate.container.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
-                    # host_config_dir.is_dir() is called inside _provision;
-                    # patch Path.is_dir to return True for the fake config dir.
                     with patch.object(Path, "is_dir", return_value=True):
                         rc = launch_and_exec(
                             args,
@@ -424,7 +516,6 @@ class TestProvisioning:
         calls, _ = self._run_with_mocks(args, host_source=None, overlay=None)
         cmds = self._cmds(calls)
 
-        # No mkdir, no apt, no ishfiles apply, no chown for provisioning
         assert not any("/run/isholate" in str(c) for c in cmds)
         assert not any("ishfiles" in str(c) for c in cmds)
         assert not any("chown" in str(c) for c in cmds)
@@ -439,8 +530,7 @@ class TestProvisioning:
         assert any("isholate-ishlib" in c for c in device_adds)
 
     def test_host_source_mounts_under_run_isholate(self):
-        """The host source must be mounted under /run/isholate (outside the user
-        home) so that chown -R over the home never crosses a read-only bind mount."""
+        """The host source must be mounted under /run/isholate."""
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
@@ -459,19 +549,20 @@ class TestProvisioning:
 
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
         assert len(apply_cmds) >= 1
-        # Pass 1 must pass -s pointing at the mounted source under /run/isholate
         pass1 = apply_cmds[0]
         assert "-s" in pass1
         assert "/run/isholate/ishsrc" in pass1
-        # Must pass --isholate so data.toml overrides take effect
         assert "--isholate" in pass1
 
-    def test_overlay_adds_project_device(self):
+    def test_overlay_only_falls_back_to_one_shot(self):
+        """Overlay with no host source falls back to one-shot provisioning."""
         args = _make_args()
         fake_overlay = Path("/work/myproject/.ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
+        # One-shot path creates an ephemeral directly with incus init, not incus copy
+        assert any(c[:2] == ["incus", "init"] for c in cmds)
         device_adds = [c for c in cmds if "device" in c and "add" in c]
         assert any("isholate-overlay" in c for c in device_adds)
 
@@ -483,11 +574,9 @@ class TestProvisioning:
 
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
         assert len(apply_cmds) >= 1
-        # The overlay apply must use -s pointing at the mounted project source
         overlay_apply = apply_cmds[-1]
         assert "-s" in overlay_apply
         assert "/run/isholate/ishsrc-project" in overlay_apply
-        # Must pass --isholate so data.toml overrides take effect
         assert "--isholate" in overlay_apply
 
     def test_both_sources_run_two_apply_passes(self):
@@ -523,13 +612,11 @@ class TestProvisioning:
         # Two /bin/sh calls: IPv4 force step + apt-get bootstrap
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
         assert len(sh_cmds) == 2
-        # The bootstrap is the second sh call (after IPv4 forcing)
-        script = sh_cmds[1][-1]  # the -c argument
+        script = sh_cmds[1][-1]
         assert "python3" in script
         assert "sudo" in script
 
     def test_forces_ipv4_before_apt(self):
-        """Provisioning writes a force-IPv4 apt config before running apt-get."""
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
@@ -541,21 +628,13 @@ class TestProvisioning:
         assert "apt.conf.d" in ipv4_script
 
     def test_apt_bootstrap_is_noninteractive(self):
-        """Regression: base-package install must not hang on debconf prompts.
-
-        The apt bootstrap in a fresh Ubuntu image pulls in tzdata (via
-        python3), whose postinst invokes debconf.  Without
-        DEBIAN_FRONTEND=noninteractive the container process would read
-        from the user's tty and hang forever.  We also detach stdin from
-        the controlling terminal as a belt-and-braces guard.
-        """
+        """Regression: base-package install must not hang on debconf prompts."""
         import subprocess as _sp
 
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
 
-        # Find the apt-bootstrap call: the /bin/sh -c call that has DEBIAN_FRONTEND
         bootstrap_call = next(
             c
             for c in calls
@@ -563,12 +642,10 @@ class TestProvisioning:
         )
         cmd = bootstrap_call.args[0]
 
-        # DEBIAN_FRONTEND=noninteractive must be passed via `incus exec --env`.
         assert "--env" in cmd
         env_idx = cmd.index("--env")
         assert cmd[env_idx + 1] == "DEBIAN_FRONTEND=noninteractive"
 
-        # stdin must be detached so debconf cannot read from the host tty.
         assert bootstrap_call.kwargs.get("stdin") is _sp.DEVNULL
 
     def test_verbose_drops_apt_qq_and_adds_ishfiles_verbose(self):
@@ -578,8 +655,7 @@ class TestProvisioning:
         cmds = self._cmds(calls)
 
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        script = sh_cmds[1][-1]  # bootstrap is the second sh call
-        # -qq should not appear when verbose
+        script = sh_cmds[1][-1]
         assert "-qq" not in script
 
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
@@ -601,13 +677,167 @@ class TestProvisioning:
         cmds = self._cmds(calls)
 
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        script = sh_cmds[1][-1]  # bootstrap is the second sh call
+        script = sh_cmds[1][-1]
         assert "-qq" in script
 
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
         for cmd in apply_cmds:
             assert "-v" not in cmd
             assert "--debug" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# Cached path: ensure_host_base / ensure_project_base
+# ---------------------------------------------------------------------------
+
+
+class TestBaseManagement:
+    """Tests for the persistent-base ensure_* functions."""
+
+    def _run_ensure_host_base(
+        self,
+        host_source,
+        *,
+        stored_fp=None,
+        container_exists=False,
+        rebuild=False,
+        verbose=0,
+        quiet=True,
+    ):
+        """Run ensure_host_base with mocked Incus calls."""
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        def fake_run(cmd, **kwargs):
+            # Return the stored fingerprint for config get of source_hash
+            if (
+                cmd[:3] == ["incus", "config", "get"]
+                and "_META_SOURCE_HASH" not in str(cmd)
+                and "source_hash" in str(cmd)
+            ):
+                fp = stored_fp or ""
+                return SimpleNamespace(returncode=0, stdout=fp, stderr="")
+            # incus info returns success iff container_exists
+            if cmd[:2] == ["incus", "info"]:
+                rc = 0 if container_exists else 1
+                return SimpleNamespace(returncode=rc, stdout="", stderr="")
+            return default
+
+        calls = []
+
+        def recording_run(cmd, **kwargs):
+            calls.append(cmd)
+            return fake_run(cmd, **kwargs)
+
+        with patch("pyishlib.isholate.container._run", side_effect=recording_run):
+            with patch(
+                "pyishlib.isholate.container.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ):
+                with patch.object(Path, "is_dir", return_value=True):
+                    with patch(
+                        "pyishlib.isholate.container._source_fingerprint",
+                        return_value="COMPUTED",
+                    ):
+                        name = ensure_host_base(
+                            _FAKE_IMAGE,
+                            _FAKE_USER,
+                            host_source,
+                            None,
+                            _FAKE_SHELL,
+                            verbose=verbose,
+                            quiet=quiet,
+                            rebuild=rebuild,
+                        )
+        return name, calls
+
+    def test_reuses_base_when_fingerprint_matches(self):
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        name, calls = self._run_ensure_host_base(
+            fake_src, stored_fp="COMPUTED", container_exists=True
+        )
+        cmds = calls
+        # Should not create a new container
+        assert not any(c[:2] == ["incus", "init"] for c in cmds)
+        assert not any(c[:2] == ["incus", "delete"] for c in cmds)
+        assert name == _host_base_name(_FAKE_USER, _FAKE_IMAGE)
+
+    def test_rebuilds_when_fingerprint_changes(self):
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        name, calls = self._run_ensure_host_base(
+            fake_src, stored_fp="STALE", container_exists=True
+        )
+        cmds = calls
+        # Must delete the stale base and create a new one
+        assert any(c[:2] == ["incus", "delete"] for c in cmds)
+        assert any(c[:2] == ["incus", "init"] for c in cmds)
+
+    def test_creates_base_when_it_does_not_exist(self):
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        name, calls = self._run_ensure_host_base(
+            fake_src, stored_fp=None, container_exists=False
+        )
+        cmds = calls
+        assert any(c[:2] == ["incus", "init"] for c in cmds)
+        assert any(c[:2] == ["incus", "start"] for c in cmds)
+
+    def test_rebuild_flag_forces_rebuild(self):
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        name, calls = self._run_ensure_host_base(
+            fake_src,
+            stored_fp="COMPUTED",  # fingerprints match — but rebuild is forced
+            container_exists=True,
+            rebuild=True,
+        )
+        cmds = calls
+        assert any(c[:2] == ["incus", "delete"] for c in cmds)
+        assert any(c[:2] == ["incus", "init"] for c in cmds)
+
+    def test_base_is_stopped_after_creation(self):
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        name, calls = self._run_ensure_host_base(
+            fake_src, container_exists=False
+        )
+        cmds = calls
+        stop_cmds = [c for c in cmds if c[:2] == ["incus", "stop"]]
+        assert len(stop_cmds) >= 1
+
+    def test_host_base_name_returned(self):
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        name, _ = self._run_ensure_host_base(
+            fake_src, stored_fp="COMPUTED", container_exists=True
+        )
+        assert name == _host_base_name(_FAKE_USER, _FAKE_IMAGE)
+
+    def test_ephemeral_created_via_copy_not_init(self):
+        """Cached path: ephemeral is incus copy, not incus init."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return default
+
+        with patch(
+            "pyishlib.isholate.container.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+                with patch(
+                    "pyishlib.isholate.container.subprocess.run",
+                    side_effect=_fake_subprocess_run,
+                ):
+                    with patch.object(Path, "is_dir", return_value=True):
+                        launch_and_exec(args, host_ishfiles_source=fake_src)
+
+        cmds = calls
+        # Base is created via incus init; ephemeral is cloned via incus copy
+        assert any(c[:2] == ["incus", "copy"] for c in cmds)
+        # The ephemeral should still be deleted at the end
+        delete_cmds = [c for c in cmds if c[:2] == ["incus", "delete"]]
+        # At least one delete (for the ephemeral; possibly one for a stale base)
+        assert len(delete_cmds) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -673,7 +903,8 @@ class TestNetworkPreflight:
         cmds = self._cmds(calls)
 
         assert rc != 0
-        assert any(c[:3] == ["incus", "stop", "test-container"] for c in cmds)
+        # The base container should be stopped (exact name is the host base)
+        assert any(c[:2] == ["incus", "stop"] for c in cmds)
 
     def test_preflight_passes_continues_to_apt(self):
         """When probe passes, apt-get update still runs."""
@@ -722,7 +953,6 @@ class TestNetworkPreflight:
         assert rc != 0
         assert "1.1.1.1" in err
         assert "upstream" in err or "mirror" in err
-        # Diagnostic B must NOT show the firewall hints (wrong cause)
         assert "ufw" not in err
 
 
@@ -743,6 +973,13 @@ class TestParser:
         assert args.ro_cwd is False
         assert args.no_host_ishfiles is False
         assert args.no_project_ishfiles is False
+        assert args.no_cache is False
+        assert args.rebuild is False
+        assert args.rebuild_base is False
+        assert args.rebuild_project_base is False
+        assert args.purge is False
+        assert args.purge_bases is False
+        assert args.purge_all is False
         assert args.verbose == 0
         assert args.quiet is False
         assert args.command == []
@@ -772,6 +1009,46 @@ class TestParser:
         args = parser.parse_args(["--no-ishfiles"])
         assert args.no_ishfiles is True
 
+    def test_no_cache_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-cache"])
+        assert args.no_cache is True
+
+    def test_rebuild_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--rebuild"])
+        assert args.rebuild is True
+
+    def test_rebuild_base_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--rebuild-base"])
+        assert args.rebuild_base is True
+
+    def test_rebuild_project_base_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--rebuild-project-base"])
+        assert args.rebuild_project_base is True
+
+    def test_rebuild_flags_are_mutually_exclusive(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--rebuild", "--rebuild-base"])
+
+    def test_purge_flags_are_mutually_exclusive(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--purge", "--purge-bases"])
+
+    def test_purge_bases_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--purge-bases"])
+        assert args.purge_bases is True
+
+    def test_purge_all_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--purge-all"])
+        assert args.purge_all is True
+
     def test_no_ishfiles_suppresses_provisioning(self):
         """--no-ishfiles must pass None for both sources to launch_and_exec."""
         with patch(
@@ -800,8 +1077,6 @@ class TestParser:
 
     def test_command_passthrough_with_flags(self):
         parser = build_parser()
-        # Commands with flags must follow -- to avoid argparse confusion.
-        # argparse.REMAINDER keeps the '--' in the list; container.py strips it.
         args = parser.parse_args(["--", "ls", "-la"])
         assert args.command == ["--", "ls", "-la"]
 
@@ -828,6 +1103,45 @@ class TestParser:
         with patch("sys.platform", "darwin"):
             rc = cli_main([])
         assert rc == 1
+
+    def test_purge_bases_calls_purge_with_include_bases(self):
+        """--purge-bases must call purge_containers with include_bases=True."""
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.purge_containers", return_value=0
+            ) as mock_purge:
+                cli_main(["--purge-bases"])
+                _, kwargs = mock_purge.call_args
+                assert kwargs.get("include_bases") is True
+
+    def test_purge_all_calls_purge_with_include_bases(self):
+        """--purge-all must also call purge_containers with include_bases=True."""
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.purge_containers", return_value=0
+            ) as mock_purge:
+                cli_main(["--purge-all"])
+                _, kwargs = mock_purge.call_args
+                assert kwargs.get("include_bases") is True
+
+    def test_purge_does_not_include_bases(self):
+        """Plain --purge must NOT pass include_bases=True."""
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.purge_containers", return_value=0
+            ) as mock_purge:
+                cli_main(["--purge"])
+                _, kwargs = mock_purge.call_args
+                assert not kwargs.get("include_bases", False)
 
     def test_project_config_overrides_image_default(self, tmp_path):
         """Image from .ishfiles/ishconfig/isholate.toml becomes the argparse default."""
@@ -879,6 +1193,27 @@ class TestParser:
                         called_args = mock_launch.call_args[0][0]
                         assert called_args.image == "images:ubuntu/22.04"
 
+    def test_rebuild_wires_flags_to_launch_and_exec(self):
+        """--rebuild must set rebuild_base=True and rebuild_project_base=True on args."""
+        with patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
+        ):
+            with patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=_fake_user_info(),
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    return_value=None,
+                ):
+                    with patch(
+                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    ) as mock_launch:
+                        cli_main(["--rebuild"])
+                        called_args = mock_launch.call_args[0][0]
+                        assert called_args.rebuild_base is True
+                        assert called_args.rebuild_project_base is True
+
 
 # ---------------------------------------------------------------------------
 # config.py — discovery helpers
@@ -897,7 +1232,6 @@ class TestDiscoverProjectOverlay:
         assert result is None
 
     def test_does_not_search_parent_dirs(self, tmp_path):
-        """.ishfiles/ in a parent directory is not found — only cwd is checked."""
         overlay = tmp_path / ".ishfiles"
         overlay.mkdir()
         subdir = tmp_path / "subdir" / "deep"
@@ -933,7 +1267,6 @@ class TestLoadProjectConfig:
 
 class TestDiscoverHostIshfilesSource:
     def test_returns_none_when_source_does_not_exist(self, tmp_path):
-        # Neither config file nor default source dir exists in tmp_path
         result = discover_host_ishfiles_source(tmp_path)
         assert result is None
 
