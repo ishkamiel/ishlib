@@ -57,6 +57,7 @@ DEFAULT_PATTERNS: List[str] = [
     ".github",
     ".gitignore",
     "__pycache__",
+    ".pytest_cache",
     "*.ish",
 ]
 
