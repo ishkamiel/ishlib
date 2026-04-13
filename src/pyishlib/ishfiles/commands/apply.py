@@ -238,6 +238,11 @@ def run(cfg: IshConfig) -> int:
         if ret != 0:
             return ret
 
+    if not cfg.quiet:
+        if had_errors:
+            print("Apply completed with errors.")
+        else:
+            print("Apply complete.")
     return 1 if had_errors else 0
 
 
@@ -254,8 +259,9 @@ def _print_log_summary(slog: ScriptLogger, cfg: IshConfig) -> None:
                 if counts.get(lvl)
             ]
             print(f"  {name}: {', '.join(parts)}")
-    summary = slog.summary_line()
-    if slog.log_path:
-        print(f"Scripts done: {summary}. Log: {slog.log_path}")
-    else:
-        print(f"Scripts done: {summary}.")
+    if cfg.verbose or issues:
+        summary = slog.summary_line()
+        if slog.log_path:
+            print(f"Scripts done: {summary}. Log: {slog.log_path}")
+        else:
+            print(f"Scripts done: {summary}.")

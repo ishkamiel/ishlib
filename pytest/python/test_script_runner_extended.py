@@ -24,10 +24,12 @@ from pyishlib.ish_config import IshConfig
 from pyishlib.dotfile_context import DotfileContext
 
 
-def _make_cfg(source: str, target: str = None, data_template: dict = None):
+def _make_cfg(source: str, target: str = None, data_template: dict = None, verbose: bool = False):
     """Build a minimal IshConfig-like object for tests."""
+    import logging as _logging
     cfg = IshConfig(
         dry_run=True,
+        log_level=_logging.INFO if verbose else _logging.WARNING,
         defaults={"source": source, "target": target or source},
     )
     cfg.set_constant("scripts_dir", "ishscripts")
@@ -134,7 +136,7 @@ class TestRunWhenGating(unittest.TestCase):
             script = _write_toml_script(
                 scripts_dir, "once.sh", 'run_when = "once"'
             )
-            cfg = _make_cfg(tmp)
+            cfg = _make_cfg(tmp, verbose=True)
             state = self._make_state(tmp)
             state.record("once.sh", "anything")
 
@@ -216,7 +218,7 @@ class TestRunWhenGating(unittest.TestCase):
             body = "#!/bin/sh\necho hi\n"
             toml_meta = 'run_when = "onchange"'
             script = _write_toml_script(scripts_dir, "onchange.sh", toml_meta, body)
-            cfg = _make_cfg(tmp)
+            cfg = _make_cfg(tmp, verbose=True)
             state = self._make_state(tmp)
             # Record the preprocessed content (same as what run_scanned_scripts uses)
             from pyishlib.file_preprocessor import FilePreprocessor
