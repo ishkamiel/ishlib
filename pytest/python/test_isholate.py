@@ -65,7 +65,7 @@ def _make_args(**overrides):
         "rw_cwd": False,
         "ro_cwd": False,
         "no_host_ishfiles": False,
-        "no_project_overlay": False,
+        "no_project_ishfiles": False,
         "verbose": 0,
         "quiet": False,
         "command": [],
@@ -468,7 +468,7 @@ class TestProvisioning:
 
     def test_overlay_adds_project_device(self):
         args = _make_args()
-        fake_overlay = Path("/work/myproject/.isholate")
+        fake_overlay = Path("/work/myproject/.ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
@@ -477,7 +477,7 @@ class TestProvisioning:
 
     def test_overlay_runs_ishfiles_apply_with_source_flag(self):
         args = _make_args()
-        fake_overlay = Path("/work/myproject/.isholate")
+        fake_overlay = Path("/work/myproject/.ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
@@ -493,7 +493,7 @@ class TestProvisioning:
     def test_both_sources_run_two_apply_passes(self):
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        fake_overlay = Path("/work/myproject/.isholate")
+        fake_overlay = Path("/work/myproject/.ishfiles")
         calls, _ = self._run_with_mocks(
             args, host_source=fake_src, overlay=fake_overlay
         )
@@ -742,7 +742,7 @@ class TestParser:
         assert args.rw_cwd is False
         assert args.ro_cwd is False
         assert args.no_host_ishfiles is False
-        assert args.no_project_overlay is False
+        assert args.no_project_ishfiles is False
         assert args.verbose == 0
         assert args.quiet is False
         assert args.command == []
@@ -762,10 +762,10 @@ class TestParser:
         args = parser.parse_args(["--no-host-ishfiles"])
         assert args.no_host_ishfiles is True
 
-    def test_no_project_overlay_flag(self):
+    def test_no_project_ishfiles_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-project-overlay"])
-        assert args.no_project_overlay is True
+        args = parser.parse_args(["--no-project-ishfiles"])
+        assert args.no_project_ishfiles is True
 
     def test_no_ishfiles_flag(self):
         parser = build_parser()
@@ -830,8 +830,8 @@ class TestParser:
         assert rc == 1
 
     def test_project_config_overrides_image_default(self, tmp_path):
-        """Image from .isholate/ishconfig/isholate.toml becomes the argparse default."""
-        overlay = tmp_path / ".isholate"
+        """Image from .ishfiles/ishconfig/isholate.toml becomes the argparse default."""
+        overlay = tmp_path / ".ishfiles"
         (overlay / "ishconfig").mkdir(parents=True)
         (overlay / "ishconfig" / "isholate.toml").write_text(
             'image = "images:debian/12"\n'
@@ -860,7 +860,7 @@ class TestParser:
                             assert called_args.image == "images:debian/12"
 
     def test_cli_image_flag_overrides_project_config(self, tmp_path):
-        """--image CLI flag takes priority over .isholate/ishconfig/isholate.toml."""
+        """--image CLI flag takes priority over .ishfiles/ishconfig/isholate.toml."""
         with patch(
             "pyishlib.isholate.cli.discover_project_overlay", return_value=None
         ):
@@ -886,45 +886,35 @@ class TestParser:
 
 
 class TestDiscoverProjectOverlay:
-    def test_finds_isholate_in_cwd(self, tmp_path):
-        overlay = tmp_path / ".isholate"
+    def test_finds_ishfiles_in_cwd(self, tmp_path):
+        overlay = tmp_path / ".ishfiles"
         overlay.mkdir()
         result = discover_project_overlay(tmp_path)
-        assert result == overlay
-
-    def test_finds_isholate_in_parent(self, tmp_path):
-        overlay = tmp_path / ".isholate"
-        overlay.mkdir()
-        subdir = tmp_path / "subdir" / "deep"
-        subdir.mkdir(parents=True)
-        result = discover_project_overlay(subdir)
         assert result == overlay
 
     def test_returns_none_when_not_found(self, tmp_path):
         result = discover_project_overlay(tmp_path)
         assert result is None
 
-    def test_stops_at_first_match(self, tmp_path):
-        """Nested .isholate/ directories: the innermost (deepest) wins."""
-        outer = tmp_path / ".isholate"
-        outer.mkdir()
-        inner_dir = tmp_path / "sub"
-        inner_dir.mkdir()
-        inner = inner_dir / ".isholate"
-        inner.mkdir()
-        result = discover_project_overlay(inner_dir)
-        assert result == inner
+    def test_does_not_search_parent_dirs(self, tmp_path):
+        """.ishfiles/ in a parent directory is not found — only cwd is checked."""
+        overlay = tmp_path / ".ishfiles"
+        overlay.mkdir()
+        subdir = tmp_path / "subdir" / "deep"
+        subdir.mkdir(parents=True)
+        result = discover_project_overlay(subdir)
+        assert result is None
 
 
 class TestLoadProjectConfig:
     def test_returns_empty_when_no_file(self, tmp_path):
-        overlay = tmp_path / ".isholate"
+        overlay = tmp_path / ".ishfiles"
         overlay.mkdir()
         result = load_project_config(overlay)
         assert result == {}
 
     def test_reads_image_and_shell(self, tmp_path):
-        overlay = tmp_path / ".isholate"
+        overlay = tmp_path / ".ishfiles"
         (overlay / "ishconfig").mkdir(parents=True)
         (overlay / "ishconfig" / "isholate.toml").write_text(
             'image = "images:ubuntu/22.04"\nshell = "/bin/zsh"\n'
@@ -934,7 +924,7 @@ class TestLoadProjectConfig:
         assert result["shell"] == "/bin/zsh"
 
     def test_returns_empty_for_empty_toml(self, tmp_path):
-        overlay = tmp_path / ".isholate"
+        overlay = tmp_path / ".ishfiles"
         (overlay / "ishconfig").mkdir(parents=True)
         (overlay / "ishconfig" / "isholate.toml").write_text("")
         result = load_project_config(overlay)

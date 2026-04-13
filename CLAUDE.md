@@ -344,7 +344,7 @@ ignore_on = ["fedora"]
 
 Key modules:
 
-- `cli.py` — argparse front-end, subcommands (`run`, `purge`, …). Discovers a project-local overlay at `.isholate/ishconfig/isholate.toml` before parsing args so image/shell overrides take effect.
+- `cli.py` — argparse front-end, subcommands (`run`, `purge`, …). Discovers a project-local ishfiles source at `.ishfiles/ishconfig/isholate.toml` (cwd only, no parent search) before parsing args so image/shell overrides take effect.
 - `config.py` — TOML config loading, host-ishfiles-source discovery, and project overlay resolution.
 - `container.py` — container lifecycle: create/launch/exec, host user/group mirroring, bind-mount handling, purge.
 
