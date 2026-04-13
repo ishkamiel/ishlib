@@ -70,10 +70,21 @@ class InstallerBase(ABC):
             install = self.install_pkgs
             install_unless_found = self.install_pkg_unless_found
             is_installed = self.is_pkg_installed
+            is_pkg_available = self.is_pkg_available
             update = self.update_pkgs
             update_and_install_all = self.update_and_install_all
 
         return Namespace()
+
+    def is_pkg_available(self, pkg: Optional[Any] = None) -> bool:
+        """Return True if *pkg* is known to the backend's repo/index.
+
+        The default implementation delegates to :meth:`can_install`, which
+        means "the tool is present and the package dict has the right key".
+        Backends with actual repo-availability checks (e.g. apt, dnf) should
+        override this to probe the local package index.
+        """
+        return self.can_install(pkg)
 
     def can_install(self, pkg: Optional[Any] = None) -> bool:
         """Return True if this backend can handle *pkg*.

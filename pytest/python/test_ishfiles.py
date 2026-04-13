@@ -1870,5 +1870,95 @@ class TestDataSectionIO:
             assert 'added = "new"' in text
 
 
+class TestRunInstallAvailabilityFiltering:
+    """Tests for the availability pre-filter in run_install."""
+
+    def _make_source(self, tmp_path: Path) -> Path:
+        """Create a minimal ishfiles source directory with no package configs."""
+        source = tmp_path / "dotfiles"
+        source.mkdir()
+        (source / "ishconfig").mkdir()
+        return source
+
+    def _make_cfg(self, tmp_path: Path, source: Path):
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        return load_config(
+            args=_make_args(source=str(source), home=str(home)),
+            config_file=tmp_path / "config.toml",
+        )
+
+    def test_unavailable_optional_package_is_skipped(self, tmp_path):
+        """Optional packages not available in repos are skipped without prompting."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        unavailable_optional = {"name": "ulauncher", "apt": "ulauncher", "optional": True}
+
+        with patch.object(
+            Installer, "get_missing_pkgs", return_value=[unavailable_optional]
+        ), patch.object(Installer, "pkg_is_available", return_value=False), patch.object(
+            Installer, "install_pkgs"
+        ) as mock_install:
+            ret = run_install(cfg, extra_packages=[unavailable_optional])
+
+        mock_install.assert_not_called()
+        assert ret == 0
+
+    def test_available_optional_packages_batched_in_one_call(self, tmp_path):
+        """Available optional packages are installed in a single batched call."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        opt_a = {"name": "bat", "apt": "bat", "optional": True}
+        opt_b = {"name": "tldr", "apt": "tldr", "optional": True}
+
+        with patch.object(
+            Installer, "get_missing_pkgs", return_value=[opt_a, opt_b]
+        ), patch.object(Installer, "pkg_is_available", return_value=True), patch.object(
+            Installer, "install_pkgs", return_value=True
+        ) as mock_install:
+            ret = run_install(cfg, extra_packages=[opt_a, opt_b])
+
+        assert ret == 0
+        assert mock_install.call_count == 1
+        installed = mock_install.call_args[0][0]
+        assert {p["name"] for p in installed} == {"bat", "tldr"}
+
+    def test_summary_excludes_unavailable_packages(self, tmp_path, capsys):
+        """Packages to install summary only counts packages that will be installed."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        available = {"name": "tldr", "apt": "tldr", "optional": True}
+        unavailable = {"name": "ulauncher", "apt": "ulauncher", "optional": True}
+
+        def fake_is_available(pkg):
+            return pkg["name"] == "tldr"
+
+        with patch.object(
+            Installer, "get_missing_pkgs", return_value=[available, unavailable]
+        ), patch.object(
+            Installer, "pkg_is_available", side_effect=fake_is_available
+        ), patch.object(
+            Installer, "install_pkgs", return_value=True
+        ):
+            run_install(cfg, extra_packages=[available, unavailable])
+
+        captured = capsys.readouterr()
+        assert "Packages to install (1)" in captured.out
+        assert "tldr" in captured.out
+        assert "ulauncher" not in captured.out
+
+
 if __name__ == "__main__":
     pytest.main()

@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from ..command_runner import CommandRunner
+from ..command_runner import CommandRunner, UserDeclinedError
 from ..environment import normalise_os
 from ..installer import Installer
 from ..installer_config import InstallerConfigJSON, InstallerConfigTOML
@@ -227,28 +227,51 @@ def run_install(
             print("All packages are already installed.")
         return 0
 
+    # Split into required and optional
+    required = [p for p in missing if not p.get("optional")]
+    optional = [p for p in missing if p.get("optional")]
+
+    # Pre-filter optional packages by repo availability so we don't prompt
+    # for packages that can't be installed (e.g. need a PPA that isn't configured).
+    available_optional: List[Any] = []
+    for pkg in optional:
+        if installer.pkg_is_available(pkg):
+            available_optional.append(pkg)
+        else:
+            log.warning(
+                "Skipping optional package %s (not available in configured repos)",
+                pkg["name"],
+            )
+
+    to_install = required + available_optional
+
+    if not to_install:
+        if not cfg.quiet:
+            print("All packages are already installed.")
+        return 0
+
     if not cfg.quiet:
-        names = [p["name"] for p in missing]
-        print(f"Packages to install ({len(missing)}): {', '.join(names)}")
+        names = [p["name"] for p in to_install]
+        print(f"Packages to install ({len(to_install)}): {', '.join(names)}")
 
     if cfg.dry_run:
         return 0
 
-    # Split into required and optional; install required first
-    required = [p for p in missing if not p.get("optional")]
-    optional = [p for p in missing if p.get("optional")]
-
     if required:
         try:
             installer.install_pkgs(required)
+        except UserDeclinedError:
+            log.warning("Skipping required packages (user declined sudo)")
         except (subprocess.CalledProcessError, OSError) as exc:
             log.error("Package installation failed: %s", exc)
             return 1
 
-    for pkg in optional:
+    if available_optional:
         try:
-            installer.install_pkgs([pkg])
+            installer.install_pkgs(available_optional)
+        except UserDeclinedError:
+            log.warning("Skipping optional packages (user declined sudo)")
         except (subprocess.CalledProcessError, OSError) as exc:
-            log.warning("Optional package %s failed to install: %s", pkg["name"], exc)
+            log.warning("Optional package installation failed: %s", exc)
 
     return 0

@@ -20,6 +20,10 @@ from .environment import is_windows
 log = logging.getLogger(__name__)
 
 
+class UserDeclinedError(Exception):
+    """Raised when the user explicitly declines a prompted action (e.g. sudo)."""
+
+
 class CommandRunner:
     """Helper class for running commands and common shell tasks"""
 
@@ -102,7 +106,7 @@ class CommandRunner:
                 # provisioning (stdin=/dev/null).
                 command = ["sudo"] + command
                 if not self._check_sudo(command, force_sudo):
-                    raise KeyboardInterrupt("User aborted sudo command")
+                    raise UserDeclinedError("User declined sudo command")
 
         if "check" not in kwargs:
             kwargs["check"] = True

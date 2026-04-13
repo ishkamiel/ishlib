@@ -8,7 +8,7 @@
 import logging
 import subprocess
 from subprocess import CalledProcessError
-from typing import Sequence
+from typing import Any, Optional, Sequence
 
 from .installer_base import InstallerBase
 
@@ -42,6 +42,22 @@ class InstallerDnf(InstallerBase):
             return result.returncode == 0
         except CalledProcessError as e:
             log.debug("rpm -q non-zero exit for %s: %s", pkg["name"], e)
+            return False
+
+    def is_pkg_available(self, pkg: Optional[Any] = None) -> bool:
+        """Return True if *pkg* is known to the local dnf repo index."""
+        if pkg is None or not self.can_install() or not self.can_install(pkg):
+            return False
+
+        try:
+            result = self.runner.run(
+                ["dnf", "info", "--quiet", pkg["dnf"]],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            return result.returncode == 0
+        except Exception:
             return False
 
     def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
