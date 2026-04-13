@@ -24,7 +24,7 @@ from ...ish_config import IshConfig
 _POSIX_SNIPPET = """\
 ishfiles() {
     if [ "$1" = "cd" ]; then
-        cd -- "$(command ishfiles pd)" || return
+        cd "$(command ishfiles pd)" || return
     else
         command ishfiles "$@"
     fi
