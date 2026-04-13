@@ -142,6 +142,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     cfg = load_config(args=args)
     setup_logging(cfg.log_level)
 
-    process_data_template(cfg)
+    process_data_template(cfg, isholate=bool(getattr(args, "isholate", False)))
 
     return args.func(cfg)

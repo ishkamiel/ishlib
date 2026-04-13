@@ -484,6 +484,8 @@ class TestProvisioning:
         # Pass 1 must NOT include an explicit -s override
         pass1 = apply_cmds[0]
         assert "-s" not in pass1
+        # Must pass --isholate so data.toml overrides take effect
+        assert "--isholate" in pass1
 
     def test_overlay_adds_project_device(self):
         args = _make_args()
@@ -506,6 +508,8 @@ class TestProvisioning:
         overlay_apply = apply_cmds[-1]
         assert "-s" in overlay_apply
         assert "/run/isholate/ishsrc-project" in overlay_apply
+        # Must pass --isholate so data.toml overrides take effect
+        assert "--isholate" in overlay_apply
 
     def test_both_sources_run_two_apply_passes(self):
         args = _make_args()

@@ -15,10 +15,16 @@ variable definition::
     [machineType]
     prompt = "Machine type (min/def/personal)"
     default = "def"
+    isholate = "min"    # optional: used when --isholate is passed
 
     [email]
     prompt = "Email address"
     default = "hans@liljestrand.dev"
+
+When ``ishfiles apply --isholate`` is in effect (e.g. inside an isholate
+container), any entry carrying an ``isholate`` key uses that hardcoded value
+instead of the user's saved or prompted value.  The override is never written
+back to the config file.
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ from ..userio import normalise_bool, normalise_str, prompt_yes_no_always
 log = logging.getLogger(__name__)
 
 
-def process_data_template(cfg: IshConfig) -> None:
+def process_data_template(cfg: IshConfig, isholate: bool = False) -> None:
     """Check source repo for a data template and prompt for missing values.
 
     Reads ``<source>/<config_dir>/<data_file>`` (typically
@@ -48,6 +54,10 @@ def process_data_template(cfg: IshConfig) -> None:
 
     If any new values were collected and the session is interactive,
     the user is asked whether to save them to the config file.
+
+    When *isholate* is ``True``, entries that carry an ``isholate`` key in
+    their spec use that hardcoded value instead of the saved/prompted value.
+    The override is never written to the config file.
     """
     source = Path(cfg.get_opt("source"))
     template_path = source / cfg.get_opt("config_dir") / cfg.get_opt("data_file")
@@ -65,6 +75,24 @@ def process_data_template(cfg: IshConfig) -> None:
 
     new_values: Dict[str, str] = {}
     for key, spec in template.items():
+        # --isholate mode: use the hardcoded override when present.
+        if isholate and "isholate" in spec:
+            raw = spec["isholate"]
+            if isinstance(raw, bool):
+                coerced = "true" if raw else "false"
+            else:
+                nb = normalise_bool(str(raw))
+                coerced = nb if nb is not None else str(raw)
+            if _validate_value(key, coerced, spec):
+                log.debug("isholate override for %r: %r", key, coerced)
+                cfg.context.set(key, coerced)
+                continue
+            log.warning(
+                "isholate override for %r is invalid (%r); falling back to normal resolution",
+                key,
+                coerced,
+            )
+
         existing = cfg.context.get(key)
         if existing:
             if not _validate_value(key, existing, spec):

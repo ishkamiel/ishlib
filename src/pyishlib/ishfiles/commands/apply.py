@@ -53,6 +53,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
             "With no arguments, force-runs all scripts."
         ),
     )
+    parser.add_argument(
+        "--isholate",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS,  # internal: used by isholate when provisioning
+    )
     parser.set_defaults(func=run)
 
 
