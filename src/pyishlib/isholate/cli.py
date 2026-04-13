@@ -78,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--no-ishfiles",
+        action="store_true",
+        default=False,
+        help="Skip all ishfiles provisioning (host dotfiles and project overlay)",
+    )
+    parser.add_argument(
         "--no-host-ishfiles",
         action="store_true",
         default=False,
@@ -156,6 +162,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.purge:
         username, _, _ = get_host_user_info()
         return purge_containers(username, quiet=args.quiet)
+
+    # --no-ishfiles is a shorthand that implies both granular skip flags.
+    if args.no_ishfiles:
+        args.no_host_ishfiles = True
+        args.no_project_overlay = True
 
     # Resolve provisioning sources (skip if the respective --no-* flag is set).
     host_source: Optional[Path] = None

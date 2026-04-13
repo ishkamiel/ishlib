@@ -302,10 +302,10 @@ def _provision(
         username:        Username inside the container.
         uid:             UID of the container user (for final chown).
         host_config_dir: Host ``~/.config/ishfiles/`` directory, mounted
-                         read-only at its natural path so pass 1 picks it
-                         up without any ``-c`` override.
-        host_source:     Host ishfiles source tree, mounted at the same
-                         absolute path inside the container.
+                         read-only at ``/run/isholate/ishconf`` and passed
+                         via ``-c`` so it never lands inside the user home.
+        host_source:     Host ishfiles source tree, mounted read-only at
+                         ``/run/isholate/ishsrc`` and passed via ``-s``.
         project_overlay: Project ``.isholate/`` directory, mounted
                          read-only at ``/run/isholate/ishsrc-project``.
         verbose:         0 keeps apt/ishfiles quiet; 1 streams their
@@ -401,39 +401,41 @@ def _provision(
     # --- Pass 1: host ishfiles ---
     if host_source is not None:
         _say("applying host ishfiles (pass 1)...", quiet=quiet)
-        # Mount host config dir at its natural container path so ishfiles
-        # discovers it without any -c override.
+        # Mount host source and config under /run/isholate (outside the user
+        # home) so that the final `chown -R` over container_home never crosses
+        # a read-only bind mount boundary.
+        _add_ro_device(
+            name,
+            "isholate-ishsrc",
+            host_source,
+            f"{_ISHOLATE_RUN_DIR}/ishsrc",
+        )
+        pass1_cmd = [
+            "incus",
+            "exec",
+            name,
+            "--env",
+            f"HOME={container_home}",
+            "--",
+            "python3",
+            ishfiles_bin,
+            *ishfiles_flags,
+            "--home",
+            container_home,
+            "-s",
+            f"{_ISHOLATE_RUN_DIR}/ishsrc",
+        ]
         if host_config_dir is not None and host_config_dir.is_dir():
             _add_ro_device(
                 name,
                 "isholate-ishconf",
                 host_config_dir,
-                f"{container_home}/.config/ishfiles",
+                f"{_ISHOLATE_RUN_DIR}/ishconf",
             )
-        # Mount host source tree at the same absolute path so the config
-        # file's `source = ...` entry resolves correctly.
-        _add_ro_device(
-            name,
-            "isholate-ishsrc",
-            host_source,
-            str(host_source),
-        )
+            pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
+        pass1_cmd += ["apply", "--isholate"]
         _run_checked(
-            [
-                "incus",
-                "exec",
-                name,
-                "--env",
-                f"HOME={container_home}",
-                "--",
-                "python3",
-                ishfiles_bin,
-                *ishfiles_flags,
-                "--home",
-                container_home,
-                "apply",
-                "--isholate",
-            ],
+            pass1_cmd,
             "ishfiles apply (pass 1: host dotfiles)",
             stdin=subprocess.DEVNULL,
         )

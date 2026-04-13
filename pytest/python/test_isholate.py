@@ -438,9 +438,9 @@ class TestProvisioning:
         device_adds = [c for c in cmds if "device" in c and "add" in c]
         assert any("isholate-ishlib" in c for c in device_adds)
 
-    def test_host_source_mounts_at_same_path(self):
-        """The host source must be mounted at its own absolute path inside the
-        container so the config file's `source = ...` entry resolves correctly."""
+    def test_host_source_mounts_under_run_isholate(self):
+        """The host source must be mounted under /run/isholate (outside the user
+        home) so that chown -R over the home never crosses a read-only bind mount."""
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
@@ -449,7 +449,7 @@ class TestProvisioning:
         device_adds = [c for c in cmds if "device" in c and "add" in c]
         ishsrc_cmd = next(c for c in device_adds if "isholate-ishsrc" in c)
         assert f"source={fake_src}" in ishsrc_cmd
-        assert f"path={fake_src}" in ishsrc_cmd
+        assert "path=/run/isholate/ishsrc" in ishsrc_cmd
 
     def test_host_source_runs_ishfiles_apply(self):
         args = _make_args()
@@ -459,9 +459,10 @@ class TestProvisioning:
 
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
         assert len(apply_cmds) >= 1
-        # Pass 1 must NOT include an explicit -s override
+        # Pass 1 must pass -s pointing at the mounted source under /run/isholate
         pass1 = apply_cmds[0]
-        assert "-s" not in pass1
+        assert "-s" in pass1
+        assert "/run/isholate/ishsrc" in pass1
         # Must pass --isholate so data.toml overrides take effect
         assert "--isholate" in pass1
 
@@ -765,6 +766,32 @@ class TestParser:
         parser = build_parser()
         args = parser.parse_args(["--no-project-overlay"])
         assert args.no_project_overlay is True
+
+    def test_no_ishfiles_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-ishfiles"])
+        assert args.no_ishfiles is True
+
+    def test_no_ishfiles_suppresses_provisioning(self):
+        """--no-ishfiles must pass None for both sources to launch_and_exec."""
+        with patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
+        ):
+            with patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=_fake_user_info(),
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    return_value=Path("/some/ishfiles"),
+                ):
+                    with patch(
+                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    ) as mock_launch:
+                        cli_main(["--no-ishfiles"])
+                        _, kwargs = mock_launch.call_args
+                        assert kwargs["host_ishfiles_source"] is None
+                        assert kwargs["project_overlay"] is None
 
     def test_command_passthrough(self):
         parser = build_parser()
