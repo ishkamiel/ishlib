@@ -200,11 +200,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("isholate: error: isholate is only supported on Linux", file=sys.stderr)
         return 1
 
-    incus_guidance = _check_incus_available()
-    if incus_guidance is not None:
-        print(incus_guidance, file=sys.stderr)
-        return 1
-
     _, home, cwd = get_host_user_info()
 
     # Discover the project overlay (if any) before parsing args so that
@@ -222,6 +217,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.set_defaults(shell=project_cfg["shell"])
 
     args = parser.parse_args(argv)
+
+    # Run the incus preflight after argparse so that `--help` / `--version`
+    # still work on hosts without a healthy incus setup (argparse exits
+    # inside parse_args before we get here in those cases).
+    incus_guidance = _check_incus_available()
+    if incus_guidance is not None:
+        print(incus_guidance, file=sys.stderr)
+        return 1
 
     # --- Purge handling ---
     include_bases = args.purge_bases or args.purge_all
