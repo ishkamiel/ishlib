@@ -285,10 +285,21 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
 
         with ScriptLogger(cfg) as slog:
             env = {**os.environ, **slog.env()}
-            subprocess.run(
+            result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", ps_body],
                 env=env,
-                check=False,
+                capture_output=True,
+                text=True,
+            )
+            sink_path = Path(env["ISHLIB_LOG_OUT"])
+            sink_bytes = sink_path.read_bytes()
+            assert result.returncode == 0, (
+                f"pwsh exited {result.returncode}\n"
+                f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+            )
+            assert sink_bytes, (
+                f"sink file empty after pwsh (ps_body={ps_body!r})\n"
+                f"pwsh stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
             )
             time.sleep(0.2)
             return slog

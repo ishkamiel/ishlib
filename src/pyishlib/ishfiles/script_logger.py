@@ -417,11 +417,14 @@ class ScriptLogger:
         before the signal, so no messages are lost in the race between the
         writer and the stop event.
         """
+        sink_path = self._sink_path
+        if sink_path is None:
+            return
         buf = b""
         offset = 0
         while not self._stop_event.is_set():
             try:
-                data = self._sink_path.read_bytes()
+                data = sink_path.read_bytes()
             except OSError:
                 time.sleep(0.05)
                 continue
@@ -435,7 +438,7 @@ class ScriptLogger:
                 time.sleep(0.05)
         # Final drain: capture any bytes written just before stop was signalled.
         try:
-            data = self._sink_path.read_bytes()
+            data = sink_path.read_bytes()
         except OSError:
             data = b""
         if len(data) > offset:
