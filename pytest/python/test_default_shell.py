@@ -530,7 +530,7 @@ class TestCustomUsername(unittest.TestCase):
             )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner.run.assert_called_once_with(
-                ["chsh", "-s", "/usr/bin/zsh", "-u", "alice"],
+                ["chsh", "-s", "/usr/bin/zsh", "alice"],
                 check=False,
                 quiet=False,
             )
