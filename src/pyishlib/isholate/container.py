@@ -1488,8 +1488,9 @@ def launch_and_exec(
         project_overlay: Project ``.ishlib/ishfiles/`` directory (pass 2).
             ``None`` skips the project-base layer.
         project_root: Project root directory (the dir containing
-            ``.ishlib/``). Required when *project_overlay* is set; used
-            for stable project-base container naming.
+            ``.ishlib/``). Required only when building a cached
+            project-base from a parent base; used for stable
+            project-base container naming.
 
     Returns:
         Exit code from the exec'd command.
@@ -1552,9 +1553,10 @@ def launch_and_exec(
         if parent_base is not None:
             # Derive the project base from the host base.
             try:
-                assert project_root is not None, (
-                    "project_root is required when project_overlay is set"
-                )
+                if project_root is None:
+                    raise ValueError(
+                        "project_root is required when project_overlay is set"
+                    )
                 parent_base = ensure_project_base(
                     parent_base,
                     username,
