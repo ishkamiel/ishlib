@@ -152,6 +152,18 @@ class TestLoadConfig:
         assert cfg.get_opt("target") == "/explicit/target"
         assert cfg.get_opt("source") == str(fake_home / ".local" / "share" / "ishfiles")
 
+    def test_custom_username_seeded_into_context(self):
+        args = _make_args(custom_username="alice")
+        cfg = load_config(args=args, config_file=Path("/nonexistent"))
+        assert cfg.context["username"] == "alice"
+
+    def test_default_username_falls_back_to_current_user(self):
+        import pwd
+
+        expected = pwd.getpwuid(os.getuid()).pw_name
+        cfg = load_config(config_file=Path("/nonexistent"))
+        assert cfg.context["username"] == expected
+
 
 # ---------------------------------------------------------------------------
 # DotfileIgnore

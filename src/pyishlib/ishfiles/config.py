@@ -159,6 +159,23 @@ def load_config(
     if data:
         cfg.context.update({k: str(v) for k, v in data.items()})
 
+    # Resolve the effective username for user-scoped operations and scripts.
+    # Custom value (via --custom-username) takes precedence; otherwise fall back
+    # to the current process's login name.
+    custom_username = cfg.get_opt("custom_username", default=None)
+    if custom_username:
+        effective_username = str(custom_username)
+    else:
+        try:
+            import pwd  # local import: POSIX-only
+
+            effective_username = pwd.getpwuid(os.getuid()).pw_name
+        except Exception:  # noqa: BLE001
+            effective_username = (
+                os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+            )
+    cfg.context.set("username", effective_username)
+
     return cfg
 
 
