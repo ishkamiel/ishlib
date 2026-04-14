@@ -15,6 +15,7 @@ from pathlib import Path
 from ...userio import prompt_yes_no_always
 from ...ish_config import IshConfig
 from ..applier import make_applier, make_finder
+from ..default_shell import apply_default_shell_stage
 from ..installer_helper import run_install
 from ..script_logger import ScriptLogger
 from ..script_runner import run_scanned_scripts, scan_scripts
@@ -140,7 +141,7 @@ def _install_self_links(cfg: IshConfig) -> int:
 def run(cfg: IshConfig) -> int:
     """Execute the apply command.
 
-    The pipeline runs in six phases:
+    The pipeline runs in seven phases:
 
     0. **Self-links** -- create ``~/.local/bin`` symlinks for ``ishfiles``
        and ``isholate`` so the tools are on the user's PATH.
@@ -150,6 +151,8 @@ def run(cfg: IshConfig) -> int:
     3. **Install** -- install all packages (main + metadata).
     4. **Apply** -- preprocess and install changed dotfiles.
     5. **Scripts** -- execute scripts (with logging and run_when gating).
+    6. **Default shell** -- set the login shell via ``chsh`` when
+       ``default_shell`` is configured.
 
     Returns:
         0 on success, 1 on error.
@@ -237,6 +240,13 @@ def run(cfg: IshConfig) -> int:
             _print_log_summary(slog, cfg)
         if ret != 0:
             return ret
+
+    # -- Phase 6: Set default login shell ------------------------------------
+    if not dotfiles_only:
+        log.info("Phase 6: Setting default login shell")
+        sh_ret = apply_default_shell_stage(cfg)
+        if sh_ret != 0:
+            had_errors = True
 
     if not cfg.quiet:
         if had_errors:
