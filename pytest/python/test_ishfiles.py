@@ -157,6 +157,10 @@ class TestLoadConfig:
         cfg = load_config(args=args, config_file=Path("/nonexistent"))
         assert cfg.context["username"] == "alice"
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="pwd and os.getuid() are POSIX-only; Windows fallback tested implicitly",
+    )
     def test_default_username_falls_back_to_current_user(self):
         import pwd
 
