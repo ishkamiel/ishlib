@@ -352,6 +352,33 @@ def _remove_isholate_devices(name: str) -> None:
             )
 
 
+def _assert_no_isholate_devices(name: str) -> None:
+    """Raise RuntimeError if *name* still carries any isholate-* disk devices.
+
+    Called after ``_remove_isholate_devices`` on a stopped base so that a
+    silently-failing removal cannot poison the base for future copies.
+    """
+    r = _run(
+        ["incus", "config", "device", "list", name, "--format=json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return
+    try:
+        devices = json.loads(r.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return
+    if not isinstance(devices, dict):
+        return
+    leftovers = [d for d in devices.keys() if d.startswith("isholate-")]
+    if leftovers:
+        raise RuntimeError(
+            f"failed to remove isholate devices from '{name}': {leftovers}"
+        )
+
+
 def _source_fingerprint(source: Path) -> str:
     """Compute a reproducible fingerprint for a source tree.
 
@@ -989,6 +1016,9 @@ def ensure_host_base(
         stored = _get_stored_fingerprint(name)
         if stored == fingerprint:
             _say(f"reusing host base '{name}'", quiet=quiet)
+            # Scrub any stale isholate-* devices that may have been left by a
+            # previously interrupted run before returning the cached base.
+            _remove_isholate_devices(name)
             return name
         _say(
             f"host base '{name}' is stale (source changed) — rebuilding...", quiet=quiet
@@ -1048,12 +1078,14 @@ def ensure_host_base(
             quiet=quiet,
         )
 
-        # Remove host-path mounts before freezing the base.
-        _remove_isholate_devices(name)
-
-        # Stop and persist the fingerprint.
+        # Stop the base, then remove host-path mounts and verify they are gone.
+        # Device removal runs after stop so Incus can cleanly detach bind-mounts
+        # without racing a live container.  The assertion ensures a silently-failing
+        # removal cannot poison the base for future copies.
         _say(f"stopping and saving host base '{name}'...", quiet=quiet)
         _run(["incus", "stop", name, "--force"], check=False)
+        _remove_isholate_devices(name)
+        _assert_no_isholate_devices(name)
         _set_stored_fingerprint(name, fingerprint)
 
         return name
@@ -1122,6 +1154,11 @@ def ensure_project_base(
 
     _say(f"creating project base '{name}' from host base '{host_base}'...", quiet=quiet)
     _run(["incus", "copy", host_base, name], check=True)
+    # Strip any isholate-* devices inherited from the host base.  The host base
+    # is supposed to be device-free when stopped, but a stale base from an
+    # interrupted earlier run may still carry them; starting a container with a
+    # stale disk device causes "The device already exists" from Incus.
+    _remove_isholate_devices(name)
     started = False
 
     try:
@@ -1177,6 +1214,15 @@ def ensure_project_base(
         return name
 
     except (subprocess.CalledProcessError, RuntimeError):
+        if started and verbose >= 1:
+            dev_r = _run(
+                ["incus", "config", "device", "list", name, "--format=json"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if dev_r.returncode == 0 and dev_r.stdout.strip():
+                _say(f"devices on '{name}' at failure: {dev_r.stdout.strip()}")
         if started:
             _run(["incus", "stop", name, "--force"], check=False)
             _run(["incus", "delete", name, "--force"], check=False)

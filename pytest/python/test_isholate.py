@@ -34,6 +34,7 @@ from pyishlib.isholate.config import (
     load_project_config,
 )
 from pyishlib.isholate.container import (
+    _META_SOURCE_HASH,
     _check_incus_available,
     _host_base_name,
     _image_tag,
@@ -977,6 +978,180 @@ class TestBaseManagement:
         delete_cmds = [c for c in cmds if c[:2] == ["incus", "delete"]]
         # At least one delete (for the ephemeral; possibly one for a stale base)
         assert len(delete_cmds) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Stale device cleanup (regression: "The device already exists")
+# ---------------------------------------------------------------------------
+
+
+class TestStaleDeviceHandling:
+    """Regression tests for stale isholate-* device cleanup on base containers."""
+
+    _STALE_DEVICES = {
+        "isholate-ishlib": {"type": "disk", "source": "/fake/ishlib", "path": "/run/isholate/ishlib"}
+    }
+
+    def _make_pbase_run(self, *, stale_devices=None):
+        """Return a (fake_run, calls) pair for ensure_project_base.
+
+        Mocks _container_exists (no pbase), fingerprint lookups, and
+        optionally returns stale_devices JSON on the first device list call.
+        """
+        import json as _json
+
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+        calls = []
+        device_list_count = [0]
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+            if cmd[:2] == ["incus", "info"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")  # pbase absent
+            if cmd[:3] == ["incus", "config", "get"] and "source_hash" in str(cmd):
+                # host_base fingerprint lookup
+                if _FAKE_BASE_NAME in cmd:
+                    return SimpleNamespace(returncode=0, stdout="HOST_FP\n", stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                device_list_count[0] += 1
+                if device_list_count[0] == 1 and stale_devices:
+                    return SimpleNamespace(
+                        returncode=0, stdout=_json.dumps(stale_devices), stderr=""
+                    )
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            return default
+
+        return fake_run, calls
+
+    def test_pbase_strips_inherited_devices_before_start(self):
+        """ensure_project_base must remove inherited isholate-* devices before incus start."""
+        fake_run, calls = self._make_pbase_run(stale_devices=self._STALE_DEVICES)
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with patch(
+                "pyishlib.isholate.container.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ):
+                with patch(
+                    "pyishlib.isholate.container._source_fingerprint",
+                    return_value="OVERLAY_FP",
+                ):
+                    ensure_project_base(
+                        _FAKE_BASE_NAME,
+                        _FAKE_USER,
+                        _FAKE_CWD / ".ishlib" / "ishfiles",
+                        project_root=_FAKE_CWD,
+                        quiet=True,
+                    )
+
+        pbase_name = _FAKE_PBASE_NAME
+        remove_idx = next(
+            (
+                i
+                for i, c in enumerate(calls)
+                if c[:4] == ["incus", "config", "device", "remove"]
+                and pbase_name in c
+                and "isholate-ishlib" in c
+            ),
+            None,
+        )
+        start_idx = next(
+            (
+                i
+                for i, c in enumerate(calls)
+                if c[:2] == ["incus", "start"] and pbase_name in c
+            ),
+            None,
+        )
+
+        assert remove_idx is not None, "expected device remove for isholate-ishlib"
+        assert start_idx is not None, "expected incus start for pbase"
+        assert remove_idx < start_idx, "device remove must precede incus start"
+
+    def test_host_base_reuse_scrubs_stale_devices(self):
+        """ensure_host_base must remove stale devices from a reused (cached) base."""
+        import json as _json
+
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+            if cmd[:2] == ["incus", "info"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")  # base exists
+            if cmd[:3] == ["incus", "config", "get"] and "source_hash" in str(cmd):
+                return SimpleNamespace(returncode=0, stdout="COMPUTED\n", stderr="")
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(
+                    returncode=0, stdout=_json.dumps(self._STALE_DEVICES), stderr=""
+                )
+            return default
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with patch(
+                "pyishlib.isholate.container.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ):
+                with patch.object(Path, "is_dir", return_value=True):
+                    with patch(
+                        "pyishlib.isholate.container._source_fingerprint",
+                        return_value="COMPUTED",
+                    ):
+                        ensure_host_base(
+                            _FAKE_IMAGE,
+                            _FAKE_USER,
+                            fake_src,
+                            None,
+                            _FAKE_SHELL,
+                            quiet=True,
+                        )
+
+        remove_calls = [
+            c
+            for c in calls
+            if c[:4] == ["incus", "config", "device", "remove"]
+            and "isholate-ishlib" in c
+        ]
+        assert remove_calls, "expected device remove for stale isholate-ishlib on reuse"
+
+    def test_host_base_new_build_raises_if_devices_remain(self):
+        """ensure_host_base raises when device removal silently fails during new build."""
+        import json as _json
+
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["incus", "info"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")  # base absent
+            # device list always returns a stale entry (simulate failed removal)
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(
+                    returncode=0, stdout=_json.dumps(self._STALE_DEVICES), stderr=""
+                )
+            return default
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with patch(
+                "pyishlib.isholate.container.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ):
+                with patch.object(Path, "is_dir", return_value=True):
+                    with patch(
+                        "pyishlib.isholate.container._source_fingerprint",
+                        return_value="COMPUTED",
+                    ):
+                        with pytest.raises(RuntimeError, match="isholate-ishlib"):
+                            ensure_host_base(
+                                _FAKE_IMAGE,
+                                _FAKE_USER,
+                                fake_src,
+                                None,
+                                _FAKE_SHELL,
+                                quiet=True,
+                            )
 
 
 # ---------------------------------------------------------------------------
