@@ -47,6 +47,7 @@ run.
 from __future__ import annotations
 
 import errno
+import io
 import logging
 import os
 import select
@@ -409,29 +410,37 @@ class ScriptLogger:
         """Background thread: poll a plain file and dispatch structured lines.
 
         Used on Windows where POSIX FIFOs are not available.  The sink file
-        is opened once; the thread reads new bytes as they arrive and feeds
-        them through the same dispatch path as the FIFO reader.
+        is opened once using raw (unbuffered) I/O so that every ``read()``
+        call goes directly to the OS without a user-space EOF cache.
+        Python's buffered ``open()`` caches the EOF marker and can return
+        ``b""`` even after another process has appended data; raw ``FileIO``
+        does not have this problem.
 
-        On Windows, ``fh.read()`` at EOF caches the end-of-file marker and
-        returns ``b""`` on subsequent calls even after another process appends
-        data.  Seeking to the current position (``fh.seek(0, 1)``) clears that
-        cache, so the next read returns any newly appended bytes.
+        After the stop event fires the loop drains any bytes that were written
+        to the file just before the signal, so no messages are lost in the
+        race between the writer and the stop signal.
         """
         buf = b""
-        with open(self._sink_path, "rb") as fh:  # type: ignore[arg-type]
+        with io.FileIO(str(self._sink_path), "rb") as fh:  # type: ignore[arg-type]
             while not self._stop_event.is_set():
                 chunk = fh.read(4096)
                 if not chunk:
                     time.sleep(0.05)
-                    # Seek to the current position to clear Windows EOF cache,
-                    # allowing the next read to see data appended by other processes.
-                    fh.seek(0, 1)
                     continue
                 buf += chunk
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
                     self._dispatch(line.decode("utf-8", errors="replace"))
-        # Drain any remaining data after stop is signalled.
+            # Final drain: capture any bytes written just before stop fired.
+            chunk = fh.read(4096)
+            while chunk:
+                buf += chunk
+                chunk = fh.read(4096)
+        # Dispatch any remaining complete lines.
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            self._dispatch(line.decode("utf-8", errors="replace"))
+        # Handle an unterminated final line (no trailing newline).
         if buf.strip():
             self._dispatch(buf.decode("utf-8", errors="replace"))
 
