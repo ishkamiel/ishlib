@@ -659,7 +659,7 @@ def _apply_project_overlay(
         name:            Container name.
         username:        Container username.
         uid:             Container user UID (for the final chown).
-        project_overlay: Project ``.ishfiles/`` directory path.
+        project_overlay: Project ``.ishlib/ishfiles/`` directory path.
         ishfiles_flags:  Global flags to pass to the ishfiles command.
         quiet:           Suppress isholate's own progress messages.
     """
@@ -736,7 +736,7 @@ def _provision(
         uid:             UID of the container user (for final chown).
         host_config_dir: Host ``~/.config/ishfiles/`` directory.
         host_source:     Host ishfiles source tree (pass 1).  ``None`` skips pass 1.
-        project_overlay: Project ``.ishfiles/`` directory (pass 2).  ``None`` skips pass 2.
+        project_overlay: Project ``.ishlib/ishfiles/`` directory (pass 2).  ``None`` skips pass 2.
         verbose:         Verbosity level.
         quiet:           Suppress isholate progress messages.
     """
@@ -895,6 +895,7 @@ def ensure_project_base(
     username: str,
     project_overlay: Path,
     *,
+    project_root: Path,
     verbose: int = 0,
     quiet: bool = False,
     rebuild: bool = False,
@@ -908,7 +909,9 @@ def ensure_project_base(
     Args:
         host_base:        Name of the (stopped) host-base container.
         username:         Host username (already mirrored from the host base).
-        project_overlay:  Project ``.ishfiles/`` directory.
+        project_overlay:  Project ``.ishlib/ishfiles/`` directory.
+        project_root:     Project root directory (the dir containing
+                          ``.ishlib/``). Used for stable container naming.
         verbose:          Verbosity level.
         quiet:            Suppress isholate progress messages.
         rebuild:          Force rebuild even if fingerprint matches.
@@ -920,8 +923,7 @@ def ensure_project_base(
         subprocess.CalledProcessError: if any Incus command fails.
         RuntimeError: if provisioning raises.
     """
-    project_path = project_overlay.parent
-    name = _project_base_name(username, project_path)
+    name = _project_base_name(username, project_root)
 
     # Combine host-base fingerprint with the overlay content fingerprint so
     # that rebuilding the host base automatically cascades to the project base.
@@ -1459,6 +1461,7 @@ def launch_and_exec(
     *,
     host_ishfiles_source: Optional[Path] = None,
     project_overlay: Optional[Path] = None,
+    project_root: Optional[Path] = None,
 ) -> int:
     """Launch an Incus container and exec into it as the host user.
 
@@ -1482,8 +1485,11 @@ def launch_and_exec(
               rebuild_base, rebuild_project_base.
         host_ishfiles_source: Host ishfiles source tree (pass 1).
             ``None`` skips the host-base layer.
-        project_overlay: Project ``.ishfiles/`` directory (pass 2).
+        project_overlay: Project ``.ishlib/ishfiles/`` directory (pass 2).
             ``None`` skips the project-base layer.
+        project_root: Project root directory (the dir containing
+            ``.ishlib/``). Required when *project_overlay* is set; used
+            for stable project-base container naming.
 
     Returns:
         Exit code from the exec'd command.
@@ -1546,10 +1552,14 @@ def launch_and_exec(
         if parent_base is not None:
             # Derive the project base from the host base.
             try:
+                assert project_root is not None, (
+                    "project_root is required when project_overlay is set"
+                )
                 parent_base = ensure_project_base(
                     parent_base,
                     username,
                     project_overlay,
+                    project_root=project_root,
                     verbose=verbose,
                     quiet=quiet,
                     rebuild=rebuild_project_base,
