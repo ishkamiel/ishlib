@@ -251,6 +251,25 @@ class TestDeviceHelpers:
         ):
             _assert_no_isholate_devices("mycontainer")  # must not raise
 
+    def test_assert_raises_on_command_failure(self):
+        """Strict: non-zero exit from device-list must raise, not silently pass.
+
+        Regression guard — a prior refactor routed the assert through the
+        lenient list helper, which returns [] on failure and let a poisoned
+        base slip past verification.
+        """
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr="incus: not logged in"
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with pytest.raises(RuntimeError, match="exited with 1"):
+                _assert_no_isholate_devices("mycontainer")
+
 
 class TestPurgeContainers:
     def _run_purge(self, username, existing_containers, *, include_bases=False):

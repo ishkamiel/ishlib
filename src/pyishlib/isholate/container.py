@@ -363,8 +363,30 @@ def _assert_no_isholate_devices(name: str) -> None:
 
     Called after ``_remove_isholate_devices`` on a stopped base so that a
     silently-failing removal cannot poison the base for future copies.
+
+    Fails closed: unlike ``_list_isholate_devices`` (which is lenient for the
+    best-effort cleanup path), this helper raises on a non-zero exit from
+    ``incus config device list`` so a failed device-list call cannot mask a
+    poisoned base.
     """
-    leftovers = _list_isholate_devices(name)
+    r = _run(
+        ["incus", "config", "device", "list", name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode != 0:
+        stderr = (r.stderr or "").strip()
+        raise RuntimeError(
+            f"failed to verify isholate devices for '{name}': "
+            f"'incus config device list' exited with {r.returncode}"
+            + (f": {stderr}" if stderr else "")
+        )
+    leftovers = [
+        line.strip()
+        for line in r.stdout.splitlines()
+        if line.strip().startswith("isholate-")
+    ]
     if leftovers:
         raise RuntimeError(
             f"failed to remove isholate devices from '{name}': {leftovers}"
@@ -1026,6 +1048,12 @@ def ensure_host_base(
                     quiet=quiet,
                 )
                 _run(["incus", "delete", name, "--force"], check=False)
+                if _container_exists(name):
+                    raise RuntimeError(
+                        f"failed to delete poisoned host base '{name}'; "
+                        "remove it manually with 'incus delete --force' "
+                        "and retry"
+                    )
                 # Fall through to the create path below.
             else:
                 return name
