@@ -272,7 +272,7 @@ class ScriptLogger:
 
     @property
     def aborted(self) -> bool:
-        """True after ``ish_fatal`` was called by any script in this run."""
+        """True after ``ish_critical`` was called by any script in this run."""
         return self._aborted
 
     @property
@@ -311,7 +311,9 @@ class ScriptLogger:
             return [
                 (name, dict(counts))
                 for name, counts in self._script_counts.items()
-                if any(counts.get(lvl, 0) > 0 for lvl in ("warning", "error", "critical"))
+                if any(
+                    counts.get(lvl, 0) > 0 for lvl in ("warning", "error", "critical")
+                )
             ]
 
     def summary_line(self) -> str:
