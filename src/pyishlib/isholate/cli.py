@@ -97,6 +97,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- ishfiles provisioning control ---
     parser.add_argument(
+        "--project-root",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Directory to treat as the project root when looking for "
+            ".ishlib/ishfiles/ and .ishlib/isholate/config.toml. "
+            "Defaults to the current working directory. The lookup is "
+            "not recursive — only the given directory is checked."
+        ),
+    )
+
+    parser.add_argument(
         "--no-ishfiles",
         action="store_true",
         default=False,
@@ -233,15 +245,36 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     _, home, cwd = get_host_user_info()
 
-    # Discover the project overlay (if any) before parsing args so that
+    # Build the parser first so we can do a pre-parse to extract
+    # --project-root before loading project config (project config
+    # influences argparse defaults, so it must be loaded before the full
+    # parse_args call).
+    parser = build_parser()
+
+    # Pre-parse to extract --project-root only.  parse_known_args ignores
+    # unknown tokens so positional/remainder arguments don't interfere.
+    pre_args, _ = parser.parse_known_args(argv)
+
+    if pre_args.project_root is not None:
+        project_root_path = Path(pre_args.project_root).resolve()
+        if not project_root_path.is_dir():
+            print(
+                f"isholate: error: --project-root '{pre_args.project_root}' "
+                "is not an existing directory",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        project_root_path = cwd
+
+    # Discover the project overlay (if any) before the full parse so that
     # image/shell overrides from .ishlib/isholate/config.toml can be
     # applied as argparse defaults (CLI flags still take precedence).
     # The isholate config and the ishfiles overlay are independent — either
     # may be present without the other.
-    project_cfg = load_project_config(cwd)
-    overlay_dir = discover_project_overlay(cwd)
+    project_cfg = load_project_config(project_root_path)
+    overlay_dir = discover_project_overlay(project_root_path)
 
-    parser = build_parser()
     if project_cfg.get("image"):
         parser.set_defaults(image=project_cfg["image"])
     if project_cfg.get("shell"):
@@ -309,10 +342,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     project_root: Optional[Path] = None
     if not args.no_project_ishfiles and overlay_dir is not None:
         resolved_overlay = overlay_dir
-        # Project root is the cwd that contains the .ishlib/ umbrella — used
-        # for stable project-base container naming (independent of the
-        # overlay's path within .ishlib/).
-        project_root = cwd.resolve()
+        # Project root is the directory that contains the .ishlib/ umbrella
+        # — used for stable project-base container naming (independent of
+        # the overlay's path within .ishlib/ and of the invocation cwd).
+        project_root = project_root_path
 
     return launch_and_exec(
         args,

@@ -19,11 +19,11 @@ The two subdirectories are independent — either may exist without the other.
 
 Provides three helpers:
 
-- :func:`discover_project_overlay` — checks *cwd* for
+- :func:`discover_project_overlay` — checks a project root directory for
   ``.ishlib/ishfiles/`` (the project-local ishfiles source tree).
 - :func:`load_project_config` — reads ``.ishlib/isholate/config.toml``
-  from *cwd* and returns its contents as a plain ``dict``. Returns an
-  empty dict if the file is absent.
+  from a project root directory and returns its contents as a plain
+  ``dict``. Returns an empty dict if the file is absent.
 - :func:`discover_host_ishfiles_source` — finds the host user's ishfiles
   source tree by reading ``~/.config/ishfiles/config.toml`` (the
   ``source`` key) and falling back to ``~/.local/share/ishfiles``.
@@ -60,25 +60,25 @@ ISHOLATE_CONFIG_FILE = "config.toml"
 FAILED_LOGS_STATE_DIR = Path(".local") / "state" / "isholate" / "failed-logs"
 
 
-def discover_project_overlay(cwd: Path) -> Optional[Path]:
-    """Check *cwd* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
+def discover_project_overlay(root: Path) -> Optional[Path]:
+    """Check *root* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
 
     Only the directory itself is checked — parent directories are not
-    searched.  This mirrors the convention that project-local config lives
-    at the root of the project you're currently in.
+    searched.  Pass the explicit project root (from ``--project-root``) or
+    ``Path.cwd()`` as the root.
 
     Args:
-        cwd: Directory to check (typically ``Path.cwd()``).
+        root: Directory to check.
 
     Returns:
         Absolute path to the ``.ishlib/ishfiles/`` directory, or ``None``.
     """
-    candidate = cwd.resolve() / PROJECT_DIR_NAME / OVERLAY_SUBDIR
+    candidate = root.resolve() / PROJECT_DIR_NAME / OVERLAY_SUBDIR
     return candidate if candidate.is_dir() else None
 
 
-def load_project_config(cwd: Path) -> Dict[str, Any]:
-    """Load ``.ishlib/isholate/config.toml`` from *cwd*.
+def load_project_config(root: Path) -> Dict[str, Any]:
+    """Load ``.ishlib/isholate/config.toml`` from *root*.
 
     Returns the parsed TOML as a plain ``dict``.  Returns an empty dict
     when the file is absent or when no TOML library is available.
@@ -93,7 +93,7 @@ def load_project_config(cwd: Path) -> Dict[str, Any]:
     - ``shell`` — Login shell to use inside the container.
 
     Args:
-        cwd: Project root candidate (typically ``Path.cwd()``).
+        root: Project root directory (from ``--project-root`` or cwd).
 
     Returns:
         Parsed config dict, possibly empty.
@@ -101,7 +101,7 @@ def load_project_config(cwd: Path) -> Dict[str, Any]:
     if tomllib is None:
         return {}
     config_file = (
-        cwd.resolve() / PROJECT_DIR_NAME / ISHOLATE_SUBDIR / ISHOLATE_CONFIG_FILE
+        root.resolve() / PROJECT_DIR_NAME / ISHOLATE_SUBDIR / ISHOLATE_CONFIG_FILE
     )
     if not config_file.is_file():
         return {}
