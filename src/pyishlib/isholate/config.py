@@ -8,8 +8,9 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Project-ishfiles and host-ishfiles discovery for isholate.
 
-Project-local state lives under an ``.ishlib/`` umbrella in the current
-working directory:
+Project-local state lives under an ``.ishlib/`` umbrella in the project
+root directory (by default the current working directory, but overridable
+via ``--project-root``):
 
 - ``.ishlib/ishfiles/`` — project-local ishfiles source tree, mounted into
   the container as pass 2 of provisioning.

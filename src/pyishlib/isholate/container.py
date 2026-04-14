@@ -364,14 +364,30 @@ def _assert_no_isholate_devices(name: str) -> None:
         text=True,
         check=False,
     )
-    if r.returncode != 0 or not r.stdout.strip():
-        return
+    if r.returncode != 0:
+        stderr = (r.stderr or "").strip()
+        raise RuntimeError(
+            f"failed to verify isholate devices for '{name}': "
+            f"'incus config device list' exited with {r.returncode}"
+            + (f": {stderr}" if stderr else "")
+        )
+    if not r.stdout.strip():
+        raise RuntimeError(
+            f"failed to verify isholate devices for '{name}': "
+            "empty output from 'incus config device list'"
+        )
     try:
         devices = json.loads(r.stdout)
-    except (json.JSONDecodeError, ValueError):
-        return
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError(
+            f"failed to verify isholate devices for '{name}': "
+            "invalid JSON from 'incus config device list'"
+        ) from exc
     if not isinstance(devices, dict):
-        return
+        raise RuntimeError(
+            f"failed to verify isholate devices for '{name}': "
+            f"expected JSON object, got {type(devices).__name__}"
+        )
     leftovers = [d for d in devices.keys() if d.startswith("isholate-")]
     if leftovers:
         raise RuntimeError(
@@ -989,7 +1005,10 @@ def ensure_host_base(
     If *rebuild* is True the base is always rebuilt regardless of fingerprint.
 
     The base container is left **stopped** so it can be cloned cheaply via
-    ``incus copy``.  All host-path bind mounts are removed before stopping.
+    ``incus copy``.  After provisioning, the base is stopped and then all
+    host-path bind-mount devices are removed and verified to be gone;
+    device removal intentionally runs after stop so Incus can cleanly
+    detach bind-mounts without racing a live container.
 
     Args:
         image:           Incus image (e.g. ``"images:ubuntu/24.04"``).
@@ -1017,8 +1036,10 @@ def ensure_host_base(
         if stored == fingerprint:
             _say(f"reusing host base '{name}'", quiet=quiet)
             # Scrub any stale isholate-* devices that may have been left by a
-            # previously interrupted run before returning the cached base.
+            # previously interrupted run before returning the cached base, and
+            # verify the scrub succeeded so we never return a poisoned base.
             _remove_isholate_devices(name)
+            _assert_no_isholate_devices(name)
             return name
         _say(
             f"host base '{name}' is stale (source changed) — rebuilding...", quiet=quiet
