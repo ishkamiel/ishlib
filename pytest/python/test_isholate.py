@@ -73,6 +73,7 @@ def _make_args(**overrides):
         "shell": _FAKE_SHELL,
         "rw_cwd": False,
         "ro_cwd": False,
+        "claude": False,
         "no_host_ishfiles": False,
         "no_project_ishfiles": False,
         "no_cache": False,
@@ -374,6 +375,46 @@ class TestLaunchAndExec:
         assert f"source={_FAKE_CWD}" in cmd
         assert "readonly=true" not in cmd
         assert "shift=true" in cmd
+
+    def test_claude_adds_mounts_when_host_config_present(self):
+        """--claude mounts ~/.claude and ~/.claude.json into the container."""
+        args = _make_args(claude=True)
+
+        def fake_is_dir(self):
+            return str(self) == str(_FAKE_HOME / ".claude")
+
+        def fake_is_file(self):
+            return str(self) == str(_FAKE_HOME / ".claude.json")
+
+        with patch.object(Path, "is_dir", fake_is_dir):
+            with patch.object(Path, "is_file", fake_is_file):
+                calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        # Expect two claude mounts, no cwd mount.
+        sources = [next(p for p in c if p.startswith("source=")) for c in device_cmds]
+        paths = [next(p for p in c if p.startswith("path=")) for c in device_cmds]
+        assert f"source={_FAKE_HOME}/.claude" in sources
+        assert f"source={_FAKE_HOME}/.claude.json" in sources
+        assert f"path=/home/{_FAKE_USER}/.claude" in paths
+        assert f"path=/home/{_FAKE_USER}/.claude.json" in paths
+        # All claude mounts use shift=true and are not readonly.
+        for c in device_cmds:
+            assert "shift=true" in c
+            assert "readonly=true" not in c
+
+    def test_claude_skips_mounts_when_host_config_absent(self):
+        """--claude is a no-op when neither ~/.claude nor ~/.claude.json exist."""
+        args = _make_args(claude=True)
+
+        with patch.object(Path, "is_dir", lambda self: False):
+            with patch.object(Path, "is_file", lambda self: False):
+                calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        assert device_cmds == []
 
     def test_ro_cwd_adds_readonly_device(self):
         args = _make_args(ro_cwd=True)
@@ -965,6 +1006,7 @@ class TestParser:
         assert args.shell == DEFAULT_SHELL
         assert args.rw_cwd is False
         assert args.ro_cwd is False
+        assert args.claude is False
         assert args.no_host_ishfiles is False
         assert args.no_project_ishfiles is False
         assert args.no_cache is False
@@ -977,6 +1019,11 @@ class TestParser:
         assert args.verbose == 0
         assert args.quiet is False
         assert args.command == []
+
+    def test_claude_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--claude"])
+        assert args.claude is True
 
     def test_rw_cwd_and_ro_cwd_are_mutually_exclusive(self):
         parser = build_parser()

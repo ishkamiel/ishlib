@@ -82,6 +82,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mount the current working directory read-only into the container",
     )
 
+    parser.add_argument(
+        "--claude",
+        action="store_true",
+        default=False,
+        help=(
+            "Expose the host's Claude configuration and credentials "
+            "(~/.claude/ and ~/.claude.json) to the container so that the "
+            "Claude CLI can be run inside the container with the host user's "
+            "session.  Mounts are read-write so live state (sessions, projects) "
+            "is shared with the host."
+        ),
+    )
+
     # --- ishfiles provisioning control ---
     parser.add_argument(
         "--no-ishfiles",

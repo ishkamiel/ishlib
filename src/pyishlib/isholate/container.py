@@ -556,6 +556,72 @@ def _add_ro_device(
     )
 
 
+def _add_claude_mounts(
+    name: str, home: Path, username: str, *, quiet: bool = False
+) -> None:
+    """Mount the host's Claude config (``~/.claude/`` and ``~/.claude.json``).
+
+    Adds read-write disk devices with ``shift=true`` so the in-container user
+    can read and write the host user's Claude credentials and state.  Either
+    source can be missing; only existing paths are mounted.
+
+    Args:
+        name:     Incus container name.
+        home:     Host user's home directory.
+        username: Container username (used to derive the in-container path).
+        quiet:    Suppress isholate's own progress messages.
+    """
+    container_home = f"/home/{username}"
+    claude_dir = home / ".claude"
+    claude_json = home / ".claude.json"
+    mounted: List[str] = []
+
+    if claude_dir.is_dir():
+        _run(
+            [
+                "incus",
+                "config",
+                "device",
+                "add",
+                name,
+                "isholate-claude",
+                "disk",
+                f"source={claude_dir}",
+                f"path={container_home}/.claude",
+                "shift=true",
+            ],
+            check=True,
+        )
+        mounted.append("~/.claude")
+
+    if claude_json.is_file():
+        _run(
+            [
+                "incus",
+                "config",
+                "device",
+                "add",
+                name,
+                "isholate-claude-json",
+                "disk",
+                f"source={claude_json}",
+                f"path={container_home}/.claude.json",
+                "shift=true",
+            ],
+            check=True,
+        )
+        mounted.append("~/.claude.json")
+
+    if mounted:
+        _say(f"exposing host Claude config: {', '.join(mounted)}", quiet=quiet)
+    else:
+        _say(
+            "warning: --claude requested but no host Claude config found "
+            "(~/.claude or ~/.claude.json)",
+            quiet=quiet,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Provisioning helpers (shared by both one-shot and base-creation paths)
 # ---------------------------------------------------------------------------
@@ -1130,18 +1196,21 @@ def _launch_ephemeral_from_base(
     verbose: int = 0,
     quiet: bool = False,
     username: str,
+    home: Path,
     cwd: Path,
 ) -> int:
     """Clone *parent_base*, exec into the clone, then stop and delete it.
 
     Args:
         parent_base: Name of the stopped base container to clone.
-        args:        Parsed argparse namespace (name, shell, rw_cwd, ro_cwd, command).
+        args:        Parsed argparse namespace (name, shell, rw_cwd, ro_cwd,
+                     claude, command).
         stored_uid:  UID read from the base's metadata; falls back to a live
                      ``id -u`` lookup inside the ephemeral if None.
         verbose:     Verbosity level.
         quiet:       Suppress isholate progress messages.
         username:    Host username (already inside the base).
+        home:        Host user's home directory.
         cwd:         Host current working directory.
 
     Returns:
@@ -1208,6 +1277,9 @@ def _launch_ephemeral_from_base(
                 ],
                 check=True,
             )
+
+        if getattr(args, "claude", False):
+            _add_claude_mounts(name, home, username, quiet=quiet)
 
         exec_cwd = str(cwd) if (args.rw_cwd or args.ro_cwd) else f"/home/{username}"
         exec_cmd = [
@@ -1372,6 +1444,9 @@ def _launch_one_shot(
                 ],
                 check=True,
             )
+
+        if getattr(args, "claude", False):
+            _add_claude_mounts(name, home, username, quiet=quiet)
 
         exec_cwd = str(cwd) if (args.rw_cwd or args.ro_cwd) else f"/home/{username}"
         exec_cmd = [
@@ -1709,6 +1784,7 @@ def launch_and_exec(
             verbose=verbose,
             quiet=quiet,
             username=username,
+            home=home,
             cwd=cwd,
         )
 
