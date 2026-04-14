@@ -28,6 +28,7 @@ from .config import (
     load_project_config,
 )
 from .container import (
+    _check_incus_available,
     get_host_user_info,
     launch_and_exec,
     purge_containers,
@@ -197,6 +198,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     """
     if not is_linux():
         print("isholate: error: isholate is only supported on Linux", file=sys.stderr)
+        return 1
+
+    incus_guidance = _check_incus_available()
+    if incus_guidance is not None:
+        print(incus_guidance, file=sys.stderr)
         return 1
 
     _, home, cwd = get_host_user_info()

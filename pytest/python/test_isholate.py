@@ -34,6 +34,7 @@ from pyishlib.isholate.config import (
     load_project_config,
 )
 from pyishlib.isholate.container import (
+    _check_incus_available,
     _host_base_name,
     _image_tag,
     _project_base_name,
@@ -945,6 +946,16 @@ class TestNetworkPreflight:
 
 
 class TestParser:
+    @pytest.fixture(autouse=True)
+    def _mock_incus_preflight(self):
+        """Bypass the incus availability check for CLI-dispatch tests.
+
+        The check is covered by :class:`TestCheckIncusAvailable`; these tests
+        exercise argparse wiring and dispatch, so we simulate a healthy host.
+        """
+        with patch("pyishlib.isholate.cli._check_incus_available", return_value=None):
+            yield
+
     def test_defaults(self):
         from pyishlib.isholate.cli import DEFAULT_IMAGE, DEFAULT_SHELL
 
@@ -1287,3 +1298,117 @@ class TestDiscoverHostIshfilesSource:
         )
         result = discover_host_ishfiles_source(tmp_path)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _check_incus_available — setup diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestCheckIncusAvailable:
+    """Unit tests for the incus setup diagnostic helper."""
+
+    def _patch_incus_info(self, returncode, stderr=""):
+        """Return a patch context for subprocess.run that mimics incus info."""
+        result = SimpleNamespace(returncode=returncode, stdout="", stderr=stderr)
+        return patch(
+            "pyishlib.isholate.container.subprocess.run",
+            return_value=result,
+        )
+
+    def test_missing_binary_debian(self):
+        with patch("pyishlib.isholate.container.shutil.which", return_value=None):
+            with patch(
+                "pyishlib.isholate.container.detect_distro", return_value="debian"
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "not found on PATH" in msg
+        assert "apt install incus" in msg
+
+    def test_missing_binary_fedora(self):
+        with patch("pyishlib.isholate.container.shutil.which", return_value=None):
+            with patch(
+                "pyishlib.isholate.container.detect_distro", return_value="fedora"
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "dnf install incus" in msg
+
+    def test_missing_binary_unknown_distro(self):
+        with patch("pyishlib.isholate.container.shutil.which", return_value=None):
+            with patch(
+                "pyishlib.isholate.container.detect_distro", return_value=None
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "linuxcontainers.org" in msg
+
+    def test_healthy_returns_none(self):
+        with patch(
+            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+        ):
+            with self._patch_incus_info(0):
+                assert _check_incus_available() is None
+
+    def test_permission_denied(self):
+        with patch(
+            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+        ):
+            with self._patch_incus_info(
+                1, stderr="Error: permission denied on /var/lib/incus/unix.socket"
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "permission denied" in msg.lower()
+        assert "usermod -aG incus-admin" in msg
+        assert "newgrp incus-admin" in msg
+
+    def test_daemon_not_initialized(self):
+        with patch(
+            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+        ):
+            with self._patch_incus_info(
+                1, stderr="Error: Daemon is not initialized, run 'incus admin init'"
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "incus admin init" in msg
+
+    def test_connection_refused(self):
+        with patch(
+            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+        ):
+            with self._patch_incus_info(
+                1, stderr="dial unix /var/lib/incus/unix.socket: connect: connection refused"
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "daemon is not ready" in msg.lower()
+        assert "systemctl" in msg
+
+    def test_unknown_failure_surfaces_stderr(self):
+        with patch(
+            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+        ):
+            with self._patch_incus_info(
+                2, stderr="Error: something surprising went wrong"
+            ):
+                msg = _check_incus_available()
+        assert msg is not None
+        assert "something surprising went wrong" in msg
+        assert "exit 2" in msg
+
+
+class TestCliIncusPreflight:
+    """The CLI should bail out with a helpful message when incus isn't usable."""
+
+    def test_main_returns_1_and_prints_guidance(self, capsys):
+        with patch(
+            "pyishlib.isholate.cli._check_incus_available",
+            return_value="isholate: error: TEST GUIDANCE",
+        ):
+            rc = cli_main([])
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "TEST GUIDANCE" in captured.err

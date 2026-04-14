@@ -34,6 +34,7 @@ import json
 import os
 import random
 import re
+import shutil
 import socket
 import string
 import subprocess
@@ -41,6 +42,7 @@ import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
+from ..environment import detect_distro
 from .config import FAILED_LOGS_STATE_DIR
 
 # Root of the ishlib checkout — used to mount the ishfiles CLI into containers.
@@ -59,6 +61,112 @@ def _say(msg: str, *, quiet: bool = False) -> None:
     """Print an isholate progress message to stderr unless *quiet*."""
     if not quiet:
         print(f"isholate: {msg}", file=sys.stderr, flush=True)
+
+
+def _incus_install_hint() -> str:
+    """Return a distro-aware hint for installing the ``incus`` package."""
+    distro = detect_distro()
+    if distro == "debian":
+        return (
+            "Install incus:\n"
+            "  sudo apt install incus\n"
+            "(On older Ubuntu releases you may need the zabbly repository:\n"
+            "  https://github.com/zabbly/incus)"
+        )
+    if distro == "fedora":
+        return "Install incus:\n  sudo dnf install incus incus-tools"
+    return (
+        "Install incus following the instructions at\n"
+        "  https://linuxcontainers.org/incus/"
+    )
+
+
+def _check_incus_available() -> Optional[str]:
+    """Probe the incus daemon and return setup guidance on failure.
+
+    Returns ``None`` when incus is installed, the daemon is reachable by the
+    current user, and at least one storage pool exists (so ``incus init`` has
+    been run).  Otherwise returns a multi-line, user-facing message (with the
+    ``isholate:`` prefix already applied) describing what to do next.
+
+    The probe is deliberately cheap — a single ``incus info`` invocation with
+    a short timeout — so the healthy path adds negligible overhead.
+    """
+    if shutil.which("incus") is None:
+        return (
+            "isholate: error: the 'incus' command was not found on PATH.\n"
+            f"{_incus_install_hint()}\n"
+            "After installing, run 'sudo incus admin init' and add your user\n"
+            "to the 'incus-admin' group (see below)."
+        )
+
+    try:
+        result = subprocess.run(
+            ["incus", "info"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return (
+            f"isholate: error: failed to run 'incus info': {exc}\n"
+            "Make sure the incus daemon is installed and running."
+        )
+
+    if result.returncode == 0:
+        return None
+
+    stderr = (result.stderr or "").strip()
+    lowered = stderr.lower()
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "$USER"
+
+    # Permission / socket access — user not in the incus(-admin) group.
+    permission_markers = (
+        "permission denied",
+        "permission is denied",
+        "access denied",
+        "forbidden",
+    )
+    if any(marker in lowered for marker in permission_markers):
+        return (
+            "isholate: error: cannot talk to the incus daemon (permission denied).\n"
+            "Your user is probably not in the 'incus-admin' group.\n"
+            "Fix it with:\n"
+            f"  sudo usermod -aG incus-admin {user}\n"
+            "  newgrp incus-admin   # or log out and back in\n"
+            "(Some distros use the 'incus' group instead of 'incus-admin'.)\n"
+            f"Raw error from incus:\n  {stderr or '(no stderr output)'}"
+        )
+
+    # Daemon not initialized yet.
+    init_markers = (
+        "not initialized",
+        "no storage pool",
+        "no storage pools",
+        "no profiles",
+        "no such file or directory",
+        "connection refused",
+        "cannot connect",
+        "connect: ",
+    )
+    if any(marker in lowered for marker in init_markers):
+        return (
+            "isholate: error: the incus daemon is not ready.\n"
+            "Run the one-time setup:\n"
+            "  sudo incus admin init           # interactive\n"
+            "  sudo incus admin init --minimal # non-interactive defaults\n"
+            "If the daemon is not running, start it with:\n"
+            "  sudo systemctl enable --now incus\n"
+            f"Raw error from incus:\n  {stderr or '(no stderr output)'}"
+        )
+
+    # Unknown failure — surface the raw error so the user can act on it.
+    return (
+        "isholate: error: 'incus info' failed "
+        f"(exit {result.returncode}).\n"
+        f"Raw error from incus:\n  {stderr or '(no stderr output)'}"
+    )
 
 
 def get_host_user_info() -> "tuple[str, Path, Path]":
