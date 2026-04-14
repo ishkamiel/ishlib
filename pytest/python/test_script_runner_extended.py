@@ -111,24 +111,11 @@ class TestRunWhenGating(unittest.TestCase):
             cfg = _make_cfg(tmp)
             state = self._make_state(tmp)
             state.record("always.sh", script.read_text())
-            # Even though recorded, run_when=always should not skip
-            # In dry_run mode we count "[dry-run]" prints
-            printed = []
-            import builtins
-
-            orig = builtins.print
-
-            def capture(*args, **kwargs):
-                printed.append(" ".join(str(a) for a in args))
-                orig(*args, **kwargs)
-
-            builtins.print = capture
-            try:
+            # Even though recorded, run_when=always should not skip.
+            # In dry_run mode the runner emits an INFO log "Would run script: ...".
+            with self.assertLogs("pyishlib", level="INFO") as cm:
                 run_scanned_scripts(cfg, [script], script_state=state)
-            finally:
-                builtins.print = orig
-            dry_run_lines = [l for l in printed if "dry-run" in l]
-            assert len(dry_run_lines) == 1
+            assert any("dry-run" in msg or "Would run" in msg for msg in cm.output)
 
     def test_run_once_skipped_after_first_run(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -140,22 +127,11 @@ class TestRunWhenGating(unittest.TestCase):
             state = self._make_state(tmp)
             state.record("once.sh", "anything")
 
-            printed = []
-            import builtins
-
-            orig = builtins.print
-
-            def capture(*args, **kwargs):
-                printed.append(" ".join(str(a) for a in args))
-
-            builtins.print = capture
-            try:
+            with self.assertLogs("pyishlib", level="INFO") as cm:
                 run_scanned_scripts(cfg, [script], script_state=state)
-            finally:
-                builtins.print = orig
 
-            assert any("skip/once" in l for l in printed)
-            assert not any("dry-run" in l for l in printed)
+            assert any("skip/once" in msg for msg in cm.output)
+            assert not any("Would run" in msg for msg in cm.output)
 
     def test_run_once_runs_when_not_seen(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -167,21 +143,10 @@ class TestRunWhenGating(unittest.TestCase):
             state = self._make_state(tmp)
             # No prior recording
 
-            printed = []
-            import builtins
-
-            orig = builtins.print
-
-            def capture(*args, **kwargs):
-                printed.append(" ".join(str(a) for a in args))
-
-            builtins.print = capture
-            try:
+            with self.assertLogs("pyishlib", level="INFO") as cm:
                 run_scanned_scripts(cfg, [script], script_state=state)
-            finally:
-                builtins.print = orig
 
-            assert any("dry-run" in l for l in printed)
+            assert any("Would run" in msg for msg in cm.output)
 
     def test_force_scripts_overrides_once(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -193,24 +158,13 @@ class TestRunWhenGating(unittest.TestCase):
             state = self._make_state(tmp)
             state.record("once.sh", "anything")
 
-            printed = []
-            import builtins
-
-            orig = builtins.print
-
-            def capture(*args, **kwargs):
-                printed.append(" ".join(str(a) for a in args))
-
-            builtins.print = capture
-            try:
+            with self.assertLogs("pyishlib", level="INFO") as cm:
                 run_scanned_scripts(
                     cfg, [script], script_state=state, force_scripts=["once.sh"]
                 )
-            finally:
-                builtins.print = orig
 
-            # Should be forced to run (dry-run)
-            assert any("dry-run" in l for l in printed)
+            # Should be forced to run (dry-run emits "Would run")
+            assert any("Would run" in msg for msg in cm.output)
 
     def test_run_onchange_skipped_when_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,21 +180,10 @@ class TestRunWhenGating(unittest.TestCase):
             preprocessed, _ = pp.preprocess_file(script)
             state.record("onchange.sh", preprocessed)
 
-            printed = []
-            import builtins
-
-            orig = builtins.print
-
-            def capture(*args, **kwargs):
-                printed.append(" ".join(str(a) for a in args))
-
-            builtins.print = capture
-            try:
+            with self.assertLogs("pyishlib", level="INFO") as cm:
                 run_scanned_scripts(cfg, [script], script_state=state)
-            finally:
-                builtins.print = orig
 
-            assert any("skip/unchanged" in l for l in printed)
+            assert any("skip/unchanged" in msg for msg in cm.output)
 
 
 class TestScanScriptsTagFilter(unittest.TestCase):

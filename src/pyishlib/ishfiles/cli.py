@@ -15,7 +15,7 @@ import argparse
 import logging
 from typing import List, Optional
 
-from ..ish_comp import setup_logging
+from ..ish_logging import setup_logging
 from .commands import (
     add,
     apply,
@@ -97,6 +97,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Suppress non-essential output",
     )
     parser.add_argument(
+        "--log-file",
+        metavar="FILE",
+        default=None,
+        help="Append all log output (DEBUG and above) to this file, "
+        "regardless of terminal verbosity. Used by isholate to retrieve "
+        "in-container diagnostics.",
+    )
+    parser.add_argument(
         "--custom-username",
         metavar="NAME",
         default=None,
@@ -140,15 +148,19 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Set up logging early from CLI flags so TOML loading warnings
     # respect --verbose/--debug/--quiet.
+    log_file = getattr(args, "log_file", None)
+    quiet = getattr(args, "quiet", False)
     if args.debug:
-        setup_logging(logging.DEBUG)
+        setup_logging(logging.DEBUG, log_file=log_file, quiet=quiet)
     elif args.verbose:
-        setup_logging(logging.INFO)
-    elif args.quiet:
-        setup_logging(logging.ERROR)
+        setup_logging(logging.INFO, log_file=log_file, quiet=quiet)
+    elif quiet:
+        setup_logging(logging.WARNING, log_file=log_file, quiet=quiet)
+    else:
+        setup_logging(logging.WARNING, log_file=log_file, quiet=quiet)
 
     cfg = load_config(args=args)
-    setup_logging(cfg.log_level)
+    setup_logging(cfg.log_level, log_file=log_file, quiet=quiet)
 
     process_data_template(cfg, isholate=bool(getattr(args, "isholate", False)))
 

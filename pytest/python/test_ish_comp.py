@@ -16,11 +16,8 @@ import pytest
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-from pyishlib.ish_comp import (
-    IshLogFormatter,
-    setup_logging,
-    die,
-)
+from pyishlib.ish_comp import die
+from pyishlib.ish_logging import IshLogFormatter, setup_logging
 from pyishlib.userio import Choice, prompt_yes_no_always
 from pyishlib.ish_config import IshConfig
 

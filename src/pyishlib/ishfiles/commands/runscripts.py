@@ -8,11 +8,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 
 from ...ish_config import IshConfig
 from ..script_logger import ScriptLogger
 from ..script_runner import run_scripts
 from ..script_state import ScriptState
+
+log = logging.getLogger(__name__)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -59,11 +62,10 @@ def run(cfg: IshConfig) -> int:
             script_state=state,
             force_scripts=force_scripts,
         )
-        if not cfg.quiet:
-            summary = slog.summary_line()
-            if slog.log_path:
-                print(f"Scripts done: {summary}. Log: {slog.log_path}")
-            else:
-                print(f"Scripts done: {summary}.")
+        summary = slog.summary_line()
+        if slog.log_path:
+            log.info("Scripts done: %s. Log: %s", summary, slog.log_path)
+        else:
+            log.info("Scripts done: %s.", summary)
 
     return ret

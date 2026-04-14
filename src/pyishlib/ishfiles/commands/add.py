@@ -3,6 +3,9 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
+
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """The ``add`` subcommand -- add files to the dotfiles repository."""
 
 from __future__ import annotations
@@ -11,7 +14,6 @@ import argparse
 import filecmp
 import logging
 import shutil
-import sys
 
 from ...ish_config import IshConfig
 from ..applier import make_finder
@@ -60,7 +62,7 @@ def run(cfg: IshConfig) -> int:
     files = cfg.get_opt("files", [])
 
     if not finder.source_dir.is_dir():
-        print(f"Source directory does not exist: {finder.source_dir}", file=sys.stderr)
+        log.error("Source directory does not exist: %s", finder.source_dir)
         return 1
 
     errors = 0
@@ -70,56 +72,51 @@ def run(cfg: IshConfig) -> int:
         dotfile = finder.get(file_arg)
 
         if dotfile is None:
-            print(f"Cannot resolve file: {file_arg}", file=sys.stderr)
+            log.error("Cannot resolve file: %s", file_arg)
             errors += 1
             continue
 
         if not dotfile.target.is_file():
-            print(f"File does not exist: {dotfile.target}", file=sys.stderr)
+            log.error("File does not exist: %s", dotfile.target)
             errors += 1
             continue
 
         # Refuse if the source path is a directory (not a regular file)
         if dotfile.source.exists() and not dotfile.source.is_file():
-            print(
-                f"Source path is not a regular file: {dotfile.source}",
-                file=sys.stderr,
-            )
+            log.error("Source path is not a regular file: %s", dotfile.source)
             errors += 1
             continue
 
         # Check for duplicates
         if dotfile.source.exists():
             if filecmp.cmp(str(dotfile.source), str(dotfile.target), shallow=False):
-                print(f"Warning: already tracked (identical): {dotfile.translated}")
+                log.warning("Already tracked (identical): %s", dotfile.translated)
                 continue
 
             # Source exists and differs -- dirty
             if not force:
-                print(
-                    f"Refusing to overwrite dirty file in dotfiles repository: "
-                    f"{dotfile.rel_path} (use -f/--force to override)",
-                    file=sys.stderr,
+                log.error(
+                    "Refusing to overwrite dirty file in dotfiles repository: "
+                    "%s (use -f/--force to override)",
+                    dotfile.rel_path,
                 )
                 errors += 1
                 continue
 
-            print(f"Overwriting (--force): {dotfile.rel_path}")
+            log.info("Overwriting (--force): %s", dotfile.rel_path)
 
         # Copy file into source directory
         dotfile.source.parent.mkdir(parents=True, exist_ok=True)
 
         if cfg.dry_run:
-            print(f"Would add: {dotfile.target} -> {dotfile.source}")
+            log.info("Would add: %s -> %s", dotfile.target, dotfile.source)
         else:
             shutil.copy2(str(dotfile.target), str(dotfile.source))
-            log.info("Added %s -> %s", dotfile.target, dotfile.source)
-            if not cfg.quiet:
-                print(f"Added: {dotfile.translated} -> {dotfile.rel_path}")
+            log.info("Added: %s -> %s", dotfile.translated, dotfile.rel_path)
 
         added += 1
 
-    if added and not cfg.quiet and not cfg.dry_run:
-        print(f"Added {added} file(s).")
+    if added and not cfg.dry_run:
+        log.info("Added %d file(s).", added)
 
     return 1 if errors else 0

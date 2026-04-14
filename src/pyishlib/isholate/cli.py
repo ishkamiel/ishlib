@@ -17,11 +17,12 @@ invocation.
 from __future__ import annotations
 
 import argparse
-import sys
+import logging
 from pathlib import Path
 from typing import List, Optional
 
 from ..environment import is_linux
+from ..ish_logging import setup_logging
 from .config import (
     discover_host_ishfiles_source,
     discover_project_overlay,
@@ -36,6 +37,8 @@ from .container import (
 
 DEFAULT_IMAGE = "images:ubuntu/24.04"
 DEFAULT_SHELL = "/bin/bash"
+
+log = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -239,8 +242,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     Returns:
         Exit code.
     """
+    # Set up logging early with a default level; re-configure after argparse.
+    setup_logging(logging.WARNING)
+
     if not is_linux():
-        print("isholate: error: isholate is only supported on Linux", file=sys.stderr)
+        log.critical("isholate is only supported on Linux")
         return 1
 
     _, home, cwd = get_host_user_info()
@@ -258,10 +264,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if pre_args.project_root is not None:
         project_root_path = Path(pre_args.project_root).resolve()
         if not project_root_path.is_dir():
-            print(
-                f"isholate: error: --project-root '{pre_args.project_root}' "
-                "is not an existing directory",
-                file=sys.stderr,
+            log.error(
+                "--project-root '%s' is not an existing directory",
+                pre_args.project_root,
             )
             return 2
     else:
@@ -282,28 +287,32 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
+    # Reconfigure logging now that we know the user's verbosity preference.
+    if args.verbose >= 2:
+        setup_logging(logging.DEBUG, quiet=args.quiet)
+    elif args.verbose >= 1:
+        setup_logging(logging.INFO, quiet=args.quiet)
+    else:
+        setup_logging(logging.WARNING, quiet=args.quiet)
+
     # Run the incus preflight after argparse so that `--help` / `--version`
     # still work on hosts without a healthy incus setup (argparse exits
     # inside parse_args before we get here in those cases).
     incus_guidance = _check_incus_available()
     if incus_guidance is not None:
-        print(incus_guidance, file=sys.stderr)
+        log.error("%s", incus_guidance)
         return 1
 
     # --run takes precedence over the positional command form: everything
     # after --run is the command to run inside the container.
     if args.run is not None:
         if not args.run:
-            print(
-                "isholate: error: --run requires a command to execute",
-                file=sys.stderr,
-            )
+            log.error("--run requires a command to execute")
             return 2
         if args.command:
-            print(
-                "isholate: error: --run cannot be combined with a positional "
-                "command; put all command arguments after --run",
-                file=sys.stderr,
+            log.error(
+                "--run cannot be combined with a positional command; "
+                "put all command arguments after --run"
             )
             return 2
         args.command = list(args.run)
@@ -333,10 +342,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.no_host_ishfiles:
         host_source = discover_host_ishfiles_source(home)
         if host_source is None:
-            print(
-                "isholate: host ishfiles source not found; skipping pass 1",
-                file=sys.stderr,
-            )
+            log.warning("host ishfiles source not found; skipping pass 1")
 
     resolved_overlay: Optional[Path] = None
     project_root: Optional[Path] = None

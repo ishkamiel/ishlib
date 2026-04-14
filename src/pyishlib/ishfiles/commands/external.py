@@ -108,7 +108,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def _dispatch(cfg: IshConfig) -> int:
     """Fallback: print help when no sub-subcommand is given."""
-    print("Usage: ishfiles external <apply|update|list>")
+    log.warning("Usage: ishfiles external <apply|update|list>")
     return 2
 
 
@@ -132,7 +132,7 @@ def run_update(cfg: IshConfig) -> int:
 
     specs = load_externals(cfg)
     if not specs:
-        print("No externals configured.")
+        log.info("No externals configured.")
         return 0
 
     if paths:
@@ -151,11 +151,14 @@ def run_update(cfg: IshConfig) -> int:
     for spec in specs:
         candidate = engine.check_update(spec, include_prereleases=include_pre)
         if candidate is None:
-            print(f"  {spec.path}: already at latest ({spec.revision})")
+            log.info("  %s: already at latest (%s)", spec.path, spec.revision)
             continue
 
-        print(
-            f"  {spec.path}: {candidate.current_rev} → {candidate.latest_tag} available"
+        log.info(
+            "  %s: %s -> %s available",
+            spec.path,
+            candidate.current_rev,
+            candidate.latest_tag,
         )
 
         if auto_yes:
@@ -172,17 +175,17 @@ def run_update(cfg: IshConfig) -> int:
             spec.revision = candidate.latest_tag
             try:
                 engine.fetch(spec, force=True)
-                print(f"  Updated {spec.path} to {candidate.latest_tag}")
+                log.info("  Updated %s to %s", spec.path, candidate.latest_tag)
                 updated += 1
             except Exception as exc:  # noqa: BLE001
                 log.error("Failed to fetch %s after update: %s", spec.path, exc)
         else:
-            print(f"  Skipped {spec.path}")
+            log.info("  Skipped %s", spec.path)
 
     if updated:
-        print(
-            f"\n{updated} external(s) updated. "
-            "Run 'ishfiles external apply' to copy into target."
+        log.info(
+            "%d external(s) updated. Run 'ishfiles external apply' to copy into target.",
+            updated,
         )
     return 0
 
@@ -191,7 +194,7 @@ def run_list(cfg: IshConfig) -> int:
     """Execute ``external list``."""
     specs = load_externals(cfg)
     if not specs:
-        print("No externals configured.")
+        log.info("No externals configured.")
         return 0
 
     state = ExternalsState.from_cfg(cfg)

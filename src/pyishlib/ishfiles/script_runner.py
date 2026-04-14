@@ -131,16 +131,16 @@ def scan_scripts(
         # -- OS filter --------------------------------------------------------
         if should_skip_for_os_from_metadata(meta):
             log.debug("Skipping %s (OS rules in metadata)", script_path.name)
-            if print_skipped and cfg.verbose:
-                print(f"  [skipped] {script_path.name} (OS rules)")
+            if print_skipped:
+                log.info("  [skipped] %s (OS rules)", script_path.name)
             continue
 
         # -- Tag filter -------------------------------------------------------
         tags = (meta or {}).get("tags", []) or []
         if tags and not _passes_tag_filter(tags, cfg):
             log.debug("Skipping %s (tag filter)", script_path.name)
-            if print_skipped and cfg.verbose:
-                print(f"  [skipped] {script_path.name} (tags)")
+            if print_skipped:
+                log.info("  [skipped] %s (tags)", script_path.name)
             continue
 
         packages.extend(collect_metadata_packages(meta, source=script_path.name))
@@ -187,9 +187,9 @@ def run_scanned_scripts(
 
     force_set = set(force_scripts or [])
 
-    if cfg.verbose:
+    if script_paths:
         names = [s.name for s in script_paths]
-        print(f"Scripts to run ({len(script_paths)}): {', '.join(names)}")
+        log.info("Scripts to run (%d): %s", len(script_paths), ", ".join(names))
 
     # Expose the scripts directory as ${__ish_scripts_dir} so scripts can
     # locate sibling data files even when executed from a temp path.
@@ -224,8 +224,7 @@ def run_scanned_scripts(
                         "Skipping %s (run_when=once, already run)",
                         script_path.name,
                     )
-                    if cfg.verbose:
-                        print(f"  [skip/once] {script_path.name}")
+                    log.info("  [skip/once] %s", script_path.name)
                     continue
             elif run_when == "onchange":
                 try:
@@ -238,20 +237,16 @@ def run_scanned_scripts(
                         "Skipping %s (run_when=onchange, unchanged)",
                         script_path.name,
                     )
-                    if cfg.verbose:
-                        print(f"  [skip/unchanged] {script_path.name}")
+                    log.info("  [skip/unchanged] %s", script_path.name)
                     continue
 
         if cfg.dry_run:
             log.info("Would run script: %s", script_path.name)
-            if not cfg.quiet:
-                print(f"  [dry-run] {script_path.name}")
             continue
 
         # -- Execute ----------------------------------------------------------
         try:
-            if not cfg.quiet:
-                print(f"  Running: {script_path.name}")
+            log.info("  Running: %s", script_path.name)
             if script_logger is not None:
                 script_logger.set_current_script(script_path.name)
             script.execute(script_logger=script_logger)

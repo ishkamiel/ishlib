@@ -98,7 +98,7 @@ def test_warn_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
     gen_script_and_check_output(shell, tmp_path, script_content)
     assert log_file.exists()
     content = log_file.read_text()
-    assert "warn\twarn_via_env" in content
+    assert "warning\twarn_via_env" in content
 
 
 def test_info_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
@@ -145,4 +145,4 @@ def test_fatal_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
     assert result.returncode != 0
     assert log_file.exists()
     content = log_file.read_text()
-    assert "fatal\tfatal_via_env" in content
+    assert "critical\tfatal_via_env" in content

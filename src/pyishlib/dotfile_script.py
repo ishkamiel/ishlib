@@ -3,6 +3,9 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
+
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Executable script with ``@ish`` directive preprocessing.
 
 Provides :class:`DotfileScript` which represents a script file that
@@ -18,12 +21,13 @@ to the current environment via ``${__ish_<name>}`` references and
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import stat
 import subprocess
-import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional
 
@@ -109,10 +113,11 @@ class DotfileScript:
         line or file extension.
 
         When *script_logger* is provided, the bash helper prelude
-        (``ish_info``, ``ish_warn``, ``ish_error``, ``ish_fatal``) is
-        injected after the shebang line of shell scripts, and all
-        stdout/stderr from the script is captured and written to the run
-        log.
+        (``ish_info``, ``ish_warning``, ``ish_error``, ``ish_critical``) is
+        injected after the shebang line of shell scripts, and stdout/stderr
+        from the script are captured into separate streams.  Each line is
+        forwarded to :meth:`~pyishlib.ishfiles.script_logger.ScriptLogger.log_stream`
+        tagged with ``1>`` (stdout) or ``2>`` (stderr) and the script name.
 
         Args:
             env:           Optional extra environment variables to set for
@@ -146,7 +151,6 @@ class DotfileScript:
             tmp_path = Path(tmp.name)
 
         try:
-            # Make executable
             tmp_path.chmod(tmp_path.stat().st_mode | stat.S_IEXEC)
 
             cmd = interpreter + [str(tmp_path)]
@@ -159,20 +163,9 @@ class DotfileScript:
             log.info("Executing script: %s", self._path.name)
 
             if script_logger is not None and not self._runner.dry_run:
-                # Capture stdout+stderr for the log file.
-                result = subprocess.run(
-                    cmd,
-                    env=script_env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    check=False,
-                )
-                output = result.stdout.decode("utf-8", errors="replace")
-                script_logger.log_script_output(self._path.name, output)
-                if result.returncode != 0:
-                    raise subprocess.CalledProcessError(
-                        result.returncode, cmd, output=result.stdout
-                    )
+                result = self._run_captured(cmd, script_env, script_logger)
+                if result != 0:
+                    raise subprocess.CalledProcessError(result, cmd)
             else:
                 self._runner.run(
                     cmd,
@@ -186,18 +179,51 @@ class DotfileScript:
                 self._path.name,
                 e.returncode,
             )
-            if e.output:
-                raw = e.output if isinstance(e.output, bytes) else e.output.encode()
-                output_text = raw.decode("utf-8", errors="replace").rstrip("\n")
-                if output_text:
-                    sys.stderr.write(
-                        f"--- output from {self._path.name} ---\n"
-                        f"{output_text}\n"
-                        f"--- end output ---\n"
-                    )
             raise
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    def _run_captured(
+        self,
+        cmd: list,
+        env: dict,
+        script_logger: "ScriptLogger",
+    ) -> int:
+        """Run *cmd* with separate stdout/stderr capture via reader threads.
+
+        Each output line is forwarded to
+        :meth:`~pyishlib.ishfiles.script_logger.ScriptLogger.log_stream`
+        so stdout lines are tagged ``1>`` and stderr lines ``2>``.
+
+        Returns:
+            The process return code.
+        """
+        script_name = self._path.name
+
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        def _drain(stream: "io.BufferedReader", stream_name: str) -> None:
+            for raw_line in stream:
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
+                script_logger.log_stream(stream_name, script_name, line)
+
+        t_out = threading.Thread(
+            target=_drain, args=(proc.stdout, "stdout"), daemon=True
+        )
+        t_err = threading.Thread(
+            target=_drain, args=(proc.stderr, "stderr"), daemon=True
+        )
+        t_out.start()
+        t_err.start()
+        proc.wait()
+        t_out.join()
+        t_err.join()
+        return proc.returncode
 
     @staticmethod
     def _is_shell_script(text: str) -> bool:

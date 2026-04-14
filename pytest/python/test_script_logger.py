@@ -138,29 +138,29 @@ class TestScriptLoggerMessages(unittest.TestCase):
         counts = self._counts_after_messages([("info", "hello")])
         assert counts["info"] == 1
 
-    def test_warn_increments_count(self):
-        counts = self._counts_after_messages([("warn", "watch out")])
-        assert counts["warn"] == 1
+    def test_warning_increments_count(self):
+        counts = self._counts_after_messages([("warning", "watch out")])
+        assert counts["warning"] == 1
 
     def test_error_increments_count(self):
         counts = self._counts_after_messages([("error", "something broke")])
         assert counts["error"] == 1
 
-    def test_fatal_sets_aborted(self):
+    def test_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_message("fatal", "boom")
+                slog.log_message("critical", "boom")
                 assert slog.aborted
 
     def test_summary_line_nonzero(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_message("warn", "a")
+                slog.log_message("warning", "a")
                 slog.log_message("error", "b")
                 summary = slog.summary_line()
-                assert "warn" in summary
+                assert "warning" in summary
                 assert "error" in summary
 
     def test_invalid_level_ignored(self):
@@ -204,7 +204,8 @@ class TestScriptLoggerMessages(unittest.TestCase):
                 slog.log_message("error", "oh no")
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
-            assert "[ERROR]" in content
+            # Level tag is padded to 8 chars: "[ERROR   ]"
+            assert "ERROR" in content
 
 
 @unittest.skipIf(sys.platform == "win32", "bash not available on Windows")
@@ -235,21 +236,21 @@ class TestScriptLoggerFifo(unittest.TestCase):
             )
             assert slog.counts["info"] == 1
 
-    def test_fifo_warn_message(self):
+    def test_fifo_warning_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "warn\\twatch out\\n" >> "$ISHLIB_LOG_OUT"',
+                'printf "warning\\twatch out\\n" >> "$ISHLIB_LOG_OUT"',
             )
-            assert slog.counts["warn"] == 1
+            assert slog.counts["warning"] == 1
 
-    def test_fifo_fatal_sets_aborted(self):
+    def test_fifo_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "fatal\\tdead\\n" >> "$ISHLIB_LOG_OUT"',
+                'printf "critical\\tdead\\n" >> "$ISHLIB_LOG_OUT"',
             )
             assert slog.aborted
 
@@ -301,21 +302,21 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
             )
             assert slog.counts["info"] == 1
 
-    def test_sink_warn_message(self):
+    def test_sink_warning_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
                 cfg,
-                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warn`twatch out"',
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warning`twatch out"',
             )
-            assert slog.counts["warn"] == 1
+            assert slog.counts["warning"] == 1
 
-    def test_sink_fatal_sets_aborted(self):
+    def test_sink_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
                 cfg,
-                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "fatal`tdead"',
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "critical`tdead"',
             )
             assert slog.aborted
 
@@ -338,37 +339,48 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
             assert "test error" in content
 
 
-class TestScriptLoggerOutput(unittest.TestCase):
-    """log_script_output() writes captured output to the log file."""
+class TestScriptLoggerStream(unittest.TestCase):
+    """log_stream() routes stdout/stderr lines to the log file with 1>/2> prefixes."""
 
-    def test_output_appears_in_log(self):
+    def test_stdout_line_appears_in_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_script_output("test.sh", "line one\nline two\n")
+                slog.set_current_script("test.sh")
+                slog.log_stream("stdout", "test.sh", "hello stdout")
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
-            assert "line one" in content
-            assert "line two" in content
+            assert "hello stdout" in content
+            assert "1>" in content
 
-    def test_output_label_appears(self):
+    def test_stderr_line_appears_in_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_script_output("myscript.sh", "something")
+                slog.set_current_script("test.sh")
+                slog.log_stream("stderr", "test.sh", "oops stderr")
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "oops stderr" in content
+            assert "2>" in content
+
+    def test_stdout_labelled_with_script_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                slog.log_stream("stdout", "myscript.sh", "some output")
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
             assert "myscript.sh" in content
 
-    def test_empty_output_skipped(self):
+    def test_stderr_labelled_with_script_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_script_output("test.sh", "")
+                slog.log_stream("stderr", "myscript.sh", "an error")
                 log_path = slog.log_path
-            # File exists but has no OUTPUT section
             content = log_path.read_text(encoding="utf-8")
-            assert "OUTPUT" not in content
+            assert "myscript.sh" in content
 
 
 class TestPruneLogs(unittest.TestCase):

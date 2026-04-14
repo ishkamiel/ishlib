@@ -115,7 +115,7 @@ def _install_self_links(cfg: IshConfig) -> int:
                     continue
                 # Stale symlink — replace it
                 if cfg.dry_run:
-                    print(f"ln -sf {src} {dst}")
+                    log.info("Would run: ln -sf %s %s", src, dst)
                     continue
                 dst.unlink()
             elif dst.exists():
@@ -124,13 +124,12 @@ def _install_self_links(cfg: IshConfig) -> int:
                 continue
             else:
                 if cfg.dry_run:
-                    print(f"ln -s {src} {dst}")
+                    log.info("Would run: ln -s %s %s", src, dst)
                     continue
 
             bin_dst.mkdir(parents=True, exist_ok=True)
             os.symlink(src, dst)
-            if not cfg.quiet:
-                print(f"Linked: {dst} -> {src}")
+            log.info("Linked: %s -> %s", dst, src)
         except OSError as exc:
             log.warning("Self-link: failed to link %s: %s", name, exc)
             had_error = True
@@ -211,12 +210,12 @@ def run(cfg: IshConfig) -> int:
             if not yes:
                 choice = prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
                 if choice.no:
-                    print("Aborted.")
+                    log.info("Aborted.")
                     return 0
 
         applied = applier.apply_changes(changes)
-        if applied and not cfg.quiet:
-            print(f"Applied {applied} file(s).")
+        if applied:
+            log.info("Applied %d file(s).", applied)
 
     # -- Phase 4b: Apply externals -------------------------------------------
     if not dotfiles_only:
@@ -250,30 +249,26 @@ def run(cfg: IshConfig) -> int:
         if sh_ret != 0:
             had_errors = True
 
-    if not cfg.quiet:
-        if had_errors:
-            print("Apply completed with errors.")
-        else:
-            print("Apply complete.")
+    if had_errors:
+        log.warning("Apply completed with errors.")
+    else:
+        log.info("Apply complete.")
     return 1 if had_errors else 0
 
 
 def _print_log_summary(slog: ScriptLogger, cfg: IshConfig) -> None:
-    """Print run summary and log path (unless quiet)."""
-    if cfg.quiet:
-        return
+    """Log run summary and log path."""
     issues = slog.script_issues()
     if issues:
         for name, counts in issues:
             parts = [
                 f"{counts[lvl]} {lvl}"
-                for lvl in ("warn", "error", "fatal")
+                for lvl in ("warning", "error", "critical")
                 if counts.get(lvl)
             ]
-            print(f"  {name}: {', '.join(parts)}")
-    if cfg.verbose or issues:
-        summary = slog.summary_line()
-        if slog.log_path:
-            print(f"Scripts done: {summary}. Log: {slog.log_path}")
-        else:
-            print(f"Scripts done: {summary}.")
+            log.warning("Script issues — %s: %s", name, ", ".join(parts))
+    summary = slog.summary_line()
+    if slog.log_path:
+        log.info("Scripts done: %s. Log: %s", summary, slog.log_path)
+    else:
+        log.info("Scripts done: %s.", summary)

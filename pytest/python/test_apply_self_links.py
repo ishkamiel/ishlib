@@ -184,18 +184,14 @@ class TestInstallSelfLinksDryRun(unittest.TestCase):
 
             cfg = _make_cfg(str(source), str(target), dry_run=True)
 
-            import io
-            from contextlib import redirect_stdout
-
-            buf = io.StringIO()
-            with redirect_stdout(buf):
+            with self.assertLogs("pyishlib", level="INFO") as cm:
                 ret = _install_self_links(cfg)
 
-            output = buf.getvalue()
             self.assertEqual(ret, 0)
+            log_output = "\n".join(cm.output)
             for name in _SELF_LINK_NAMES:
-                self.assertIn(name, output)
-            self.assertIn("ln -s", output)
+                self.assertIn(name, log_output)
+            self.assertIn("ln -s", log_output)
 
     def test_dry_run_creates_no_files(self):
         with tempfile.TemporaryDirectory() as tmp:
