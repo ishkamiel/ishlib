@@ -1074,6 +1074,61 @@ class TestParser:
         args = parser.parse_args(["--", "ls", "-la"])
         assert args.command == ["--", "ls", "-la"]
 
+    def test_run_default_is_none(self):
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.run is None
+
+    def test_run_long_flag_captures_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["--run", "ls", "-la"])
+        assert args.run == ["ls", "-la"]
+
+    def test_run_short_flag_captures_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["-r", "echo", "hello"])
+        assert args.run == ["echo", "hello"]
+
+    def test_run_captures_flags_that_follow(self):
+        """Everything after --run is treated as the command, including flags."""
+        parser = build_parser()
+        args = parser.parse_args(["--quiet", "--run", "grep", "--color", "foo"])
+        assert args.quiet is True
+        assert args.run == ["grep", "--color", "foo"]
+
+    def test_main_copies_run_into_command(self):
+        """cli_main() must forward --run contents as args.command to launch_and_exec."""
+        with patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
+        ):
+            with patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=_fake_user_info(),
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    return_value=None,
+                ):
+                    with patch(
+                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    ) as mock_launch:
+                        cli_main(["--run", "ls", "-la"])
+                        forwarded_args = mock_launch.call_args.args[0]
+                        assert forwarded_args.command == ["ls", "-la"]
+
+    def test_run_after_positional_is_absorbed_by_positional(self):
+        """When a positional command comes first, REMAINDER absorbs --run.
+
+        This documents the expected argparse behaviour: once the positional
+        ``command`` starts consuming tokens, ``--run`` is treated as one of
+        its arguments rather than as a separate option. ``--run`` therefore
+        only has effect when it appears before any positional command.
+        """
+        parser = build_parser()
+        args = parser.parse_args(["ls", "--run", "echo", "hi"])
+        assert args.run is None
+        assert args.command == ["ls", "--run", "echo", "hi"]
+
     def test_purge_flag(self):
         parser = build_parser()
         args = parser.parse_args(["--purge"])
