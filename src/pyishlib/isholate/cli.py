@@ -179,9 +179,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "-r",
+        "--run",
+        nargs=argparse.REMAINDER,
+        default=None,
+        metavar="CMD",
+        help=(
+            "Run CMD inside the container and exit. Everything after --run is "
+            "treated as the command and its arguments, so isholate flags must "
+            "appear before --run."
+        ),
+    )
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
-        help="Command to run inside the container (default: interactive shell)",
+        help=(
+            "Positional command to run inside the container (default: "
+            "interactive shell). Prefer --run for unambiguous parsing."
+        ),
     )
 
     return parser
@@ -225,6 +240,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if incus_guidance is not None:
         print(incus_guidance, file=sys.stderr)
         return 1
+
+    # --run takes precedence over the positional command form: everything
+    # after --run is the command to run inside the container.
+    if args.run is not None:
+        if args.command:
+            print(
+                "isholate: error: --run cannot be combined with a positional "
+                "command; put all command arguments after --run",
+                file=sys.stderr,
+            )
+            return 2
+        args.command = list(args.run)
 
     # --- Purge handling ---
     include_bases = args.purge_bases or args.purge_all
