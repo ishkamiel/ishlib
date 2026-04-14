@@ -102,7 +102,7 @@ def _show_diff(dotfile: DotFile) -> None:
     if dotfile.mergejson:
         try:
             target_data = json.loads(dotfile.target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             target_data = None
         if target_data is not None:
             with tempfile.NamedTemporaryFile(
@@ -114,11 +114,15 @@ def _show_diff(dotfile: DotFile) -> None:
                 tmp.write(canonical_json(target_data))
                 tmp_path = Path(tmp.name)
             try:
+                # force_python so the caller-supplied labels survive
+                # — the git backend would otherwise show the temp-file
+                # path in diff headers.
                 print_diff(
                     tmp_path,
                     dotfile.effective_source,
                     old_label=str(dotfile.target),
                     new_label=str(dotfile.effective_source),
+                    force_python=True,
                 )
             finally:
                 tmp_path.unlink(missing_ok=True)

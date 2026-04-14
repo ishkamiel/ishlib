@@ -73,6 +73,6 @@ def semantic_equal(path_a: Path, path_b: Path) -> bool:
     try:
         data_a = json.loads(Path(path_a).read_text(encoding="utf-8"))
         data_b = json.loads(Path(path_b).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
     return data_a == data_b

@@ -50,13 +50,18 @@ class TestShowDiffMergejson:
             assert captured.out == ""
 
     def test_show_diff_real_change_emits_output(self, capsys):
-        """A real semantic difference produces a non-empty diff."""
+        """A real semantic difference produces a non-empty diff.
+
+        The ``---`` header must reference the real target path rather
+        than the temporary canonical-form file we create internally, so
+        users see a meaningful diff.
+        """
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(
                 Path(src) / "mergejson_settings.json",
                 '{"a": 2}\n',
             )
-            _make_file(
+            target = _make_file(
                 Path(tgt) / "settings.json",
                 '{"a": 1}\n',
             )
@@ -69,6 +74,9 @@ class TestShowDiffMergejson:
             _show_diff(changes[0])
             captured = capsys.readouterr()
             assert captured.out != ""
+            # The real target path should appear in the diff header,
+            # not a /tmp/... path from our canonical-form temp file.
+            assert str(target) in captured.out
 
     def test_show_diff_new_file(self, capsys):
         """A new mergejson target emits a new-file diff."""
