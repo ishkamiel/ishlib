@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -59,6 +60,16 @@ def _fail_completed(rc=1):
     )
 
 
+def _enter_all(stack, *cms):
+    """Enter every context manager in *cms* via *stack*.
+
+    Returns the list of enter results.  Used instead of the
+    parenthesized multi-with syntax (Python 3.10+) so tests remain
+    compatible with Python 3.8-3.9 CI.
+    """
+    return [stack.enter_context(cm) for cm in cms]
+
+
 # ---------------------------------------------------------------------------
 # No-op paths
 # ---------------------------------------------------------------------------
@@ -85,9 +96,12 @@ class TestNoOps(unittest.TestCase):
 
     def test_windows_noop(self):
         cfg = _make_cfg(default_shell="zsh")
-        with patch.object(ds, "is_windows", return_value=True), patch.object(
-            ds, "CommandRunner"
-        ) as runner_cls:
+        with ExitStack() as stack:
+            _, runner_cls = _enter_all(
+                stack,
+                patch.object(ds, "is_windows", return_value=True),
+                patch.object(ds, "CommandRunner"),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner_cls.assert_not_called()
 
@@ -98,36 +112,27 @@ class TestNoOps(unittest.TestCase):
 
 
 class TestAlreadyMatching(unittest.TestCase):
-    def test_already_matching_basename(self):
-        cfg = _make_cfg(default_shell="zsh")
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/zsh"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            ds, "CommandRunner"
-        ) as runner_cls:
+    def _run_already_matches(self, desired, current):
+        cfg = _make_cfg(default_shell=desired)
+        with ExitStack() as stack:
+            _, _, runner_cls = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value=current),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(ds, "CommandRunner"),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner_cls.assert_not_called()
 
+    def test_already_matching_basename(self):
+        self._run_already_matches(desired="zsh", current="/bin/zsh")
+
     def test_already_matching_absolute(self):
-        cfg = _make_cfg(default_shell="/usr/bin/zsh")
-        with patch.object(
-            ds, "_current_login_shell", return_value="/usr/bin/zsh"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            ds, "CommandRunner"
-        ) as runner_cls:
-            self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
-            runner_cls.assert_not_called()
+        self._run_already_matches(desired="/usr/bin/zsh", current="/usr/bin/zsh")
 
     def test_already_matching_basename_cross_dir(self):
         # Configured bare name, current is /usr/local/bin/zsh -- still matches.
-        cfg = _make_cfg(default_shell="zsh")
-        with patch.object(
-            ds, "_current_login_shell", return_value="/usr/local/bin/zsh"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            ds, "CommandRunner"
-        ) as runner_cls:
-            self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
-            runner_cls.assert_not_called()
+        self._run_already_matches(desired="zsh", current="/usr/local/bin/zsh")
 
 
 # ---------------------------------------------------------------------------
@@ -140,40 +145,39 @@ class TestExecution(unittest.TestCase):
         cfg = _make_cfg(default_shell="zsh")
         runner = MagicMock()
         runner.run.return_value = _ok_completed()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            ds, "shutil"
-        ) as sh_mock, patch.object(
-            ds, "CommandRunner", return_value=runner
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ):
+        with ExitStack() as stack:
+            _, _, sh_mock, _, _ = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(ds, "shutil"),
+                patch.object(ds, "CommandRunner", return_value=runner),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+            )
             sh_mock.which.return_value = "/usr/bin/zsh"
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner.run.assert_called_once_with(
-                ["chsh", "-s", "/usr/bin/zsh"], check=False
+                ["chsh", "-s", "/usr/bin/zsh"], check=False, quiet=False
             )
 
     def test_absolute_safe_no_prompt(self):
         cfg = _make_cfg(default_shell="/usr/bin/fish")
         runner = MagicMock()
         runner.run.return_value = _ok_completed()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "prompt_yes_no_always"
-        ) as prompt_mock, patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _, _, _, _, prompt_mock, _ = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "prompt_yes_no_always"),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             prompt_mock.assert_not_called()
             runner.run.assert_called_once_with(
-                ["chsh", "-s", "/usr/bin/fish"], check=False
+                ["chsh", "-s", "/usr/bin/fish"], check=False, quiet=False
             )
 
     def test_etc_shells_whitelist(self):
@@ -181,17 +185,18 @@ class TestExecution(unittest.TestCase):
         cfg = _make_cfg(default_shell="/opt/mystuff/bin/zsh")
         runner = MagicMock()
         runner.run.return_value = _ok_completed()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=["/opt/mystuff/bin/zsh"]
-        ), patch.object(
-            ds, "prompt_yes_no_always"
-        ) as prompt_mock, patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _, _, _, _, prompt_mock, _ = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(
+                    ds, "_read_etc_shells", return_value=["/opt/mystuff/bin/zsh"]
+                ),
+                patch.object(ds, "prompt_yes_no_always"),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             prompt_mock.assert_not_called()
             runner.run.assert_called_once()
@@ -207,37 +212,35 @@ class TestFishyPathPrompt(unittest.TestCase):
         cfg = _make_cfg(default_shell="/home/u/.nix/bin/zsh")
         runner = MagicMock()
         runner.run.return_value = _ok_completed()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "prompt_yes_no_always", return_value=Choice.YES
-        ) as prompt_mock, patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _, _, _, _, prompt_mock, _ = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "prompt_yes_no_always", return_value=Choice.YES),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             prompt_mock.assert_called_once()
             runner.run.assert_called_once_with(
-                ["chsh", "-s", "/home/u/.nix/bin/zsh"], check=False
+                ["chsh", "-s", "/home/u/.nix/bin/zsh"], check=False, quiet=False
             )
 
     def test_fishy_path_prompt_no(self):
         cfg = _make_cfg(default_shell="/home/u/.nix/bin/zsh")
         runner = MagicMock()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "prompt_yes_no_always", return_value=Choice.NO
-        ), patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "prompt_yes_no_always", return_value=Choice.NO),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner.run.assert_not_called()
 
@@ -245,17 +248,16 @@ class TestFishyPathPrompt(unittest.TestCase):
         cfg = _make_cfg(default_shell="/home/u/.nix/bin/zsh", yes=True)
         runner = MagicMock()
         runner.run.return_value = _ok_completed()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "prompt_yes_no_always"
-        ) as prompt_mock, patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _, _, _, _, prompt_mock, _ = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "prompt_yes_no_always"),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             prompt_mock.assert_not_called()
             runner.run.assert_called_once()
@@ -271,26 +273,28 @@ class TestMissingBinaries(unittest.TestCase):
         # which() returns None and the name isn't absolute either.
         cfg = _make_cfg(default_shell="notashell")
         runner_cls = MagicMock()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            ds.shutil, "which", return_value=None
-        ), patch.object(
-            ds, "CommandRunner", runner_cls
-        ):
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(ds.shutil, "which", return_value=None),
+                patch.object(ds, "CommandRunner", runner_cls),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner_cls.assert_not_called()
 
     def test_absolute_missing_binary_is_noop(self):
         cfg = _make_cfg(default_shell="/nonexistent/bin/zsh")
         runner_cls = MagicMock()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=False
-        ), patch.object(
-            ds, "CommandRunner", runner_cls
-        ):
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=False),
+                patch.object(ds, "CommandRunner", runner_cls),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner_cls.assert_not_called()
 
@@ -298,15 +302,15 @@ class TestMissingBinaries(unittest.TestCase):
         cfg = _make_cfg(default_shell="/usr/bin/zsh")
         runner = MagicMock()
         runner.run.side_effect = FileNotFoundError("chsh: not found")
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
 
 
@@ -322,33 +326,89 @@ class TestDryRunAndFailures(unittest.TestCase):
         cfg = _make_cfg(default_shell="/usr/bin/zsh", dry_run=True)
         runner = MagicMock()
         runner.run.return_value = _ok_completed()
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
             runner.run.assert_called_once_with(
-                ["chsh", "-s", "/usr/bin/zsh"], check=False
+                ["chsh", "-s", "/usr/bin/zsh"], check=False, quiet=False
             )
+
+    def test_quiet_propagates_to_runner(self):
+        cfg = _make_cfg(default_shell="/usr/bin/zsh", quiet=True)
+        runner = MagicMock()
+        runner.run.return_value = _ok_completed()
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
+            self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
+            runner.run.assert_called_once_with(
+                ["chsh", "-s", "/usr/bin/zsh"], check=False, quiet=True
+            )
+
+    def test_absolute_missing_path_log_message(self):
+        # Absolute path that doesn't exist -> log should say "does not exist".
+        cfg = _make_cfg(default_shell="/nonexistent/bin/zsh")
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=False),
+            )
+            with self.assertLogs(
+                "pyishlib.ishfiles.default_shell", level="INFO"
+            ) as cm:
+                self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
+        self.assertTrue(
+            any("does not exist" in m for m in cm.output),
+            f"expected 'does not exist' log, got {cm.output}",
+        )
+
+    def test_bare_name_missing_log_message(self):
+        # Bare name that which() can't find -> log should say "not found on PATH".
+        cfg = _make_cfg(default_shell="notashell")
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(ds.shutil, "which", return_value=None),
+            )
+            with self.assertLogs(
+                "pyishlib.ishfiles.default_shell", level="INFO"
+            ) as cm:
+                self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
+        self.assertTrue(
+            any("not found on PATH" in m for m in cm.output),
+            f"expected 'not found on PATH' log, got {cm.output}",
+        )
 
     def test_chsh_fails(self):
         cfg = _make_cfg(default_shell="/usr/bin/zsh")
         runner = MagicMock()
         runner.run.return_value = _fail_completed(rc=1)
-        with patch.object(
-            ds, "_current_login_shell", return_value="/bin/bash"
-        ), patch.object(ds, "is_windows", return_value=False), patch.object(
-            Path, "exists", return_value=True
-        ), patch.object(
-            ds, "_read_etc_shells", return_value=[]
-        ), patch.object(
-            ds, "CommandRunner", return_value=runner
-        ):
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
             self.assertEqual(ds.apply_default_shell_stage(cfg), 1)
 
 
@@ -374,9 +434,7 @@ class TestHelpers(unittest.TestCase):
             self.assertTrue(ds._is_safe_location(Path("/opt/homebrew/bin/fish")))
 
     def test_is_safe_location_etc_shells(self):
-        with patch.object(
-            ds, "_read_etc_shells", return_value=["/weird/path/zsh"]
-        ):
+        with patch.object(ds, "_read_etc_shells", return_value=["/weird/path/zsh"]):
             self.assertTrue(ds._is_safe_location(Path("/weird/path/zsh")))
 
     def test_is_safe_location_fishy(self):
@@ -395,9 +453,7 @@ class TestHelpers(unittest.TestCase):
 
     def test_resolve_target_shell_bare_name(self):
         with patch.object(ds.shutil, "which", return_value="/usr/bin/zsh"):
-            self.assertEqual(
-                ds._resolve_target_shell("zsh"), Path("/usr/bin/zsh")
-            )
+            self.assertEqual(ds._resolve_target_shell("zsh"), Path("/usr/bin/zsh"))
 
     def test_resolve_target_shell_bare_name_missing(self):
         with patch.object(ds.shutil, "which", return_value=None):

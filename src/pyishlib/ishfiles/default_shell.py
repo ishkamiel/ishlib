@@ -142,7 +142,10 @@ def apply_default_shell_stage(cfg: IshConfig) -> int:
 
         resolved = _resolve_target_shell(desired)
         if resolved is None:
-            log.info("default_shell %r not found on PATH; skipping", desired)
+            if os.path.isabs(desired):
+                log.info("default_shell path %r does not exist; skipping", desired)
+            else:
+                log.info("default_shell %r not found on PATH; skipping", desired)
             return 0
 
         if not _is_safe_location(resolved):
@@ -157,7 +160,11 @@ def apply_default_shell_stage(cfg: IshConfig) -> int:
 
         runner = CommandRunner(cfg)
         try:
-            result = runner.run(["chsh", "-s", str(resolved)], check=False)
+            result = runner.run(
+                ["chsh", "-s", str(resolved)],
+                check=False,
+                quiet=cfg.quiet,
+            )
         except FileNotFoundError:
             log.info("chsh not found; skipping default_shell change")
             return 0

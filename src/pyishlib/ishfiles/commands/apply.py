@@ -141,7 +141,7 @@ def _install_self_links(cfg: IshConfig) -> int:
 def run(cfg: IshConfig) -> int:
     """Execute the apply command.
 
-    The pipeline runs in seven phases:
+    The pipeline runs in the following phases:
 
     0. **Self-links** -- create ``~/.local/bin`` symlinks for ``ishfiles``
        and ``isholate`` so the tools are on the user's PATH.
@@ -150,6 +150,8 @@ def run(cfg: IshConfig) -> int:
     2. **Merge** -- combine metadata packages with the main package list.
     3. **Install** -- install all packages (main + metadata).
     4. **Apply** -- preprocess and install changed dotfiles.
+    4b. **Externals** -- fetch and apply configured external git-repo
+        dotfiles after the main dotfile apply and before scripts.
     5. **Scripts** -- execute scripts (with logging and run_when gating).
     6. **Default shell** -- set the login shell via ``chsh`` when
        ``default_shell`` is configured.
