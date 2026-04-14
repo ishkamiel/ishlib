@@ -35,11 +35,14 @@ from pyishlib.isholate.config import (
 )
 from pyishlib.isholate.container import (
     _META_SOURCE_HASH,
+    _assert_no_isholate_devices,
     _check_incus_available,
     _host_base_name,
     _image_tag,
+    _list_isholate_devices,
     _project_base_name,
     _project_hash,
+    _remove_isholate_devices,
     ensure_host_base,
     ensure_project_base,
     generate_name,
@@ -153,6 +156,100 @@ class TestGenerateName:
 # ---------------------------------------------------------------------------
 # purge_containers
 # ---------------------------------------------------------------------------
+
+
+class TestDeviceHelpers:
+    """Tests for _list_isholate_devices, _remove_isholate_devices, and
+    _assert_no_isholate_devices.
+
+    incus config device list outputs plain text (one name per line), not JSON.
+    These tests verify the helpers parse that format correctly.
+    """
+
+    def _fake_run_for_list(self, stdout, returncode=0):
+        """Return a fake_run that echoes *stdout* for device list commands."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        return fake_run
+
+    def test_list_returns_only_isholate_prefix(self):
+        plain_output = "eth0\nisholate-ishlib\nroot\nisholate-ishconf\n"
+        with patch(
+            "pyishlib.isholate.container._run",
+            side_effect=self._fake_run_for_list(plain_output),
+        ):
+            result = _list_isholate_devices("mycontainer")
+        assert result == ["isholate-ishlib", "isholate-ishconf"]
+
+    def test_list_returns_empty_when_no_isholate_devices(self):
+        plain_output = "eth0\nroot\n"
+        with patch(
+            "pyishlib.isholate.container._run",
+            side_effect=self._fake_run_for_list(plain_output),
+        ):
+            result = _list_isholate_devices("mycontainer")
+        assert result == []
+
+    def test_list_returns_empty_on_command_failure(self):
+        with patch(
+            "pyishlib.isholate.container._run",
+            side_effect=self._fake_run_for_list("", returncode=1),
+        ):
+            result = _list_isholate_devices("mycontainer")
+        assert result == []
+
+    def test_remove_only_strips_isholate_devices(self):
+        plain_output = "eth0\nisholate-ishlib\nroot\nisholate-ishsrc\n"
+        removed = []
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout=plain_output, stderr="")
+            if cmd[:4] == ["incus", "config", "device", "remove"]:
+                removed.append(cmd[5])  # device name is 6th token
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            _remove_isholate_devices("mycontainer")
+
+        assert set(removed) == {"isholate-ishlib", "isholate-ishsrc"}
+
+    def test_remove_is_noop_when_no_isholate_devices(self):
+        plain_output = "eth0\nroot\n"
+        removed = []
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout=plain_output, stderr="")
+            if cmd[:4] == ["incus", "config", "device", "remove"]:
+                removed.append(cmd[5])
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            _remove_isholate_devices("mycontainer")
+
+        assert removed == []
+
+    def test_assert_raises_when_isholate_devices_remain(self):
+        plain_output = "eth0\nisholate-ishlib\nroot\n"
+        with patch(
+            "pyishlib.isholate.container._run",
+            side_effect=self._fake_run_for_list(plain_output),
+        ):
+            with pytest.raises(RuntimeError, match="isholate-ishlib"):
+                _assert_no_isholate_devices("mycontainer")
+
+    def test_assert_passes_when_clean(self):
+        plain_output = "eth0\nroot\n"
+        with patch(
+            "pyishlib.isholate.container._run",
+            side_effect=self._fake_run_for_list(plain_output),
+        ):
+            _assert_no_isholate_devices("mycontainer")  # must not raise
 
 
 class TestPurgeContainers:
@@ -1001,20 +1098,22 @@ class TestBaseManagement:
 
 
 class TestStaleDeviceHandling:
-    """Regression tests for stale isholate-* device cleanup on base containers."""
+    """Regression tests for stale isholate-* device cleanup on base containers.
 
-    _STALE_DEVICES = {
-        "isholate-ishlib": {"type": "disk", "source": "/fake/ishlib", "path": "/run/isholate/ishlib"}
-    }
+    ``incus config device list`` prints one device name per line (plain text).
+    Mocks must use that format, not JSON.
+    """
 
-    def _make_pbase_run(self, *, stale_devices=None):
+    # Plain-text output as returned by ``incus config device list``.
+    _STALE_OUTPUT = "isholate-ishlib\n"
+
+    def _make_pbase_run(self, *, stale_output=None):
         """Return a (fake_run, calls) pair for ensure_project_base.
 
         Mocks _container_exists (no pbase), fingerprint lookups, and
-        optionally returns stale_devices JSON on the first device list call.
+        optionally returns stale plain-text output on the first device list
+        call (subsequent calls return empty, simulating successful removal).
         """
-        import json as _json
-
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
         calls = []
         device_list_count = [0]
@@ -1030,18 +1129,18 @@ class TestStaleDeviceHandling:
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 device_list_count[0] += 1
-                if device_list_count[0] == 1 and stale_devices:
+                if device_list_count[0] == 1 and stale_output:
                     return SimpleNamespace(
-                        returncode=0, stdout=_json.dumps(stale_devices), stderr=""
+                        returncode=0, stdout=stale_output, stderr=""
                     )
-                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
             return default
 
         return fake_run, calls
 
     def test_pbase_strips_inherited_devices_before_start(self):
         """ensure_project_base must remove inherited isholate-* devices before incus start."""
-        fake_run, calls = self._make_pbase_run(stale_devices=self._STALE_DEVICES)
+        fake_run, calls = self._make_pbase_run(stale_output=self._STALE_OUTPUT)
 
         with patch("pyishlib.isholate.container._run", side_effect=fake_run):
             with patch(
@@ -1086,11 +1185,11 @@ class TestStaleDeviceHandling:
 
     def test_host_base_reuse_scrubs_stale_devices(self):
         """ensure_host_base must remove stale devices from a reused (cached) base."""
-        import json as _json
-
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
         calls = []
+        # Simulate: first list call returns stale, subsequent calls return
+        # clean (device removal succeeded).
         device_list_count = [0]
 
         def fake_run(cmd, **kwargs):
@@ -1101,17 +1200,11 @@ class TestStaleDeviceHandling:
                 return SimpleNamespace(returncode=0, stdout="COMPUTED\n", stderr="")
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 device_list_count[0] += 1
-                # First call is inside _remove_isholate_devices — return stale
-                # devices so the scrubber has work to do. Subsequent calls
-                # (from _assert_no_isholate_devices) must return an empty
-                # device set to simulate a successful removal.
                 if device_list_count[0] == 1:
                     return SimpleNamespace(
-                        returncode=0,
-                        stdout=_json.dumps(self._STALE_DEVICES),
-                        stderr="",
+                        returncode=0, stdout=self._STALE_OUTPUT, stderr=""
                     )
-                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
             return default
 
         with patch("pyishlib.isholate.container._run", side_effect=fake_run):
@@ -1143,8 +1236,6 @@ class TestStaleDeviceHandling:
 
     def test_host_base_new_build_raises_if_devices_remain(self):
         """ensure_host_base raises when device removal silently fails during new build."""
-        import json as _json
-
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -1154,7 +1245,7 @@ class TestStaleDeviceHandling:
             # device list always returns a stale entry (simulate failed removal)
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(
-                    returncode=0, stdout=_json.dumps(self._STALE_DEVICES), stderr=""
+                    returncode=0, stdout=self._STALE_OUTPUT, stderr=""
                 )
             return default
 

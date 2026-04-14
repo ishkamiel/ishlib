@@ -323,33 +323,39 @@ def _set_stored_uid(name: str, uid: int) -> None:
     )
 
 
+def _list_isholate_devices(name: str) -> List[str]:
+    """Return the names of all ``isholate-*`` devices configured on *name*.
+
+    Uses ``incus config device list`` which prints one device name per line
+    (plain text, no ``--format`` flag support).  Returns an empty list when
+    the container does not exist or the command fails.
+    """
+    r = _run(
+        ["incus", "config", "device", "list", name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return []
+    return [
+        line.strip()
+        for line in r.stdout.splitlines()
+        if line.strip().startswith("isholate-")
+    ]
+
+
 def _remove_isholate_devices(name: str) -> None:
     """Remove all disk devices whose names start with ``isholate-`` from *name*.
 
     Called before stopping a base container so that it carries no stale
     host-path bind-mount references.
     """
-    r = _run(
-        ["incus", "config", "device", "list", name, "--format=json"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if r.returncode != 0 or not r.stdout.strip():
-        return
-    try:
-        devices = json.loads(r.stdout)
-    except (json.JSONDecodeError, ValueError):
-        return
-    # Incus returns a dict keyed by device name.
-    if not isinstance(devices, dict):
-        return
-    for device_name in list(devices.keys()):
-        if device_name.startswith("isholate-"):
-            _run(
-                ["incus", "config", "device", "remove", name, device_name],
-                check=False,
-            )
+    for device_name in _list_isholate_devices(name):
+        _run(
+            ["incus", "config", "device", "remove", name, device_name],
+            check=False,
+        )
 
 
 def _assert_no_isholate_devices(name: str) -> None:
@@ -358,37 +364,7 @@ def _assert_no_isholate_devices(name: str) -> None:
     Called after ``_remove_isholate_devices`` on a stopped base so that a
     silently-failing removal cannot poison the base for future copies.
     """
-    r = _run(
-        ["incus", "config", "device", "list", name, "--format=json"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if r.returncode != 0:
-        stderr = (r.stderr or "").strip()
-        raise RuntimeError(
-            f"failed to verify isholate devices for '{name}': "
-            f"'incus config device list' exited with {r.returncode}"
-            + (f": {stderr}" if stderr else "")
-        )
-    if not r.stdout.strip():
-        raise RuntimeError(
-            f"failed to verify isholate devices for '{name}': "
-            "empty output from 'incus config device list'"
-        )
-    try:
-        devices = json.loads(r.stdout)
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise RuntimeError(
-            f"failed to verify isholate devices for '{name}': "
-            "invalid JSON from 'incus config device list'"
-        ) from exc
-    if not isinstance(devices, dict):
-        raise RuntimeError(
-            f"failed to verify isholate devices for '{name}': "
-            f"expected JSON object, got {type(devices).__name__}"
-        )
-    leftovers = [d for d in devices.keys() if d.startswith("isholate-")]
+    leftovers = _list_isholate_devices(name)
     if leftovers:
         raise RuntimeError(
             f"failed to remove isholate devices from '{name}': {leftovers}"
@@ -1039,8 +1015,20 @@ def ensure_host_base(
             # previously interrupted run before returning the cached base, and
             # verify the scrub succeeded so we never return a poisoned base.
             _remove_isholate_devices(name)
-            _assert_no_isholate_devices(name)
-            return name
+            try:
+                _assert_no_isholate_devices(name)
+            except RuntimeError:
+                # Poisoned base — devices could not be removed.  Force a
+                # rebuild so the user is not permanently stuck.
+                _say(
+                    f"host base '{name}' has un-removable isholate devices "
+                    "— forcing rebuild...",
+                    quiet=quiet,
+                )
+                _run(["incus", "delete", name, "--force"], check=False)
+                # Fall through to the create path below.
+            else:
+                return name
         _say(
             f"host base '{name}' is stale (source changed) — rebuilding...", quiet=quiet
         )
@@ -1239,7 +1227,7 @@ def ensure_project_base(
     except (subprocess.CalledProcessError, RuntimeError):
         if started and verbose >= 1:
             dev_r = _run(
-                ["incus", "config", "device", "list", name, "--format=json"],
+                ["incus", "config", "device", "list", name],
                 capture_output=True,
                 text=True,
                 check=False,
