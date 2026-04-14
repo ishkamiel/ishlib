@@ -21,9 +21,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .environment import is_windows
+from .json_merge import semantic_equal
 
 DOT_PREFIX = "dot_"
 EXECUTABLE_PREFIX = "executable_"
+MERGEJSON_PREFIX = "mergejson_"
 
 
 # ---------------------------------------------------------------------------
@@ -43,14 +45,34 @@ def is_executable_name(name: str) -> bool:
     return name.startswith(EXECUTABLE_PREFIX)
 
 
-def translate_name(name: str) -> str:
-    """Translate a single path component from dotfile repo naming.
+def is_mergejson_name(name: str) -> bool:
+    """Return *True* if *name* carries the ``mergejson_`` prefix.
 
-    Strips ``executable_`` first (so ``executable_dot_foo`` → ``.foo``),
-    then converts a remaining ``dot_`` prefix to a literal ``.`` prefix.
+    The check tolerates a leading ``executable_`` prefix so that
+    ``executable_mergejson_foo.json`` is still detected as a mergejson
+    file.
     """
     if name.startswith(EXECUTABLE_PREFIX):
         name = name[len(EXECUTABLE_PREFIX) :]
+    return name.startswith(MERGEJSON_PREFIX)
+
+
+def translate_name(name: str) -> str:
+    """Translate a single path component from dotfile repo naming.
+
+    Strips prefixes in the order ``executable_`` → ``mergejson_`` →
+    ``dot_``, then converts a remaining ``dot_`` prefix to a literal
+    ``.`` prefix.  Examples:
+
+    - ``executable_dot_foo`` → ``.foo``
+    - ``mergejson_settings.json`` → ``settings.json``
+    - ``mergejson_dot_settings.json`` → ``.settings.json``
+    - ``executable_mergejson_dot_foo.json`` → ``.foo.json``
+    """
+    if name.startswith(EXECUTABLE_PREFIX):
+        name = name[len(EXECUTABLE_PREFIX) :]
+    if name.startswith(MERGEJSON_PREFIX):
+        name = name[len(MERGEJSON_PREFIX) :]
     if name.startswith(DOT_PREFIX):
         return "." + name[len(DOT_PREFIX) :]
     return name
@@ -65,14 +87,20 @@ def translate_path(rel_path: Path) -> Path:
     return Path(*parts) if parts else rel_path
 
 
-def reverse_translate_name(name: str, executable: bool = False) -> str:
+def reverse_translate_name(
+    name: str, executable: bool = False, mergejson: bool = False
+) -> str:
     """Reverse-translate a single path component to dotfile repo naming.
 
     Converts a leading ``.`` to the ``dot_`` prefix and prepends
-    ``executable_`` when *executable* is ``True``.
+    ``mergejson_`` when *mergejson* is ``True`` and ``executable_`` when
+    *executable* is ``True`` (outermost).  This is the symmetric
+    counterpart of :func:`translate_name`.
     """
     if name.startswith(".") and name not in {".", ".."} and len(name) > 1:
         name = DOT_PREFIX + name[1:]
+    if mergejson:
+        name = MERGEJSON_PREFIX + name
     if executable:
         name = EXECUTABLE_PREFIX + name
     return name
@@ -169,6 +197,15 @@ class DotFile:
         return is_executable_name(self._rel_path.name)
 
     @property
+    def mergejson(self) -> bool:
+        """True if the source filename carries the ``mergejson_`` prefix.
+
+        When *True*, the file is treated as an RFC 7396 JSON Merge Patch
+        that combines with any existing target rather than replacing it.
+        """
+        return is_mergejson_name(self._rel_path.name)
+
+    @property
     def effective_source(self) -> Path:
         """The file to compare / copy: staged copy if available, else source."""
         return self._staged if self._staged is not None else self._source
@@ -181,12 +218,19 @@ class DotFile:
             :attr:`ChangeType.MODIFIED` if content differs or if the
             target is missing its executable bit when the source carries
             the ``executable_`` prefix, or *None* if everything matches.
+
+        For ``mergejson_`` files the comparison is performed by parsing
+        both sides as JSON and comparing semantically, so key ordering
+        inside objects does not count as a change.
         """
         if not self.target.exists():
             return ChangeType.NEW
         if not self.target.is_file():
             return ChangeType.MODIFIED
-        if not filecmp.cmp(self.effective_source, self.target, shallow=False):
+        if self.mergejson:
+            if not semantic_equal(self.effective_source, self.target):
+                return ChangeType.MODIFIED
+        elif not filecmp.cmp(self.effective_source, self.target, shallow=False):
             return ChangeType.MODIFIED
         # exec bits are meaningless on Windows; skip the check there
         if self.executable and not is_windows() and not os.access(self.target, os.X_OK):

@@ -19,6 +19,7 @@ prefixes.  The pipeline has three stages:
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import tempfile
@@ -32,6 +33,7 @@ from .dotfile_ignore import DotfileIgnore
 from .ish_metadata import collect_metadata_packages, read_metadata
 from .dotfile_preprocessor import DotFilePreprocessor
 from .ish_config import IshConfig
+from .json_merge import canonical_json, deep_merge_json
 from .userio import prompt_yes_no_always
 from .environment import is_windows, should_skip_for_os_from_metadata
 
@@ -227,11 +229,63 @@ class DotfileApplier:
                 log.debug("Binary file, copying verbatim: %s", dotfile.source)
                 shutil.copy2(dotfile.source, staged_path)
 
+            if dotfile.mergejson and not self._merge_json_stage(dotfile, staged_path):
+                # Source did not parse as JSON; drop the file so the rest of
+                # the pipeline is unaffected.
+                continue
+
             dotfile.staged = staged_path
             log.debug("Staged %s -> %s", dotfile.source, staged_path)
             kept.append(dotfile)
 
         return kept
+
+    # -- Stage 2b: mergejson post-step --------------------------------------
+
+    def _merge_json_stage(self, dotfile: DotFile, staged_path: Path) -> bool:
+        """Replace *staged_path* with its RFC 7396 merge against the target.
+
+        Reads the just-staged source text as a JSON patch, merges it on
+        top of the target (or an empty object when the target is missing
+        or unparsable), and writes the canonical merged result back to
+        *staged_path*.
+
+        Args:
+            dotfile: The owning :class:`DotFile` (used for logging only).
+            staged_path: The staging-area path written by the text
+                preprocessor.  Will be overwritten in place.
+
+        Returns:
+            ``True`` on success, ``False`` when the source is not valid
+            JSON (in which case a warning has been logged and the caller
+            should drop the file).
+        """
+        try:
+            patch = json.loads(staged_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as err:
+            log.warning(
+                "mergejson source is not valid JSON, skipping %s: %s",
+                dotfile.source,
+                err,
+            )
+            return False
+
+        base: Any = {}
+        target = dotfile.target
+        if target.exists() and target.is_file():
+            try:
+                base = json.loads(target.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as err:
+                log.warning(
+                    "mergejson target is not valid JSON, overwriting %s: %s",
+                    target,
+                    err,
+                )
+                base = {}
+
+        merged = deep_merge_json(base, patch)
+        staged_path.write_text(canonical_json(merged), encoding="utf-8")
+        return True
 
     # -- Stage 3: Apply ------------------------------------------------------
 

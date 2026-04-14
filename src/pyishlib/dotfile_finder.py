@@ -22,7 +22,12 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from .dotfile import EXECUTABLE_PREFIX, DotFile, reverse_translate_path
+from .dotfile import (
+    EXECUTABLE_PREFIX,
+    MERGEJSON_PREFIX,
+    DotFile,
+    reverse_translate_path,
+)
 from .dotfile_ignore import DotfileIgnore
 from .ish_config import IshConfig
 
@@ -234,16 +239,29 @@ class DotfileFinder:
             return self._resolve_absolute(p)
         return self._resolve_relative(p)
 
-    def _try_executable_prefix(self, rev: Path) -> Optional[Path]:
-        """Return the ``executable_``-prefixed variant of *rev* if it exists.
+    def _try_source_prefix(self, rev: Path) -> Optional[Path]:
+        """Return a source-prefixed variant of *rev* if one exists.
 
-        Checks ``{source}/{rev.parent}/executable_{rev.name}`` and returns
-        that path when it exists in the source directory, otherwise *None*.
+        Tries, in order:
+
+        1. ``{parent}/executable_{name}``
+        2. ``{parent}/mergejson_{name}``
+        3. ``{parent}/executable_mergejson_{name}``
+
+        Returns the first existing candidate, else *None*.
         """
-        candidate = rev.parent / (EXECUTABLE_PREFIX + rev.name)
-        if (self._source_dir / candidate).exists():
-            return candidate
+        for prefix in (
+            EXECUTABLE_PREFIX,
+            MERGEJSON_PREFIX,
+            EXECUTABLE_PREFIX + MERGEJSON_PREFIX,
+        ):
+            candidate = rev.parent / (prefix + rev.name)
+            if (self._source_dir / candidate).exists():
+                return candidate
         return None
+
+    # Backwards-compatible alias retained for any external callers.
+    _try_executable_prefix = _try_source_prefix
 
     def _resolve_absolute(self, p: Path) -> Optional[Path]:
         """Resolve an absolute path."""
@@ -257,10 +275,10 @@ class DotfileFinder:
             reverse = reverse_translate_path(rel_target)
             if (self._source_dir / reverse).exists():
                 return reverse
-            # Also try executable_-prefixed source name
-            exec_candidate = self._try_executable_prefix(reverse)
-            if exec_candidate is not None:
-                return exec_candidate
+            # Also try prefixed source names (executable_, mergejson_, ...)
+            prefixed = self._try_source_prefix(reverse)
+            if prefixed is not None:
+                return prefixed
             return reverse
         except ValueError:
             pass
@@ -288,10 +306,10 @@ class DotfileFinder:
         if (self._source_dir / reverse).exists():
             return reverse
 
-        # Also try executable_-prefixed source name
-        exec_candidate = self._try_executable_prefix(reverse)
-        if exec_candidate is not None:
-            return exec_candidate
+        # Also try prefixed source names (executable_, mergejson_, ...)
+        prefixed = self._try_source_prefix(reverse)
+        if prefixed is not None:
+            return prefixed
 
         # Last resort: return reverse-translated even if it doesn't exist
         log.debug(

@@ -258,6 +258,7 @@ Files in the dotfiles source can carry these prefixes (chezmoi-compatible):
 
 - `dot_<name>` — target name becomes `.<name>` (e.g. `dot_bashrc` → `.bashrc`).
 - `executable_<name>` — after the file is applied, the target is `chmod +x`'d (Windows is a no-op). The prefix is stripped from the target name and can combine with `dot_` (`dot_executable_foo` → `.foo`, executable).
+- `mergejson_<name>` — the file is treated as an RFC 7396 JSON Merge Patch. When the target already exists, it is parsed as JSON and deep-merged with the source (objects merge recursively, arrays and scalars are replaced wholesale, `null` in the source removes the corresponding target key). When the target is missing, behaves like a plain copy. Change detection and diff output are key-order-insensitive: reordering keys inside a JSON object is not treated as a change. Composes with `dot_` (`mergejson_dot_settings.json` → `.settings.json`).
 
 ### Externals
 
