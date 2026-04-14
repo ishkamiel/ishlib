@@ -16,12 +16,26 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
 from pyishlib.ishfiles import default_shell as ds  # noqa: E402
 from pyishlib.userio import Choice  # noqa: E402
+
+# Phase 6 (default_shell) is a POSIX-only feature: the production code
+# returns early via ``is_windows()`` and never touches chsh, /etc/shells,
+# or /etc/passwd on Windows.  These tests mock ``is_windows()`` to False
+# and exercise POSIX path behaviour (absolute-path detection, parent-dir
+# stringification against ``_SAFE_DIRS``), which behaves differently on
+# WindowsPath.  Skip the whole module on Windows rather than building a
+# cross-platform harness for code that never runs there.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="default_shell stage is a no-op on Windows (see is_windows() guard)",
+)
 
 
 # ---------------------------------------------------------------------------

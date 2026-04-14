@@ -25,16 +25,16 @@
       "additionalProperties": false,
       "description": "Core ishfiles settings.",
       "properties": {
+        "default_shell": {
+          "description": "Desired login shell (basename like 'zsh' or absolute path like '/usr/bin/zsh'). Applied via chsh at the end of 'ishfiles apply'.",
+          "type": "string"
+        },
         "source": {
           "description": "Path to the ishfiles source folder (default: ~/.local/share/ishfiles).",
           "type": "string"
         },
         "target": {
           "description": "Target directory for dotfile installation (default: $HOME).",
-          "type": "string"
-        },
-        "default_shell": {
-          "description": "Desired login shell (basename like 'zsh' or absolute path like '/usr/bin/zsh'). Applied via chsh at the end of 'ishfiles apply'.",
           "type": "string"
         }
       },
