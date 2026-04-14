@@ -33,7 +33,9 @@ def _make_cfg(tmp_dir, quiet=False, verbose=False):
         dry_run=False,
         quiet=quiet,
         verbose=verbose,
-        get_opt=lambda name, default=None: str(tmp_dir) if name == "target" else default,
+        get_opt=lambda name, default=None: (
+            str(tmp_dir) if name == "target" else default
+        ),
     )
 
 
@@ -276,9 +278,65 @@ class TestScriptLoggerFifo(unittest.TestCase):
             assert "test error" in content
 
 
-@unittest.skipIf(sys.platform != "win32", "PowerShell sink tests are Windows-only")
+@unittest.skipIf(sys.platform != "win32", "Polled-file sink tests are Windows-only")
 class TestScriptLoggerWindowsSink(unittest.TestCase):
-    """The polled-file sink works with a real PowerShell subprocess."""
+    """The polled-file sink works when processes write to the plain-file sink."""
+
+    def _write_to_sink(self, cfg, line: str):
+        """Write one structured log line directly to the sink file."""
+        with ScriptLogger(cfg) as slog:
+            sink_path = Path(slog.env()["ISHLIB_LOG_OUT"])
+            with open(sink_path, "ab") as f:
+                f.write(line.encode("utf-8"))
+                f.flush()
+            time.sleep(0.3)
+            return slog
+
+    def test_sink_info_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._write_to_sink(cfg, "info\thello from python\n")
+            assert slog.counts["info"] == 1
+
+    def test_sink_warning_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._write_to_sink(cfg, "warning\twatch out\n")
+            assert slog.counts["warning"] == 1
+
+    def test_sink_critical_sets_aborted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._write_to_sink(cfg, "critical\tdead\n")
+            assert slog.aborted
+
+    def test_sink_message_appears_in_log_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                sink_path = Path(slog.env()["ISHLIB_LOG_OUT"])
+                with open(sink_path, "ab") as f:
+                    f.write(b"error\ttest error\n")
+                    f.flush()
+                time.sleep(0.3)
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "test error" in content
+
+
+@unittest.skipIf(
+    sys.platform != "win32",
+    "PowerShell sink tests are Windows-only",
+)
+class TestScriptLoggerPowerShellSink(unittest.TestCase):
+    """The polled-file sink works with PowerShell's Add-Content (requires pwsh)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+
+        if not shutil.which("pwsh"):
+            raise unittest.SkipTest("pwsh not found; skipping PowerShell sink tests")
 
     def _run_ps_with_logger(self, cfg, ps_body):
         import subprocess
@@ -301,10 +359,10 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
                 f"sink file empty after pwsh (ps_body={ps_body!r})\n"
                 f"pwsh stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
             )
-            time.sleep(0.2)
+            time.sleep(0.3)
             return slog
 
-    def test_sink_info_message(self):
+    def test_ps_sink_info_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
@@ -313,7 +371,7 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
             )
             assert slog.counts["info"] == 1
 
-    def test_sink_warning_message(self):
+    def test_ps_sink_warning_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
@@ -322,7 +380,7 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
             )
             assert slog.counts["warning"] == 1
 
-    def test_sink_critical_sets_aborted(self):
+    def test_ps_sink_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
@@ -331,7 +389,7 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
             )
             assert slog.aborted
 
-    def test_sink_message_appears_in_log_file(self):
+    def test_ps_sink_message_appears_in_log_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
@@ -339,12 +397,16 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
 
                 env = {**os.environ, **slog.env()}
                 subprocess.run(
-                    ["pwsh", "-NoProfile", "-Command",
-                     'Add-Content -Path $env:ISHLIB_LOG_OUT -Value ("error`t" + "test error")'],
+                    [
+                        "pwsh",
+                        "-NoProfile",
+                        "-Command",
+                        'Add-Content -Path $env:ISHLIB_LOG_OUT -Value ("error`t" + "test error")',
+                    ],
                     env=env,
                     check=False,
                 )
-                time.sleep(0.2)
+                time.sleep(0.3)
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
             assert "test error" in content

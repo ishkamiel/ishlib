@@ -113,7 +113,9 @@ class TestSetupLogging:
             lf = Path(tmp) / "run.log"
             setup_logging(logging.WARNING, log_file=lf)
             pkg = logging.getLogger("pyishlib")
-            file_handlers = [h for h in pkg.handlers if isinstance(h, logging.FileHandler)]
+            file_handlers = [
+                h for h in pkg.handlers if isinstance(h, logging.FileHandler)
+            ]
             assert len(file_handlers) == 1
             assert file_handlers[0].level == logging.DEBUG
             # FileHandler stores os.path.abspath(filename); normalise both sides
