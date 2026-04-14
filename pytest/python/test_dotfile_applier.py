@@ -23,6 +23,8 @@ from pyishlib.dotfile import (
     ChangeType,
     DotFile,
     is_executable_name,
+    is_mergejson_name,
+    reverse_translate_name,
     translate_name,
     translate_path,
 )
@@ -86,6 +88,51 @@ class TestIsExecutableName:
 
     def test_no_prefix_not_executable(self):
         assert is_executable_name("script.sh") is False
+
+
+class TestMergejsonTranslation:
+    def test_plain_mergejson(self):
+        assert translate_name("mergejson_settings.json") == "settings.json"
+
+    def test_mergejson_dot_combo(self):
+        assert translate_name("mergejson_dot_settings.json") == ".settings.json"
+
+    def test_executable_mergejson_dot_combo(self):
+        assert (
+            translate_name("executable_mergejson_dot_foo.json") == ".foo.json"
+        )
+
+    def test_is_mergejson_name_plain(self):
+        assert is_mergejson_name("mergejson_foo.json") is True
+
+    def test_is_mergejson_name_with_executable(self):
+        assert is_mergejson_name("executable_mergejson_foo.json") is True
+
+    def test_is_mergejson_name_false_for_dot(self):
+        assert is_mergejson_name("dot_foo.json") is False
+
+    def test_is_mergejson_name_false_for_no_prefix(self):
+        assert is_mergejson_name("foo.json") is False
+
+    def test_reverse_translate_mergejson(self):
+        assert (
+            reverse_translate_name("settings.json", mergejson=True)
+            == "mergejson_settings.json"
+        )
+
+    def test_reverse_translate_mergejson_dot(self):
+        assert (
+            reverse_translate_name(".settings.json", mergejson=True)
+            == "mergejson_dot_settings.json"
+        )
+
+    def test_reverse_translate_executable_mergejson_dot(self):
+        assert (
+            reverse_translate_name(
+                ".foo.json", executable=True, mergejson=True
+            )
+            == "executable_mergejson_dot_foo.json"
+        )
 
 
 class TestTranslatePath:
@@ -223,6 +270,84 @@ class TestDotFile:
 
             df = DotFile(src, Path("executable_myscript"), Path(tgt))
             assert df.get_change_type() is None
+
+    # -- mergejson_ prefix ---------------------------------------------------
+
+    def test_mergejson_property_true(self):
+        df = DotFile(
+            Path("/repo/mergejson_settings.json"),
+            Path("mergejson_settings.json"),
+            Path("/home"),
+        )
+        assert df.mergejson is True
+
+    def test_mergejson_property_false(self):
+        df = DotFile(Path("/repo/dot_bashrc"), Path("dot_bashrc"), Path("/home"))
+        assert df.mergejson is False
+
+    def test_mergejson_target_name_stripped(self):
+        df = DotFile(
+            Path("/repo/mergejson_settings.json"),
+            Path("mergejson_settings.json"),
+            Path("/home"),
+        )
+        assert df.target.name == "settings.json"
+
+    def test_mergejson_dot_combo_target_name(self):
+        df = DotFile(
+            Path("/repo/mergejson_dot_settings.json"),
+            Path("mergejson_dot_settings.json"),
+            Path("/home"),
+        )
+        assert df.target.name == ".settings.json"
+
+    def test_mergejson_change_type_new(self):
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+            src = _make_file(
+                Path(src_dir) / "mergejson_settings.json", '{"a": 1}\n'
+            )
+            df = DotFile(
+                src, Path("mergejson_settings.json"), Path(tgt)
+            )
+            assert df.get_change_type() == ChangeType.NEW
+
+    def test_mergejson_change_type_none_for_reordered_keys(self):
+        """Key reordering inside a JSON object does not count as a change."""
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+            src = _make_file(
+                Path(src_dir) / "mergejson_settings.json",
+                '{\n  "a": 1,\n  "b": 2\n}\n',
+            )
+            _make_file(
+                Path(tgt) / "settings.json",
+                '{\n  "b": 2,\n  "a": 1\n}\n',
+            )
+            df = DotFile(
+                src, Path("mergejson_settings.json"), Path(tgt)
+            )
+            assert df.get_change_type() is None
+
+    def test_mergejson_change_type_modified_when_value_differs(self):
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+            src = _make_file(
+                Path(src_dir) / "mergejson_settings.json", '{"a": 2}\n'
+            )
+            _make_file(Path(tgt) / "settings.json", '{"a": 1}\n')
+            df = DotFile(
+                src, Path("mergejson_settings.json"), Path(tgt)
+            )
+            assert df.get_change_type() == ChangeType.MODIFIED
+
+    def test_mergejson_change_type_modified_when_target_invalid_json(self):
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+            src = _make_file(
+                Path(src_dir) / "mergejson_settings.json", '{"a": 1}\n'
+            )
+            _make_file(Path(tgt) / "settings.json", "not json at all")
+            df = DotFile(
+                src, Path("mergejson_settings.json"), Path(tgt)
+            )
+            assert df.get_change_type() == ChangeType.MODIFIED
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +514,55 @@ class TestDiscover:
 
             assert len(dotfiles) == 1
             assert dotfiles[0].source.name == "executable_myscript"
+
+    def test_discover_mergejson_prefix(self):
+        """mergejson_-prefixed files appear in discovery with stripped target name."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "mergejson_settings.json", '{"a": 1}\n')
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover()
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].translated.name == "settings.json"
+            assert dotfiles[0].mergejson is True
+
+    def test_discover_by_target_name_finds_mergejson_source(self):
+        """Filtering by target name resolves to the mergejson_-prefixed source."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "mergejson_settings.json", '{"a": 1}\n')
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover(files=[Path("settings.json")])
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].source.name == "mergejson_settings.json"
+
+    def test_discover_by_target_name_finds_mergejson_dot_source(self):
+        """Target name '.settings.json' resolves to 'mergejson_dot_settings.json'."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_dot_settings.json", '{"a": 1}\n'
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.discover(files=[Path(".settings.json")])
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].source.name == "mergejson_dot_settings.json"
+            assert dotfiles[0].target.name == ".settings.json"
+
+    def test_discover_by_absolute_target_finds_mergejson_source(self):
+        """Filtering by absolute target path resolves to mergejson_-prefixed source."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "mergejson_settings.json", '{"a": 1}\n')
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            abs_target = str(Path(tgt) / "settings.json")
+            dotfiles = applier.discover(files=[Path(abs_target)])
+
+            assert len(dotfiles) == 1
+            assert dotfiles[0].source.name == "mergejson_settings.json"
 
 
 # ---------------------------------------------------------------------------
@@ -617,6 +791,199 @@ class TestApplyChanges:
             assert len(changes) == 1, "missing exec bit should appear as a change"
             applier.apply_changes(changes)
             assert os.access(target, os.X_OK)
+
+
+# ---------------------------------------------------------------------------
+# mergejson_ prefix (apply pipeline)
+# ---------------------------------------------------------------------------
+
+
+def _json_target(path: Path):
+    import json as _json
+
+    return _json.loads(path.read_text(encoding="utf-8"))
+
+
+class TestApplyMergejson:
+    def test_apply_mergejson_new_target(self):
+        """With no existing target, the merged file equals the source patch."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json",
+                '{"a": 1, "b": {"c": 2}}\n',
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            result = _json_target(Path(tgt) / "settings.json")
+            assert result == {"a": 1, "b": {"c": 2}}
+
+    def test_apply_mergejson_strips_prefix_from_target_name(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "mergejson_settings.json", '{"a": 1}\n')
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            assert not (Path(tgt) / "mergejson_settings.json").exists()
+            assert (Path(tgt) / "settings.json").exists()
+
+    def test_apply_mergejson_dot_combo(self):
+        """mergejson_dot_foo.json -> .foo.json merged as JSON."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_dot_settings.json", '{"a": 1}\n'
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            target = Path(tgt) / ".settings.json"
+            assert target.exists()
+            assert _json_target(target) == {"a": 1}
+
+    def test_apply_mergejson_preserves_disjoint_target_keys(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json", '{"new_key": 1}\n'
+            )
+            _make_file(
+                Path(tgt) / "settings.json", '{"existing_key": "keep"}\n'
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            result = _json_target(Path(tgt) / "settings.json")
+            assert result == {"existing_key": "keep", "new_key": 1}
+
+    def test_apply_mergejson_source_wins_on_overlap(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json", '{"theme": "dark"}\n'
+            )
+            _make_file(
+                Path(tgt) / "settings.json", '{"theme": "light"}\n'
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            assert _json_target(Path(tgt) / "settings.json") == {"theme": "dark"}
+
+    def test_apply_mergejson_deep_merge(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json",
+                '{"nested": {"b": 2}}\n',
+            )
+            _make_file(
+                Path(tgt) / "settings.json",
+                '{"nested": {"a": 1}}\n',
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            result = _json_target(Path(tgt) / "settings.json")
+            assert result == {"nested": {"a": 1, "b": 2}}
+
+    def test_apply_mergejson_array_replaces_wholesale(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json",
+                '{"list": [9]}\n',
+            )
+            _make_file(
+                Path(tgt) / "settings.json",
+                '{"list": [1, 2, 3]}\n',
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            assert _json_target(Path(tgt) / "settings.json") == {"list": [9]}
+
+    def test_apply_mergejson_null_removes_key(self):
+        """RFC 7396: null in the patch deletes the key."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json", '{"drop": null}\n'
+            )
+            _make_file(
+                Path(tgt) / "settings.json",
+                '{"drop": 1, "keep": 2}\n',
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            assert _json_target(Path(tgt) / "settings.json") == {"keep": 2}
+
+    def test_apply_mergejson_reordered_keys_is_noop(self):
+        """Target and merged-source semantically equal -> no change."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json",
+                '{"a": 1, "b": 2}\n',
+            )
+            target = _make_file(
+                Path(tgt) / "settings.json",
+                '{\n  "b": 2,\n  "a": 1\n}\n',
+            )
+            original_content = target.read_text()
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.prepare(applier.discover())
+            changes = applier.get_changes(dotfiles)
+
+            assert changes == [], "reordered-only target should not be a change"
+            assert target.read_text() == original_content
+
+    def test_apply_mergejson_invalid_source_is_skipped(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json", "not json {{{\n"
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            dotfiles = applier.prepare(applier.discover())
+            assert dotfiles == [], "invalid JSON source should be dropped"
+            assert not (Path(tgt) / "settings.json").exists()
+
+    def test_apply_mergejson_invalid_target_is_overwritten(self):
+        """An unparsable existing target is treated as an empty base."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "mergejson_settings.json", '{"a": 1}\n'
+            )
+            _make_file(
+                Path(tgt) / "settings.json", "garbage contents"
+            )
+
+            applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
+            applier.apply_changes(
+                applier.get_changes(applier.prepare(applier.discover()))
+            )
+
+            assert _json_target(Path(tgt) / "settings.json") == {"a": 1}
 
 
 # ---------------------------------------------------------------------------

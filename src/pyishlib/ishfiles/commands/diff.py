@@ -8,10 +8,14 @@
 from __future__ import annotations
 
 import argparse
+import json
+import tempfile
+from pathlib import Path
 
 from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
 from ...ish_config import IshConfig
+from ...json_merge import canonical_json
 from ..applier import make_applier, make_finder
 
 
@@ -92,6 +96,33 @@ def _show_diff(dotfile: DotFile) -> None:
     except UnicodeDecodeError:
         print_binary_diff(str(dotfile.target), str(dotfile.effective_source))
         return
+
+    # For mergejson files, normalise the target to canonical JSON form
+    # so key reordering does not show up as diff noise.
+    if dotfile.mergejson:
+        try:
+            target_data = json.loads(dotfile.target.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            target_data = None
+        if target_data is not None:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".json",
+                delete=False,
+            ) as tmp:
+                tmp.write(canonical_json(target_data))
+                tmp_path = Path(tmp.name)
+            try:
+                print_diff(
+                    tmp_path,
+                    dotfile.effective_source,
+                    old_label=str(dotfile.target),
+                    new_label=str(dotfile.effective_source),
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            return
 
     print_diff(
         dotfile.target,
