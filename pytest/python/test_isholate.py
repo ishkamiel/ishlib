@@ -713,6 +713,102 @@ class TestProvisioning:
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
         assert any("--debug" in c for c in apply_cmds)
 
+    def _run_cached_with_claude(self, args, *, claude_dir_exists, claude_json_exists):
+        """Run launch_and_exec through the cached path with fine-grained host FS mocks.
+
+        Always marks ``host_ishfiles_source`` as an existing dir (so the cached
+        path is actually exercised), and toggles the existence of the host's
+        ``~/.claude`` directory and ``~/.claude.json`` file independently.
+        """
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        def fake_run(cmd, **kwargs):
+            return default
+
+        claude_dir = _FAKE_HOME / ".claude"
+        claude_json = _FAKE_HOME / ".claude.json"
+
+        def fake_is_dir(self):
+            if self == claude_dir:
+                return claude_dir_exists
+            return True
+
+        def fake_is_file(self):
+            if self == claude_json:
+                return claude_json_exists
+            return True
+
+        host_source = _FAKE_HOME / ".local" / "share" / "ishfiles"
+        with patch(
+            "pyishlib.isholate.container.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.container._run", side_effect=fake_run
+            ) as mock_run:
+                with patch(
+                    "pyishlib.isholate.container.subprocess.run",
+                    side_effect=_fake_subprocess_run,
+                ):
+                    with patch.object(Path, "is_dir", fake_is_dir):
+                        with patch.object(Path, "is_file", fake_is_file):
+                            launch_and_exec(args, host_ishfiles_source=host_source)
+                            return mock_run.call_args_list
+
+    def test_claude_adds_mounts_on_cached_path(self):
+        """--claude wires the claude mounts when launching from a cached base."""
+        args = _make_args(claude=True)
+        calls = self._run_cached_with_claude(
+            args, claude_dir_exists=True, claude_json_exists=True
+        )
+        cmds = self._cmds(calls)
+
+        # The cached path uses `incus copy` (not `incus init`) to clone the base.
+        assert any(c[:2] == ["incus", "copy"] for c in cmds)
+
+        device_adds = [c for c in cmds if "device" in c and "add" in c]
+        device_names = [c[5] for c in device_adds]
+        assert "isholate-claude" in device_names
+        assert "isholate-claude-json" in device_names
+
+        claude_cmd = next(c for c in device_adds if c[5] == "isholate-claude")
+        assert f"source={_FAKE_HOME}/.claude" in claude_cmd
+        assert f"path=/home/{_FAKE_USER}/.claude" in claude_cmd
+        assert "shift=true" in claude_cmd
+        assert "readonly=true" not in claude_cmd
+
+        json_cmd = next(c for c in device_adds if c[5] == "isholate-claude-json")
+        assert f"source={_FAKE_HOME}/.claude.json" in json_cmd
+        assert f"path=/home/{_FAKE_USER}/.claude.json" in json_cmd
+        assert "shift=true" in json_cmd
+        assert "readonly=true" not in json_cmd
+
+    def test_claude_cached_path_skips_mounts_when_host_config_absent(self):
+        """--claude is a no-op on the cached path when no host claude config exists."""
+        args = _make_args(claude=True)
+        calls = self._run_cached_with_claude(
+            args, claude_dir_exists=False, claude_json_exists=False
+        )
+        cmds = self._cmds(calls)
+
+        device_adds = [c for c in cmds if "device" in c and "add" in c]
+        device_names = [c[5] for c in device_adds]
+        assert "isholate-claude" not in device_names
+        assert "isholate-claude-json" not in device_names
+
+    def test_claude_cached_path_skips_mounts_when_claude_flag_absent(self):
+        """Without --claude, no claude mounts are added on the cached path."""
+        args = _make_args(claude=False)
+        calls = self._run_cached_with_claude(
+            args, claude_dir_exists=True, claude_json_exists=True
+        )
+        cmds = self._cmds(calls)
+
+        device_adds = [c for c in cmds if "device" in c and "add" in c]
+        device_names = [c[5] for c in device_adds]
+        assert "isholate-claude" not in device_names
+        assert "isholate-claude-json" not in device_names
+
     def test_default_keeps_apt_qq_and_no_ishfiles_verbose(self):
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
