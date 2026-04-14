@@ -57,6 +57,12 @@ _SCHEMA: Path = (
     Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
 )
 
+_REPO_SCHEMA: Path = (
+    Path(__file__).resolve().parent.parent.parent
+    / "schema"
+    / "ishfiles_repo_config.json"
+)
+
 # Read-only config options registered on every IshConfig built by
 # load_config().  These cannot be overridden by CLI args or TOML config.
 _CONSTANTS = {
@@ -70,8 +76,10 @@ _CONSTANTS = {
     "ignore_file": ".ishignore",
     # Package config filenames recognised inside config_dir
     "package_files": ["packages.toml", "packages.json"],
-    # Data template filename inside config_dir
-    "data_file": "data.toml",
+    # Repo-level config filename inside config_dir (lower priority than user config)
+    "repo_config_file": "config.toml",
+    # Data template filename inside config_dir (per-machine prompted values)
+    "data_file": "config-local.toml",
     # Externals config filename inside config_dir
     "externals_config_file": "externals.toml",
     # Externals state filename inside <target>/.config/ishfiles/
@@ -135,6 +143,16 @@ def load_config(
 
     # XDG-compliant externals cache directory (outside the source tree).
     cfg.set_constant("externals_cache_dir", str(_xdg_externals_cache_dir(home)))
+
+    # Pass 2: load repo-level config from <source>/ishconfig/config.toml.
+    # 'source' is now resolvable (from args/user-conf/defaults), so we can
+    # locate the file inside the dotfiles source tree.  The repo-level config
+    # sits between the user config and built-in defaults in the lookup chain.
+    source_dir = Path(cfg.get_opt("source"))
+    repo_cfg_path = (
+        source_dir / cfg.get_opt("config_dir") / cfg.get_opt("repo_config_file")
+    )
+    cfg.repo_conf = IshConfig.load_toml(repo_cfg_path, schema=_REPO_SCHEMA)
 
     # Seed the preprocessing context with any persisted [data] values.
     data = _load_data_section(cfg_path)

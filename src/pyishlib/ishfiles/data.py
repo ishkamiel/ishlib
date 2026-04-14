@@ -5,9 +5,9 @@
 # Distributed under terms of the MIT license.
 """Data template processing for ishfiles.
 
-Loads ``ishconfig/data.toml`` from the source repository, prompts the user
-for any values not already present in the config, and offers to persist new
-values back to ``~/.config/ishfiles/config.toml``.
+Loads ``ishconfig/config-local.toml`` from the source repository, prompts the
+user for any values not already present in the config, and offers to persist
+new values back to ``~/.config/ishfiles/config.toml``.
 
 The data template format is a TOML file where each top-level table is a
 variable definition::
@@ -45,7 +45,7 @@ def process_data_template(cfg: IshConfig, isholate: bool = False) -> None:
     """Check source repo for a data template and prompt for missing values.
 
     Reads ``<source>/<config_dir>/<data_file>`` (typically
-    ``ishconfig/data.toml``).  For each declared variable, if a value is
+    ``ishconfig/config-local.toml``).  For each declared variable, if a value is
     already present on ``cfg.context`` (loaded from the ``[data]`` section of
     the config file), it is validated against the declared type.  Invalid
     values (e.g. an unrecognised string for a ``type = "bool"`` field) are

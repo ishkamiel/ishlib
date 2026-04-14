@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "Schema for <source>/ishconfig/config.toml (repo-level settings, lower priority than ~/.config/ishfiles/config.toml).",
+  "properties": {
+    "ishfiles": {
+      "additionalProperties": false,
+      "description": "Core ishfiles settings shared across all checkouts of this dotfile repo.",
+      "properties": {
+        "default_shell": {
+          "description": "Desired login shell (basename like 'zsh' or absolute path like '/usr/bin/zsh'). Applied via chsh at the end of 'ishfiles apply'.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "ishfiles repo configuration",
+  "type": "object"
+}
