@@ -411,16 +411,22 @@ class ScriptLogger:
         Used on Windows where POSIX FIFOs are not available.  The sink file
         is opened once; the thread reads new bytes as they arrive and feeds
         them through the same dispatch path as the FIFO reader.
+
+        On Windows, ``fh.read()`` at EOF caches the end-of-file marker and
+        returns ``b""`` on subsequent calls even after another process appends
+        data.  Seeking to the current position (``fh.seek(0, 1)``) clears that
+        cache, so the next read returns any newly appended bytes.
         """
         buf = b""
-        offset = 0
         with open(self._sink_path, "rb") as fh:  # type: ignore[arg-type]
             while not self._stop_event.is_set():
                 chunk = fh.read(4096)
                 if not chunk:
                     time.sleep(0.05)
+                    # Seek to the current position to clear Windows EOF cache,
+                    # allowing the next read to see data appended by other processes.
+                    fh.seek(0, 1)
                     continue
-                offset += len(chunk)
                 buf += chunk
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
