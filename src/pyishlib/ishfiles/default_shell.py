@@ -163,7 +163,7 @@ def apply_default_shell_stage(cfg: IshConfig) -> int:
         runner = CommandRunner(cfg)
         chsh_argv = ["chsh", "-s", str(resolved)]
         if username:
-            chsh_argv += ["-u", username]
+            chsh_argv.append(username)
         try:
             result = runner.run(
                 chsh_argv,
