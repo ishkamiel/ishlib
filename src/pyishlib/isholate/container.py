@@ -323,6 +323,21 @@ def _set_stored_uid(name: str, uid: int) -> None:
     )
 
 
+def _parse_isholate_devices(stdout: str) -> List[str]:
+    """Filter ``incus config device list`` output to just ``isholate-*`` names.
+
+    Takes the raw stdout (one device name per line) and returns the names
+    whose whitespace-stripped value starts with ``isholate-``.  Shared by
+    both the lenient listing path and the strict assertion path so their
+    parsing stays consistent.
+    """
+    return [
+        line.strip()
+        for line in stdout.splitlines()
+        if line.strip().startswith("isholate-")
+    ]
+
+
 def _list_isholate_devices(name: str) -> List[str]:
     """Return the names of all ``isholate-*`` devices configured on *name*.
 
@@ -338,15 +353,11 @@ def _list_isholate_devices(name: str) -> List[str]:
     )
     if r.returncode != 0 or not r.stdout.strip():
         return []
-    return [
-        line.strip()
-        for line in r.stdout.splitlines()
-        if line.strip().startswith("isholate-")
-    ]
+    return _parse_isholate_devices(r.stdout)
 
 
 def _remove_isholate_devices(name: str) -> None:
-    """Remove all disk devices whose names start with ``isholate-`` from *name*.
+    """Remove all devices whose names start with ``isholate-`` from *name*.
 
     Called before stopping a base container so that it carries no stale
     host-path bind-mount references.
@@ -359,7 +370,7 @@ def _remove_isholate_devices(name: str) -> None:
 
 
 def _assert_no_isholate_devices(name: str) -> None:
-    """Raise RuntimeError if *name* still carries any isholate-* disk devices.
+    """Raise RuntimeError if *name* still carries any ``isholate-*`` devices.
 
     Called after ``_remove_isholate_devices`` on a stopped base so that a
     silently-failing removal cannot poison the base for future copies.
@@ -382,11 +393,7 @@ def _assert_no_isholate_devices(name: str) -> None:
             f"'incus config device list' exited with {r.returncode}"
             + (f": {stderr}" if stderr else "")
         )
-    leftovers = [
-        line.strip()
-        for line in r.stdout.splitlines()
-        if line.strip().startswith("isholate-")
-    ]
+    leftovers = _parse_isholate_devices(r.stdout)
     if leftovers:
         raise RuntimeError(
             f"failed to remove isholate devices from '{name}': {leftovers}"
@@ -1047,12 +1054,20 @@ def ensure_host_base(
                     "— forcing rebuild...",
                     quiet=quiet,
                 )
-                _run(["incus", "delete", name, "--force"], check=False)
+                del_r = _run(
+                    ["incus", "delete", name, "--force"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
                 if _container_exists(name):
+                    detail = (del_r.stderr or del_r.stdout or "").strip()
                     raise RuntimeError(
-                        f"failed to delete poisoned host base '{name}'; "
-                        "remove it manually with 'incus delete --force' "
-                        "and retry"
+                        f"failed to delete poisoned host base '{name}' "
+                        f"(incus delete exited with {del_r.returncode})"
+                        + (f": {detail}" if detail else "")
+                        + "; remove it manually with "
+                        "'incus delete --force' and retry"
                     )
                 # Fall through to the create path below.
             else:
