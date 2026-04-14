@@ -527,6 +527,10 @@ class TestProvisioning:
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         def fake_run(cmd, **kwargs):
+            # device list returns valid (empty) JSON so the strict
+            # _assert_no_isholate_devices check passes.
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
             return default
 
         project_root = overlay.parent.parent if overlay is not None else None
@@ -724,6 +728,10 @@ class TestProvisioning:
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         def fake_run(cmd, **kwargs):
+            # device list returns valid (empty) JSON so the strict
+            # _assert_no_isholate_devices check passes.
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
             return default
 
         claude_dir = _FAKE_HOME / ".claude"
@@ -860,6 +868,10 @@ class TestBaseManagement:
             if cmd[:2] == ["incus", "info"]:
                 rc = 0 if container_exists else 1
                 return SimpleNamespace(returncode=rc, stdout="", stderr="")
+            # device list returns a valid (empty) JSON object so the strict
+            # _assert_no_isholate_devices check passes.
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
             return default
 
         calls = []
@@ -957,6 +969,10 @@ class TestBaseManagement:
 
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
+            # device list returns valid (empty) JSON so the strict
+            # _assert_no_isholate_devices check passes.
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
             return default
 
         with patch(
@@ -1076,6 +1092,7 @@ class TestStaleDeviceHandling:
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         default = SimpleNamespace(returncode=0, stdout="", stderr="")
         calls = []
+        device_list_count = [0]
 
         def fake_run(cmd, **kwargs):
             calls.append(list(cmd))
@@ -1084,9 +1101,18 @@ class TestStaleDeviceHandling:
             if cmd[:3] == ["incus", "config", "get"] and "source_hash" in str(cmd):
                 return SimpleNamespace(returncode=0, stdout="COMPUTED\n", stderr="")
             if cmd[:4] == ["incus", "config", "device", "list"]:
-                return SimpleNamespace(
-                    returncode=0, stdout=_json.dumps(self._STALE_DEVICES), stderr=""
-                )
+                device_list_count[0] += 1
+                # First call is inside _remove_isholate_devices — return stale
+                # devices so the scrubber has work to do. Subsequent calls
+                # (from _assert_no_isholate_devices) must return an empty
+                # device set to simulate a successful removal.
+                if device_list_count[0] == 1:
+                    return SimpleNamespace(
+                        returncode=0,
+                        stdout=_json.dumps(self._STALE_DEVICES),
+                        stderr="",
+                    )
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
             return default
 
         with patch("pyishlib.isholate.container._run", side_effect=fake_run):
@@ -1164,12 +1190,24 @@ class TestNetworkPreflight:
 
     def _run_with_mocks_custom(self, args, fake_run_fn, host_source=None):
         """Like TestProvisioning._run_with_mocks but accepts a custom fake_run."""
+
+        def wrapped_run(cmd, **kwargs):
+            # device list returns valid (empty) JSON so the strict
+            # _assert_no_isholate_devices check passes, unless the custom
+            # fake_run handles the call itself.
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                result = fake_run_fn(cmd, **kwargs)
+                if not getattr(result, "stdout", "").strip():
+                    return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+                return result
+            return fake_run_fn(cmd, **kwargs)
+
         with patch(
             "pyishlib.isholate.container.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run_fn
+                "pyishlib.isholate.container._run", side_effect=wrapped_run
             ) as mock_run:
                 with patch(
                     "pyishlib.isholate.container.subprocess.run",

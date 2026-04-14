@@ -265,7 +265,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             return 2
     else:
-        project_root_path = cwd
+        project_root_path = cwd.resolve()
 
     # Discover the project overlay (if any) before the full parse so that
     # image/shell overrides from .ishlib/isholate/config.toml can be
