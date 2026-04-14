@@ -3,9 +3,6 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-
-# SPDX-License-Identifier: MIT
-# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Executable script with ``@ish`` directive preprocessing.
 
 Provides :class:`DotfileScript` which represents a script file that

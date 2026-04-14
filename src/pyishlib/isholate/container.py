@@ -3,9 +3,6 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-
-# SPDX-License-Identifier: MIT
-# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Incus container lifecycle for isholate.
 
 Handles launching Incus containers with host user mirroring, bind mounts,
@@ -791,7 +788,7 @@ def _pull_container_log(
 ) -> None:
     """Pull a log file out of the container and save it on the host.
 
-    Failures are logged at WARNING (the file may not exist if ishfiles
+    Failures are logged at DEBUG (the file may not exist if ishfiles
     exited before creating it) and do not raise.
 
     Args:

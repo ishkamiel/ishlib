@@ -107,7 +107,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _dispatch(cfg: IshConfig) -> int:
-    """Fallback: print help when no sub-subcommand is given."""
+    """Fallback: log a usage warning when no sub-subcommand is given."""
     log.warning("Usage: ishfiles external <apply|update|list>")
     return 2
 

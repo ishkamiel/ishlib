@@ -15,7 +15,7 @@ ish_SOURCED_download_file_sh=1 # source guard
 `download_file url dst`
 
 Attempts to download file at $url to $dst, creating the containing directory
-if needed. Will first try curl, then wget, and finally ish_fail if neither is
+if needed. Will first try curl, then wget, and exit with an error if neither is
 available.
 
 Arguments:

@@ -155,7 +155,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.verbose:
         setup_logging(logging.INFO, log_file=log_file, quiet=quiet)
     elif quiet:
-        setup_logging(logging.WARNING, log_file=log_file, quiet=quiet)
+        setup_logging(logging.ERROR, log_file=log_file, quiet=quiet)
     else:
         setup_logging(logging.WARNING, log_file=log_file, quiet=quiet)
 

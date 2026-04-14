@@ -6,15 +6,15 @@
 """Per-run structured logging for ishfiles script execution.
 
 Every ishscript automatically receives the full ``ishlib.sh`` shell library
-(sourced via ``ISHLIB_SH``) which provides ``ish_info``, ``ish_warn``,
-``ish_error``, and ``ish_fatal``.  When ``ISHLIB_LOG_OUT`` is set in the
+(sourced via ``ISHLIB_SH``) which provides ``ish_info``, ``ish_warning``,
+``ish_error``, and ``ish_critical``.  When ``ISHLIB_LOG_OUT`` is set in the
 environment those functions write structured ``level<TAB>message`` lines to
 that path (a named FIFO owned by :class:`ScriptLogger`) instead of stderr.
 
 A background thread reads those lines and writes them to a timestamped log
 file under ``<target>/.local/state/ishfiles/logs/``.  All script
 stdout/stderr is also captured and appended to the same log file.
-``ish_fatal`` sets an abort flag that prevents subsequent scripts from
+``ish_critical`` sets an abort flag that prevents subsequent scripts from
 running.
 
 Public API
@@ -27,15 +27,16 @@ Prelude injected into every shell script
 
 .. code-block:: bash
 
-    # Source ishlib.sh for ish_info/warn/error/fatal (which honour ISHLIB_LOG_OUT).
+    # Source ishlib.sh for ish_info/warning/error/critical (which honour ISHLIB_LOG_OUT).
     if [ -n "${ISHLIB_SH:-}" ] && [ -f "${ISHLIB_SH}" ]; then
       . "${ISHLIB_SH}"
     else
       # Minimal fallback when ishlib.sh is unavailable.
-      ish_info()  { printf 'info\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
-      ish_warn()  { printf 'warn\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
-      ish_error() { printf 'error\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
-      ish_fatal() { printf 'fatal\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; exit 1; }
+      ish_debug()    { printf 'debug\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_info()     { printf 'info\\t%s\\n'     "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_warning()  { printf 'warning\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_error()    { printf 'error\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_critical() { printf 'critical\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; exit 1; }
     fi
 
 ``ISHLIB_LOG_OUT`` points to the FIFO.  Append-mode writes do not block
@@ -84,7 +85,7 @@ _LOG_TIMESTAMP_FMT: str = "%H:%M:%S"
 _ISHLIB_SH: Path = Path(__file__).resolve().parent.parent.parent.parent / "ishlib.sh"
 
 # Bash snippet injected after the shebang of every shell script.
-# Sources ishlib.sh (which honours ISHLIB_LOG_OUT for ish_info/warn/error/fatal).
+# Sources ishlib.sh (which honours ISHLIB_LOG_OUT for ish_info/warning/error/critical).
 # Falls back to minimal inline definitions when ishlib.sh is unavailable.
 BASH_PRELUDE: str = """\
 # -- ishfiles (auto-injected) --
@@ -93,13 +94,9 @@ if [ -n "${ISHLIB_SH:-}" ] && [ -f "${ISHLIB_SH}" ]; then
 else
   ish_debug()    { printf 'debug\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
   ish_info()     { printf 'info\\t%s\\n'     "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
-  ish_say()      { printf 'info\\t%s\\n'     "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
   ish_warning()  { printf 'warning\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
-  ish_warn()     { ish_warning "$@"; }
   ish_error()    { printf 'error\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
   ish_critical() { printf 'critical\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; exit 1; }
-  ish_fatal()    { ish_critical "$@"; }
-  ish_fail()     { printf 'critical\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; exit 1; }
 fi
 # -- end ishfiles --
 """
@@ -112,13 +109,9 @@ PS_PRELUDE: str = """\
 # -- ishfiles (auto-injected) --
 function ish_debug    { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "debug`t$m" } }
 function ish_info     { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "info`t$m" } }
-function ish_say      { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "info`t$m" } }
 function ish_warning  { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warning`t$m" } }
-function ish_warn     { param([string]$m) ish_warning $m }
 function ish_error    { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "error`t$m" } }
 function ish_critical { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "critical`t$m" }; exit 1 }
-function ish_fatal    { param([string]$m) ish_critical $m }
-function ish_fail     { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "critical`t$m" }; exit 1 }
 # -- end ishfiles --
 """
 
@@ -256,8 +249,8 @@ class ScriptLogger:
         Returns a dict containing:
 
         - ``ISHLIB_LOG_OUT``: path to the log sink (a FIFO on POSIX, a plain
-          file on Windows) that ``ish_info``/``ish_warn``/``ish_error``/
-          ``ish_fatal`` write structured messages to.
+          file on Windows) that ``ish_info``/``ish_warning``/``ish_error``/
+          ``ish_critical`` write structured messages to.
         - ``ISHLIB_SH``: path to the compiled ``ishlib.sh`` shell library, so
           the :data:`BASH_PRELUDE` can source it.  Omitted when the file does
           not exist (e.g. in a clean checkout before ``make ishlib.sh``).
@@ -269,12 +262,12 @@ class ScriptLogger:
 
     @staticmethod
     def bash_prelude() -> str:
-        """Return the bash snippet that defines ish_info/warn/error/fatal."""
+        """Return the bash snippet that defines ish_info/warning/error/critical."""
         return BASH_PRELUDE
 
     @staticmethod
     def powershell_prelude() -> str:
-        """Return the PowerShell snippet that defines ish_info/warn/error/fatal."""
+        """Return the PowerShell snippet that defines ish_info/warning/error/critical."""
         return PS_PRELUDE
 
     @property
@@ -296,7 +289,7 @@ class ScriptLogger:
     def set_current_script(self, name: str) -> None:
         """Set the currently-running script for per-script message attribution.
 
-        Call this just before executing each script so that ``ish_warn`` /
+        Call this just before executing each script so that ``ish_warning`` /
         ``ish_error`` messages are associated with the right script name.
 
         Args:
@@ -311,14 +304,14 @@ class ScriptLogger:
         """Return per-script issue counts for scripts that had warnings or errors.
 
         Returns a list of ``(script_name, counts_dict)`` for every script
-        where at least one ``warn``, ``error``, or ``fatal`` message was
+        where at least one ``warning``, ``error``, or ``critical`` message was
         logged, in execution order.
         """
         with self._lock:
             return [
                 (name, dict(counts))
                 for name, counts in self._script_counts.items()
-                if any(counts.get(lvl, 0) > 0 for lvl in ("warn", "error", "fatal"))
+                if any(counts.get(lvl, 0) > 0 for lvl in ("warning", "error", "critical"))
             ]
 
     def summary_line(self) -> str:

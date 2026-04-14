@@ -68,12 +68,12 @@ def test_ish_error_stderr(shell, tmp_path, ishlib):
     assert "error_message_here" in res
 
 
-def test_ish_fatal_exits(shell, tmp_path, ishlib):
+def test_ish_critical_exits(shell, tmp_path, ishlib):
     import subprocess
     script_content = inspect.cleandoc(f"""
     #!/usr/bin/env {shell}
     . "{str(ishlib)}"
-    ish_fatal "fatal_message_here"
+    ish_critical "critical_message_here"
     echo "SHOULD_NOT_REACH"
     """)
     tmp_file = tmp_path / "test.sh"
@@ -84,7 +84,7 @@ def test_ish_fatal_exits(shell, tmp_path, ishlib):
     )
     assert result.returncode != 0
     assert "SHOULD_NOT_REACH" not in result.stdout + result.stderr
-    assert "fatal_message_here" in result.stdout + result.stderr
+    assert "critical_message_here" in result.stdout + result.stderr
 
 
 def test_warn_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
@@ -129,14 +129,14 @@ def test_error_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
     assert "error\terror_via_env" in content
 
 
-def test_fatal_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
+def test_critical_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
     import subprocess
     log_file = tmp_path / "out.log"
     script_content = inspect.cleandoc(f"""
     #!/usr/bin/env {shell}
     ISHLIB_LOG_OUT="{log_file}"
     . "{str(ishlib)}"
-    ish_fatal "fatal_via_env"
+    ish_critical "critical_via_env"
     echo "SHOULD_NOT_REACH"
     """)
     tmp_file = tmp_path / "test.sh"
@@ -145,4 +145,4 @@ def test_fatal_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
     assert result.returncode != 0
     assert log_file.exists()
     content = log_file.read_text()
-    assert "critical\tfatal_via_env" in content
+    assert "critical\tcritical_via_env" in content

@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-14.2254"
+export ish_VERSION_NUMBER="2026-04-14.2027"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -496,29 +496,6 @@ ish_warn() {
 }
 
 : <<'DOCSTRING'
-`ish_fail ...`
-
-Prints the args as a critical error and then calls `exit 1`.
-
-When `ISHLIB_LOG_OUT` is set, writes `critical<TAB><message>` to that path
-before exiting so the abort flag is set on the Python side.
-DOCSTRING
-ish_fail() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  exit 1
-}
-
-: <<'DOCSTRING'
 `ish_error ...`
 
 Print a non-fatal error message.
@@ -549,34 +526,8 @@ Print a critical error message and exit 1.
 When `ISHLIB_LOG_OUT` is set, writes `critical<TAB><message>` to that path
 instead of stderr, then exits.  The Python-side ScriptLogger treats
 `critical` as a fatal signal that aborts subsequent scripts.
-
-`ish_fatal` is an alias kept for compatibility; prefer `ish_critical` in
-new code.
 DOCSTRING
 ish_critical() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[!!] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[!!] %b%b (at %b)%b\n" "${ish_ColorFail}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  exit 1
-}
-
-: <<'DOCSTRING'
-`ish_fatal ...`
-
-Alias for `ish_critical`.  Kept for compatibility; prefer `ish_critical`.
-
-Duplicates the terminal-output path (like `ish_warn`) so that `caller 0`
-reports the call site of `ish_fatal`, not the internal call inside `ish_critical`.
-DOCSTRING
-ish_fatal() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
     printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
   elif [ -z "${BASH_VERSION:-}" ]; then
@@ -638,7 +589,7 @@ has_prefix() {
 `download_file url dst`
 
 Attempts to download file at $url to $dst, creating the containing directory
-if needed. Will first try curl, then wget, and finally ish_fail if neither is
+if needed. Will first try curl, then wget, and exit with an error if neither is
 available.
 
 Arguments:
@@ -868,7 +819,7 @@ Arguments:
     pos_var - name of a variable for position
 
 Side-effects:
-    ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
+    ${!pos_var} - set to -1 on error, otherwise to the position of needle
 
 Returns:
     0 - if needle was found
@@ -906,9 +857,9 @@ Returns:
 
 DOCSTRING
 find_or_install() {
-  [[ -n "$1" ]] || ish_fail "ishlib:find_or_install: missing 1st argument"
-  [[ -n "${1+x}" ]] || ish_fail "ishlib:find_or_install: Unbound variable: '$1'"
-  [[ -n "${!1}" ]] || ish_fail "ishlib:find_or_install: Empty variable: $1"
+  [[ -n "$1" ]] || ish_critical "ishlib:find_or_install: missing 1st argument"
+  [[ -n "${1+x}" ]] || ish_critical "ishlib:find_or_install: Unbound variable: '$1'"
+  [[ -n "${!1}" ]] || ish_critical "ishlib:find_or_install: Empty variable: $1"
   local var="$1"
   local func="${2:-}"
   local val="${!var}"

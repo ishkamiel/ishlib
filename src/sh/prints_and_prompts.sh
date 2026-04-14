@@ -146,29 +146,6 @@ ish_warn() {
 }
 
 : <<'DOCSTRING'
-`ish_fail ...`
-
-Prints the args as a critical error and then calls `exit 1`.
-
-When `ISHLIB_LOG_OUT` is set, writes `critical<TAB><message>` to that path
-before exiting so the abort flag is set on the Python side.
-DOCSTRING
-ish_fail() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  exit 1
-}
-
-: <<'DOCSTRING'
 `ish_error ...`
 
 Print a non-fatal error message.
@@ -199,34 +176,8 @@ Print a critical error message and exit 1.
 When `ISHLIB_LOG_OUT` is set, writes `critical<TAB><message>` to that path
 instead of stderr, then exits.  The Python-side ScriptLogger treats
 `critical` as a fatal signal that aborts subsequent scripts.
-
-`ish_fatal` is an alias kept for compatibility; prefer `ish_critical` in
-new code.
 DOCSTRING
 ish_critical() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[!!] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[!!] %b%b (at %b)%b\n" "${ish_ColorFail}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  exit 1
-}
-
-: <<'DOCSTRING'
-`ish_fatal ...`
-
-Alias for `ish_critical`.  Kept for compatibility; prefer `ish_critical`.
-
-Duplicates the terminal-output path (like `ish_warn`) so that `caller 0`
-reports the call site of `ish_fatal`, not the internal call inside `ish_critical`.
-DOCSTRING
-ish_fatal() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
     printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
   elif [ -z "${BASH_VERSION:-}" ]; then

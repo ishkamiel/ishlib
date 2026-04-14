@@ -3,9 +3,6 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-
-# SPDX-License-Identifier: MIT
-# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Command-line interface for isholate.
 
 Entry point for the ``isholate`` tool.  Launches an Incus container with
