@@ -29,8 +29,10 @@ from pyishlib.ish_logging import IshLogFormatter, _ScriptStdoutFilter, setup_log
 
 
 def _fresh_pkg_logger() -> logging.Logger:
-    """Return the pyishlib logger with all handlers cleared."""
+    """Return the pyishlib logger with all handlers closed and cleared."""
     pkg = logging.getLogger("pyishlib")
+    for h in list(pkg.handlers):
+        h.close()
     pkg.handlers.clear()
     pkg.filters.clear()
     return pkg
@@ -122,6 +124,10 @@ class TestSetupLogging:
             # so the comparison is robust on Windows (GetFullPathName may expand
             # 8.3 short names or adjust separators).
             assert file_handlers[0].baseFilename == os.path.abspath(str(lf))
+            # Close handlers before the temp dir is cleaned up: on Windows,
+            # Python 3.12+ raises PermissionError during cleanup if any file
+            # handle inside the directory is still open.
+            _fresh_pkg_logger()
 
     def test_log_file_written_on_emit(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -130,6 +136,8 @@ class TestSetupLogging:
             logging.getLogger("pyishlib.test").warning("persisted")
             assert lf.exists()
             assert "persisted" in lf.read_text()
+            # Close handlers before the temp dir is cleaned up (Windows compat).
+            _fresh_pkg_logger()
 
     def test_quiet_adds_stdout_filter(self):
         setup_logging(logging.DEBUG, quiet=True)
