@@ -57,9 +57,7 @@ _FAKE_IMAGE = "images:ubuntu/24.04"
 _FAKE_SHELL = "/bin/bash"
 _FAKE_CONTAINER_UID = 1000
 _FAKE_BASE_NAME = _host_base_name(_FAKE_USER, _FAKE_IMAGE)
-_FAKE_PBASE_NAME = _project_base_name(
-    _FAKE_USER, Path("/work/myproject/.ishfiles").parent
-)
+_FAKE_PBASE_NAME = _project_base_name(_FAKE_USER, Path("/work/myproject"))
 
 
 def _fake_user_info():
@@ -488,6 +486,8 @@ class TestProvisioning:
         def fake_run(cmd, **kwargs):
             return default
 
+        project_root = overlay.parent.parent if overlay is not None else None
+
         with patch(
             "pyishlib.isholate.container.get_host_user_info",
             return_value=_fake_user_info(),
@@ -504,6 +504,7 @@ class TestProvisioning:
                             args,
                             host_ishfiles_source=host_source,
                             project_overlay=overlay,
+                            project_root=project_root,
                         )
                         return mock_run.call_args_list, rc
 
@@ -557,7 +558,7 @@ class TestProvisioning:
     def test_overlay_only_falls_back_to_one_shot(self):
         """Overlay with no host source falls back to one-shot provisioning."""
         args = _make_args()
-        fake_overlay = Path("/work/myproject/.ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
@@ -568,7 +569,7 @@ class TestProvisioning:
 
     def test_overlay_runs_ishfiles_apply_with_source_flag(self):
         args = _make_args()
-        fake_overlay = Path("/work/myproject/.ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
@@ -582,7 +583,7 @@ class TestProvisioning:
     def test_both_sources_run_two_apply_passes(self):
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        fake_overlay = Path("/work/myproject/.ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/ishfiles")
         calls, _ = self._run_with_mocks(
             args, host_source=fake_src, overlay=fake_overlay
         )
@@ -1126,10 +1127,10 @@ class TestParser:
                 assert not kwargs.get("include_bases", False)
 
     def test_project_config_overrides_image_default(self, tmp_path):
-        """Image from .ishfiles/ishconfig/isholate.toml becomes the argparse default."""
-        overlay = tmp_path / ".ishfiles"
-        (overlay / "ishconfig").mkdir(parents=True)
-        (overlay / "ishconfig" / "isholate.toml").write_text(
+        """Image from .ishlib/isholate/config.toml becomes the argparse default."""
+        overlay = tmp_path / ".ishlib" / "ishfiles"
+        (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
+        (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text(
             'image = "images:debian/12"\n'
         )
         with patch(
@@ -1156,7 +1157,7 @@ class TestParser:
                             assert called_args.image == "images:debian/12"
 
     def test_cli_image_flag_overrides_project_config(self, tmp_path):
-        """--image CLI flag takes priority over .ishfiles/ishconfig/isholate.toml."""
+        """--image CLI flag takes priority over .ishlib/isholate/config.toml."""
         with patch(
             "pyishlib.isholate.cli.discover_project_overlay", return_value=None
         ):
@@ -1204,8 +1205,8 @@ class TestParser:
 
 class TestDiscoverProjectOverlay:
     def test_finds_ishfiles_in_cwd(self, tmp_path):
-        overlay = tmp_path / ".ishfiles"
-        overlay.mkdir()
+        overlay = tmp_path / ".ishlib" / "ishfiles"
+        overlay.mkdir(parents=True)
         result = discover_project_overlay(tmp_path)
         assert result == overlay
 
@@ -1214,37 +1215,48 @@ class TestDiscoverProjectOverlay:
         assert result is None
 
     def test_does_not_search_parent_dirs(self, tmp_path):
-        overlay = tmp_path / ".ishfiles"
-        overlay.mkdir()
+        (tmp_path / ".ishlib" / "ishfiles").mkdir(parents=True)
         subdir = tmp_path / "subdir" / "deep"
         subdir.mkdir(parents=True)
         result = discover_project_overlay(subdir)
         assert result is None
 
+    def test_returns_none_when_only_isholate_dir_exists(self, tmp_path):
+        """Overlay discovery is independent of the isholate config dir."""
+        (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
+        result = discover_project_overlay(tmp_path)
+        assert result is None
+
 
 class TestLoadProjectConfig:
     def test_returns_empty_when_no_file(self, tmp_path):
-        overlay = tmp_path / ".ishfiles"
-        overlay.mkdir()
-        result = load_project_config(overlay)
+        result = load_project_config(tmp_path)
         assert result == {}
 
     def test_reads_image_and_shell(self, tmp_path):
-        overlay = tmp_path / ".ishfiles"
-        (overlay / "ishconfig").mkdir(parents=True)
-        (overlay / "ishconfig" / "isholate.toml").write_text(
+        (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
+        (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text(
             'image = "images:ubuntu/22.04"\nshell = "/bin/zsh"\n'
         )
-        result = load_project_config(overlay)
+        result = load_project_config(tmp_path)
         assert result["image"] == "images:ubuntu/22.04"
         assert result["shell"] == "/bin/zsh"
 
     def test_returns_empty_for_empty_toml(self, tmp_path):
-        overlay = tmp_path / ".ishfiles"
-        (overlay / "ishconfig").mkdir(parents=True)
-        (overlay / "ishconfig" / "isholate.toml").write_text("")
-        result = load_project_config(overlay)
+        (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
+        (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text("")
+        result = load_project_config(tmp_path)
         assert result == {}
+
+    def test_reads_config_without_overlay(self, tmp_path):
+        """Config loads even when the ishfiles overlay dir is absent."""
+        (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
+        (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text(
+            'image = "images:debian/12"\n'
+        )
+        assert not (tmp_path / ".ishlib" / "ishfiles").exists()
+        result = load_project_config(tmp_path)
+        assert result["image"] == "images:debian/12"
 
 
 class TestDiscoverHostIshfilesSource:

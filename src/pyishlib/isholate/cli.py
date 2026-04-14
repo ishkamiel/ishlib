@@ -98,7 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-project-ishfiles",
         action="store_true",
         default=False,
-        help="Skip applying the project .ishfiles/ source tree inside the container",
+        help="Skip applying the project .ishlib/ishfiles/ source tree inside the container",
     )
 
     # --- Cache / rebuild control ---
@@ -202,10 +202,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     _, home, cwd = get_host_user_info()
 
     # Discover the project overlay (if any) before parsing args so that
-    # image/shell overrides from .ishfiles/ishconfig/isholate.toml can be
+    # image/shell overrides from .ishlib/isholate/config.toml can be
     # applied as argparse defaults (CLI flags still take precedence).
+    # The isholate config and the ishfiles overlay are independent — either
+    # may be present without the other.
+    project_cfg = load_project_config(cwd)
     overlay_dir = discover_project_overlay(cwd)
-    project_cfg = load_project_config(overlay_dir) if overlay_dir is not None else {}
 
     parser = build_parser()
     if project_cfg.get("image"):
@@ -246,11 +248,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
 
     resolved_overlay: Optional[Path] = None
+    project_root: Optional[Path] = None
     if not args.no_project_ishfiles and overlay_dir is not None:
         resolved_overlay = overlay_dir
+        # Project root is the cwd that contains the .ishlib/ umbrella — used
+        # for stable project-base container naming (independent of the
+        # overlay's path within .ishlib/).
+        project_root = cwd.resolve()
 
     return launch_and_exec(
         args,
         host_ishfiles_source=host_source,
         project_overlay=resolved_overlay,
+        project_root=project_root,
     )

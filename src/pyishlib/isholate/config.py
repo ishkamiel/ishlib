@@ -8,13 +8,22 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Project-ishfiles and host-ishfiles discovery for isholate.
 
+Project-local state lives under an ``.ishlib/`` umbrella in the current
+working directory:
+
+- ``.ishlib/ishfiles/`` — project-local ishfiles source tree, mounted into
+  the container as pass 2 of provisioning.
+- ``.ishlib/isholate/config.toml`` — isholate project config (image, shell).
+
+The two subdirectories are independent — either may exist without the other.
+
 Provides three helpers:
 
-- :func:`discover_project_overlay` — checks *cwd* for a ``.ishfiles/``
-  directory (project-local ishfiles source tree).
-- :func:`load_project_config` — reads
-  ``.ishfiles/ishconfig/isholate.toml`` and returns its contents as a
-  plain ``dict``.  Returns an empty dict if the file is absent.
+- :func:`discover_project_overlay` — checks *cwd* for
+  ``.ishlib/ishfiles/`` (the project-local ishfiles source tree).
+- :func:`load_project_config` — reads ``.ishlib/isholate/config.toml``
+  from *cwd* and returns its contents as a plain ``dict``. Returns an
+  empty dict if the file is absent.
 - :func:`discover_host_ishfiles_source` — finds the host user's ishfiles
   source tree by reading ``~/.config/ishfiles/config.toml`` (the
   ``source`` key) and falling back to ``~/.local/share/ishfiles``.
@@ -34,13 +43,17 @@ except ImportError:
     except ImportError:
         tomllib = None  # type: ignore[assignment]
 
-# The .ishfiles/ directory that acts as a project-local ishfiles source tree.
-OVERLAY_DIR_NAME = ".ishfiles"
+# Umbrella project-local config directory.
+PROJECT_DIR_NAME = ".ishlib"
 
-# Reserved config dir name inside the overlay — mirrors ishfiles' "ishconfig".
-# isholate.toml lives here so ishfiles ignores it during dotfile application.
-_OVERLAY_CONFIG_DIR = "ishconfig"
-_ISHOLATE_CONFIG_FILE = "isholate.toml"
+# Subdirectory under .ishlib/ that acts as a project-local ishfiles source
+# tree. Mirrors the layout of a normal ishfiles source (with its own
+# ``ishconfig/``, ``ishscripts/``, etc.).
+OVERLAY_SUBDIR = "ishfiles"
+
+# Subdirectory under .ishlib/ that holds isholate-specific project config.
+ISHOLATE_SUBDIR = "isholate"
+ISHOLATE_CONFIG_FILE = "config.toml"
 
 # XDG state directory under $HOME where logs from failed containers are saved.
 # Full path: <home> / FAILED_LOGS_STATE_DIR / <container-name> / logs/
@@ -48,7 +61,7 @@ FAILED_LOGS_STATE_DIR = Path(".local") / "state" / "isholate" / "failed-logs"
 
 
 def discover_project_overlay(cwd: Path) -> Optional[Path]:
-    """Check *cwd* for a ``.ishfiles/`` project-local ishfiles directory.
+    """Check *cwd* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
 
     Only the directory itself is checked — parent directories are not
     searched.  This mirrors the convention that project-local config lives
@@ -58,17 +71,21 @@ def discover_project_overlay(cwd: Path) -> Optional[Path]:
         cwd: Directory to check (typically ``Path.cwd()``).
 
     Returns:
-        Absolute path to the ``.ishfiles/`` directory, or ``None``.
+        Absolute path to the ``.ishlib/ishfiles/`` directory, or ``None``.
     """
-    candidate = cwd.resolve() / OVERLAY_DIR_NAME
+    candidate = cwd.resolve() / PROJECT_DIR_NAME / OVERLAY_SUBDIR
     return candidate if candidate.is_dir() else None
 
 
-def load_project_config(overlay_dir: Path) -> Dict[str, Any]:
-    """Load ``.ishfiles/ishconfig/isholate.toml``.
+def load_project_config(cwd: Path) -> Dict[str, Any]:
+    """Load ``.ishlib/isholate/config.toml`` from *cwd*.
 
     Returns the parsed TOML as a plain ``dict``.  Returns an empty dict
     when the file is absent or when no TOML library is available.
+
+    Loading is independent of the project overlay: the isholate config
+    may be present without a ``.ishlib/ishfiles/`` directory, and vice
+    versa.
 
     Recognised keys (all optional):
 
@@ -76,15 +93,16 @@ def load_project_config(overlay_dir: Path) -> Dict[str, Any]:
     - ``shell`` — Login shell to use inside the container.
 
     Args:
-        overlay_dir: The ``.ishfiles/`` directory returned by
-            :func:`discover_project_overlay`.
+        cwd: Project root candidate (typically ``Path.cwd()``).
 
     Returns:
         Parsed config dict, possibly empty.
     """
     if tomllib is None:
         return {}
-    config_file = overlay_dir / _OVERLAY_CONFIG_DIR / _ISHOLATE_CONFIG_FILE
+    config_file = (
+        cwd.resolve() / PROJECT_DIR_NAME / ISHOLATE_SUBDIR / ISHOLATE_CONFIG_FILE
+    )
     if not config_file.is_file():
         return {}
     with open(config_file, "rb") as fh:
