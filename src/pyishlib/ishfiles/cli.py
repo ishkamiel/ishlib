@@ -96,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Suppress non-essential output",
     )
+    parser.add_argument(
+        "--custom-username",
+        metavar="NAME",
+        default=None,
+        help="Target user for user-scoped operations (e.g. chsh). "
+        "Also exposed to scripts as ${__ish_username}. "
+        "Defaults to the current user.",
+    )
 
     # -- subcommands ----------------------------------------------------------
     subparsers = parser.add_subparsers(dest="command")

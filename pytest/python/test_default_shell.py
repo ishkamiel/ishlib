@@ -49,10 +49,12 @@ def _make_cfg(
     dry_run=False,
     quiet=False,
     yes=False,
+    custom_username=None,
 ):
     opts = {
         "default_shell": default_shell,
         "yes": yes,
+        "custom_username": custom_username,
     }
     return SimpleNamespace(
         dry_run=dry_run,
@@ -476,6 +478,100 @@ class TestHelpers(unittest.TestCase):
     def test_resolve_target_shell_empty(self):
         self.assertIsNone(ds._resolve_target_shell(""))
         self.assertIsNone(ds._resolve_target_shell("   "))
+
+
+# ---------------------------------------------------------------------------
+# --custom-username flag
+# ---------------------------------------------------------------------------
+
+
+class TestCustomUsername(unittest.TestCase):
+    def test_current_login_shell_by_name(self):
+        """_current_login_shell passes username to getpwnam, not getpwuid."""
+        import pwd
+
+        fake_entry = pwd.struct_passwd(
+            ("alice", "x", 1001, 1001, "", "/home/alice", "/usr/bin/zsh")
+        )
+        with patch.object(pwd, "getpwnam", return_value=fake_entry) as mock_getpwnam:
+            with patch.object(pwd, "getpwuid") as mock_getpwuid:
+                result = ds._current_login_shell("alice")
+        mock_getpwnam.assert_called_once_with("alice")
+        mock_getpwuid.assert_not_called()
+        self.assertEqual(result, "/usr/bin/zsh")
+
+    def test_current_login_shell_by_uid_when_no_username(self):
+        """_current_login_shell falls back to getpwuid when username is None."""
+        import pwd
+
+        fake_entry = pwd.struct_passwd(
+            ("root", "x", 0, 0, "", "/root", "/bin/bash")
+        )
+        with patch.object(pwd, "getpwuid", return_value=fake_entry) as mock_getpwuid:
+            with patch.object(pwd, "getpwnam") as mock_getpwnam:
+                result = ds._current_login_shell()
+        mock_getpwuid.assert_called_once()
+        mock_getpwnam.assert_not_called()
+        self.assertEqual(result, "/bin/bash")
+
+    def test_chsh_includes_username_flag(self):
+        """chsh is called with -u <username> when custom_username is set."""
+        cfg = _make_cfg(default_shell="/usr/bin/zsh", custom_username="alice")
+        runner = MagicMock()
+        runner.run.return_value = _ok_completed()
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
+            self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
+            runner.run.assert_called_once_with(
+                ["chsh", "-s", "/usr/bin/zsh", "-u", "alice"],
+                check=False,
+                quiet=False,
+            )
+
+    def test_chsh_no_username_flag_by_default(self):
+        """chsh is called WITHOUT -u when no custom_username is configured."""
+        cfg = _make_cfg(default_shell="/usr/bin/zsh")
+        runner = MagicMock()
+        runner.run.return_value = _ok_completed()
+        with ExitStack() as stack:
+            _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
+            self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
+            runner.run.assert_called_once_with(
+                ["chsh", "-s", "/usr/bin/zsh"],
+                check=False,
+                quiet=False,
+            )
+
+    def test_current_login_shell_passed_username(self):
+        """apply_default_shell_stage passes custom_username to _current_login_shell."""
+        cfg = _make_cfg(default_shell="/usr/bin/zsh", custom_username="alice")
+        runner = MagicMock()
+        runner.run.return_value = _ok_completed()
+        with ExitStack() as stack:
+            shell_mock, _, _, _, _ = _enter_all(
+                stack,
+                patch.object(ds, "_current_login_shell", return_value="/bin/bash"),
+                patch.object(ds, "is_windows", return_value=False),
+                patch.object(Path, "exists", return_value=True),
+                patch.object(ds, "_read_etc_shells", return_value=[]),
+                patch.object(ds, "CommandRunner", return_value=runner),
+            )
+            ds.apply_default_shell_stage(cfg)
+            shell_mock.assert_called_once_with("alice")
 
 
 if __name__ == "__main__":

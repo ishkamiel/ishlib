@@ -968,6 +968,7 @@ def _provision(
         ishfiles_flags.append("--debug")
     elif verbose >= 1:
         ishfiles_flags.append("-v")
+    ishfiles_flags.extend(["--custom-username", username])
 
     _bootstrap_base(name, verbose=verbose, quiet=quiet)
 
@@ -1118,6 +1119,7 @@ def ensure_host_base(
             ishfiles_flags.append("--debug")
         elif verbose >= 1:
             ishfiles_flags.append("-v")
+        ishfiles_flags.extend(["--custom-username", username])
 
         _bootstrap_base(name, verbose=verbose, quiet=quiet)
         _apply_host_ishfiles(
@@ -1253,6 +1255,7 @@ def ensure_project_base(
             ishfiles_flags.append("--debug")
         elif verbose >= 1:
             ishfiles_flags.append("-v")
+        ishfiles_flags.extend(["--custom-username", username])
 
         _apply_project_overlay(
             name, username, uid, project_overlay, ishfiles_flags, quiet=quiet

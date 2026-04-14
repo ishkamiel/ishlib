@@ -949,6 +949,24 @@ class TestProvisioning:
             assert "-v" not in cmd
             assert "--debug" not in cmd
 
+    def test_custom_username_passed_to_ishfiles(self):
+        """ishfiles apply receives --custom-username <host_user> during provisioning."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert len(apply_cmds) >= 1
+        for cmd in apply_cmds:
+            assert "--custom-username" in cmd, (
+                f"--custom-username missing from ishfiles apply command: {cmd}"
+            )
+            idx = cmd.index("--custom-username")
+            assert cmd[idx + 1] == _FAKE_USER, (
+                f"Expected username {_FAKE_USER!r}, got {cmd[idx + 1]!r}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Cached path: ensure_host_base / ensure_project_base

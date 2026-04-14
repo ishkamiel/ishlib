@@ -54,19 +54,20 @@ _SAFE_DIRS = frozenset(
 _ETC_SHELLS = Path("/etc/shells")
 
 
-def _current_login_shell() -> Optional[str]:
-    """Return the current user's login shell from ``/etc/passwd`` via NSS.
+def _current_login_shell(username: Optional[str] = None) -> Optional[str]:
+    """Return the login shell for *username* (or the current user) from ``/etc/passwd``.
 
-    Returns *None* when the passwd entry cannot be read (e.g. the
-    ``pwd`` module is unavailable on Windows, or the current uid has
-    no entry).
+    When *username* is given, the lookup is by name (``getpwnam``); otherwise
+    it falls back to the current UID (``getpwuid``).  Returns *None* when the
+    passwd entry cannot be read (e.g. the ``pwd`` module is unavailable on
+    Windows, or the entry does not exist).
     """
     try:
         import pwd  # local import: module is POSIX-only
     except ImportError:
         return None
     try:
-        entry = pwd.getpwuid(os.getuid())
+        entry = pwd.getpwnam(username) if username else pwd.getpwuid(os.getuid())
     except KeyError:
         return None
     shell = entry.pw_shell or ""
@@ -135,7 +136,8 @@ def apply_default_shell_stage(cfg: IshConfig) -> int:
             log.info("default_shell: no-op on Windows")
             return 0
 
-        current = _current_login_shell()
+        username: Optional[str] = cfg.get_opt("custom_username", default=None) or None
+        current = _current_login_shell(username)
         if current and Path(current).name == Path(desired).name:
             log.info("Login shell already %s, skipping", current)
             return 0
@@ -159,9 +161,12 @@ def apply_default_shell_stage(cfg: IshConfig) -> int:
                     return 0
 
         runner = CommandRunner(cfg)
+        chsh_argv = ["chsh", "-s", str(resolved)]
+        if username:
+            chsh_argv += ["-u", username]
         try:
             result = runner.run(
-                ["chsh", "-s", str(resolved)],
+                chsh_argv,
                 check=False,
                 quiet=cfg.quiet,
             )
