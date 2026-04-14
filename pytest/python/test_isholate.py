@@ -1601,6 +1601,79 @@ class TestParser:
                         assert called_args.rebuild_base is True
                         assert called_args.rebuild_project_base is True
 
+    def test_project_root_picks_up_overlay_outside_cwd(self, tmp_path):
+        """--project-root causes overlay discovery to use the given dir, not cwd."""
+        overlay = tmp_path / ".ishlib" / "ishfiles"
+        overlay.mkdir(parents=True)
+        other_cwd = tmp_path / "other"
+        other_cwd.mkdir()
+
+        # cwd has no overlay; only the explicit project root does.
+        _, home, _ = _fake_user_info()
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=("testuser", home, other_cwd),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                return_value=None,
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                ) as mock_launch:
+                    result = cli_main(["--project-root", str(tmp_path)])
+                    assert result == 0
+                    _, kwargs = mock_launch.call_args
+                    assert kwargs["project_overlay"] == overlay
+                    assert kwargs["project_root"] == tmp_path.resolve()
+
+    def test_project_root_picks_up_config_outside_cwd(self, tmp_path):
+        """--project-root causes project config to load from the given dir."""
+        (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
+        (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text(
+            'image = "images:debian/12"\n'
+        )
+        other_cwd = tmp_path / "other"
+        other_cwd.mkdir()
+
+        _, home, _ = _fake_user_info()
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=("testuser", home, other_cwd),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                return_value=None,
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                ) as mock_launch:
+                    result = cli_main(["--project-root", str(tmp_path)])
+                    assert result == 0
+                    called_args = mock_launch.call_args[0][0]
+                    assert called_args.image == "images:debian/12"
+
+    def test_project_root_nonexistent_exits_2(self, tmp_path):
+        """--project-root with a non-existent path must exit with code 2."""
+        nonexistent = tmp_path / "does-not-exist"
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            result = cli_main(["--project-root", str(nonexistent)])
+            assert result == 2
+
+    def test_project_root_file_not_directory_exits_2(self, tmp_path):
+        """--project-root with a file path (not a dir) must exit with code 2."""
+        a_file = tmp_path / "somefile"
+        a_file.write_text("hi")
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            result = cli_main(["--project-root", str(a_file)])
+            assert result == 2
+
 
 # ---------------------------------------------------------------------------
 # config.py — discovery helpers
