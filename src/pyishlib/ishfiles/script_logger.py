@@ -47,7 +47,6 @@ run.
 from __future__ import annotations
 
 import errno
-import io
 import logging
 import os
 import select
@@ -409,33 +408,38 @@ class ScriptLogger:
     def _reader_loop_polled(self) -> None:
         """Background thread: poll a plain file and dispatch structured lines.
 
-        Used on Windows where POSIX FIFOs are not available.  The sink file
-        is opened once using raw (unbuffered) I/O so that every ``read()``
-        call goes directly to the OS without a user-space EOF cache.
-        Python's buffered ``open()`` caches the EOF marker and can return
-        ``b""`` even after another process has appended data; raw ``FileIO``
-        does not have this problem.
+        Used on Windows where POSIX FIFOs are not available.  The sink file is
+        re-read from scratch on every poll cycle (``Path.read_bytes()``) so the
+        reader always sees the latest data written by any process.  A running
+        byte offset avoids reprocessing data that has already been dispatched.
 
-        After the stop event fires the loop drains any bytes that were written
-        to the file just before the signal, so no messages are lost in the
-        race between the writer and the stop signal.
+        After the stop event fires a final read captures any bytes written just
+        before the signal, so no messages are lost in the race between the
+        writer and the stop event.
         """
         buf = b""
-        with io.FileIO(str(self._sink_path), "rb") as fh:  # type: ignore[arg-type]
-            while not self._stop_event.is_set():
-                chunk = fh.read(4096)
-                if not chunk:
-                    time.sleep(0.05)
-                    continue
-                buf += chunk
+        offset = 0
+        while not self._stop_event.is_set():
+            try:
+                data = self._sink_path.read_bytes()
+            except OSError:
+                time.sleep(0.05)
+                continue
+            if len(data) > offset:
+                buf += data[offset:]
+                offset = len(data)
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
                     self._dispatch(line.decode("utf-8", errors="replace"))
-            # Final drain: capture any bytes written just before stop fired.
-            chunk = fh.read(4096)
-            while chunk:
-                buf += chunk
-                chunk = fh.read(4096)
+            else:
+                time.sleep(0.05)
+        # Final drain: capture any bytes written just before stop was signalled.
+        try:
+            data = self._sink_path.read_bytes()
+        except OSError:
+            data = b""
+        if len(data) > offset:
+            buf += data[offset:]
         # Dispatch any remaining complete lines.
         while b"\n" in buf:
             line, buf = buf.split(b"\n", 1)

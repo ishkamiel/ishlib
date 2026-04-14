@@ -116,7 +116,10 @@ class TestSetupLogging:
             file_handlers = [h for h in pkg.handlers if isinstance(h, logging.FileHandler)]
             assert len(file_handlers) == 1
             assert file_handlers[0].level == logging.DEBUG
-            assert file_handlers[0].baseFilename == str(lf)
+            # FileHandler stores os.path.abspath(filename); normalise both sides
+            # so the comparison is robust on Windows (GetFullPathName may expand
+            # 8.3 short names or adjust separators).
+            assert file_handlers[0].baseFilename == os.path.abspath(str(lf))
 
     def test_log_file_written_on_emit(self):
         with tempfile.TemporaryDirectory() as tmp:
