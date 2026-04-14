@@ -859,8 +859,7 @@ class TestBaseManagement:
             # Return the stored fingerprint for config get of source_hash
             if (
                 cmd[:3] == ["incus", "config", "get"]
-                and "_META_SOURCE_HASH" not in str(cmd)
-                and "source_hash" in str(cmd)
+                and _META_SOURCE_HASH in cmd
             ):
                 fp = stored_fp or ""
                 return SimpleNamespace(returncode=0, stdout=fp, stderr="")

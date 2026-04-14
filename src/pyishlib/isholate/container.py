@@ -1178,8 +1178,10 @@ def ensure_project_base(
     # Strip any isholate-* devices inherited from the host base.  The host base
     # is supposed to be device-free when stopped, but a stale base from an
     # interrupted earlier run may still carry them; starting a container with a
-    # stale disk device causes "The device already exists" from Incus.
+    # stale disk device causes "The device already exists" from Incus.  The
+    # assertion ensures a silently-failing removal cannot leave devices behind.
     _remove_isholate_devices(name)
+    _assert_no_isholate_devices(name)
     started = False
 
     try:
