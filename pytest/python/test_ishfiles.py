@@ -676,7 +676,7 @@ class TestInitCommand:
 
 
 # ---------------------------------------------------------------------------
-# --isholate flag / data.toml isholate overrides
+# --isholate flag / config-local.toml isholate overrides
 # ---------------------------------------------------------------------------
 
 
@@ -684,12 +684,12 @@ class TestDataTemplateIsholate:
     """Tests for process_data_template with isholate=True."""
 
     def _make_cfg(self, tmp_path, data_toml_content: str):
-        """Return an IshConfig pointing at a tmp source dir with given data.toml."""
+        """Return an IshConfig pointing at a tmp source dir with given config-local.toml."""
         from pyishlib.ishfiles.config import load_config
 
         src = tmp_path / "source"
         (src / "ishconfig").mkdir(parents=True)
-        (src / "ishconfig" / "data.toml").write_text(data_toml_content)
+        (src / "ishconfig" / "config-local.toml").write_text(data_toml_content)
         tgt = tmp_path / "target"
         tgt.mkdir()
         cfg_path = tmp_path / "config.toml"
@@ -1648,7 +1648,7 @@ class TestProcessDataTemplate:
         )
 
     def test_no_data_toml_is_a_noop(self):
-        """process_data_template() does nothing if no data.toml exists."""
+        """process_data_template() does nothing if no config-local.toml exists."""
         from pyishlib.ishfiles.data import process_data_template
 
         with tempfile.TemporaryDirectory() as src:
@@ -1665,7 +1665,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
             )
             cfg = self._make_cfg(src)
@@ -1683,7 +1683,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
             )
             cfg = self._make_cfg(src)
@@ -1700,7 +1700,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
             )
             config_path = Path(cfg_dir) / "config.toml"
@@ -1729,7 +1729,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[isWork]\nprompt = "Is this a work machine?"\ndefault = "false"\ntype = "bool"\n',
             )
             cfg = self._make_cfg(src)
@@ -1750,7 +1750,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[isWork]\nprompt = "Is this a work machine?"\ndefault = "false"\ntype = "bool"\n',
             )
             cfg = self._make_cfg(src)
@@ -1769,7 +1769,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[isWork]\nprompt = "Is this a work machine?"\ndefault = "false"\ntype = "bool"\n',
             )
             config_path = Path(cfg_dir) / "config.toml"
@@ -1803,7 +1803,7 @@ class TestProcessDataTemplate:
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
-                ishconfig / "data.toml",
+                ishconfig / "config-local.toml",
                 '[email]\nprompt = "Email address"\ndefault = "user@example.com"\n',
             )
             cfg = self._make_cfg(src)
@@ -1868,6 +1868,71 @@ class TestDataSectionIO:
             text = path.read_text()
             assert 'existing = "kept"' in text
             assert 'added = "new"' in text
+
+
+# ---------------------------------------------------------------------------
+# Repo-level config layer (ishconfig/config.toml)
+# ---------------------------------------------------------------------------
+
+
+class TestRepoConfLayer:
+    """Tests for the repo-level config layer loaded from <source>/ishconfig/config.toml."""
+
+    def _make_cfg(self, tmp_path, repo_cfg_content=None, user_cfg_content=None):
+        """Build an IshConfig with optional repo and user config content."""
+        src = tmp_path / "source"
+        (src / "ishconfig").mkdir(parents=True)
+        if repo_cfg_content is not None:
+            (src / "ishconfig" / "config.toml").write_text(repo_cfg_content)
+        config_path = tmp_path / "user_config.toml"
+        if user_cfg_content is not None:
+            config_path.write_text(user_cfg_content)
+        return load_config(
+            args=SimpleNamespace(
+                home=None,
+                source=str(src),
+                target=str(tmp_path / "target"),
+                config=str(config_path),
+                dry_run=None,
+                verbose=None,
+                debug=None,
+                quiet=None,
+            ),
+            config_file=config_path,
+        )
+
+    def test_repo_conf_is_none_when_file_missing(self, tmp_path):
+        """When ishconfig/config.toml is absent, repo_conf is None."""
+        cfg = self._make_cfg(tmp_path)
+        assert cfg.repo_conf is None
+
+    def test_repo_conf_default_shell_resolved(self, tmp_path):
+        """default_shell from repo config is returned when user config has none."""
+        cfg = self._make_cfg(
+            tmp_path,
+            repo_cfg_content='[ishfiles]\ndefault_shell = "zsh"\n',
+        )
+        assert cfg.get_opt("default_shell") == "zsh"
+
+    def test_user_conf_wins_over_repo_conf(self, tmp_path):
+        """User config takes precedence over repo-level config."""
+        cfg = self._make_cfg(
+            tmp_path,
+            repo_cfg_content='[ishfiles]\ndefault_shell = "zsh"\n',
+            user_cfg_content='[ishfiles]\ndefault_shell = "bash"\n',
+        )
+        assert cfg.get_opt("default_shell") == "bash"
+
+    def test_repo_conf_does_not_set_source(self, tmp_path):
+        """source/target keys in repo config are warned about (not applied) due to schema."""
+        # The repo schema does not include source/target, so they should not
+        # surface on repo_conf even if written to the file.
+        cfg = self._make_cfg(
+            tmp_path,
+            repo_cfg_content='[ishfiles]\ndefault_shell = "zsh"\n',
+        )
+        # repo_conf should not expose 'source' (forbidden by repo schema)
+        assert not hasattr(cfg.repo_conf, "source")
 
 
 class TestRunInstallAvailabilityFiltering:

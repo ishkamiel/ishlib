@@ -4,7 +4,7 @@
   "description": "Schema for ~/.config/ishfiles/config.toml",
   "properties": {
     "data": {
-      "description": "User-defined data variables seeded onto the preprocessing context (populated by interactive prompts from ishconfig/data.toml).",
+      "description": "User-defined data variables seeded onto the preprocessing context (populated by interactive prompts from ishconfig/config-local.toml).",
       "type": "object"
     },
     "ignore": {

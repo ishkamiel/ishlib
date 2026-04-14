@@ -44,6 +44,7 @@ class IshConfig:
     log_level: int = field(default=logging.WARNING)
     args: Any = field(default=None, repr=False, compare=False)
     conf: Any = field(default=None, repr=False, compare=False)
+    repo_conf: Any = field(default=None, repr=False, compare=False)
     defaults: dict = field(default_factory=dict, repr=False, compare=False)
     constants: dict = field(default_factory=dict, repr=False, compare=False)
     context: DotfileContext = field(
@@ -183,26 +184,28 @@ class IshConfig:
         cls,
         args: Optional[Any] = None,
         conf: Optional[Any] = None,
+        repo_conf: Optional[Any] = None,
         defaults: Optional[dict] = None,
     ) -> "IshConfig":
         """Build an ``IshConfig`` from argparse / conf objects.
 
-        The lookup priority is: *args* > *conf* > *defaults* > hardcoded
-        fallback.
+        The lookup priority is: *args* > *conf* > *repo_conf* > *defaults* >
+        hardcoded fallback.
 
-        All three objects are stored so :meth:`get_opt` and attribute
-        access can resolve arbitrary names later.
+        All objects are stored so :meth:`get_opt` and attribute access can
+        resolve arbitrary names later.
 
         Uses a temporary instance internally so that the full
         :meth:`get_opt` resolution chain is applied consistently.
 
         Args:
-            args:     An argparse namespace (or similar object).
-            conf:     A configuration object (e.g. from JSON/TOML).
-            defaults: Optional dict of fallback values.
+            args:      An argparse namespace (or similar object).
+            conf:      A configuration object (e.g. from JSON/TOML).
+            repo_conf: Optional repo-level config (lower priority than *conf*).
+            defaults:  Optional dict of fallback values.
         """
         # Build a temporary instance to leverage get_opt for resolution.
-        tmp = cls(args=args, conf=conf, defaults=defaults or {})
+        tmp = cls(args=args, conf=conf, repo_conf=repo_conf, defaults=defaults or {})
 
         dry_run = tmp.get_opt("dry_run", False)
         if tmp.get_opt("debug", False):
@@ -269,18 +272,21 @@ class IshConfig:
         # Avoid infinite recursion: these are dataclass fields resolved via
         # __dict__ directly.  If we get here for them they truly don't exist
         # yet (e.g. during __init__), so bail out.
-        if name in ("args", "conf", "defaults", "constants", "context"):
+        if name in ("args", "conf", "repo_conf", "defaults", "constants", "context"):
             raise AttributeError(name)
         constants = self.__dict__.get("constants") or {}
         if name in constants:
             return constants[name]
         args = self.__dict__.get("args")
         conf = self.__dict__.get("conf")
+        repo_conf = self.__dict__.get("repo_conf")
         defaults = self.__dict__.get("defaults") or {}
         if args is not None and hasattr(args, name):
             return getattr(args, name)
         if conf is not None and hasattr(conf, name):
             return getattr(conf, name)
+        if repo_conf is not None and hasattr(repo_conf, name):
+            return getattr(repo_conf, name)
         if name in defaults:
             return defaults[name]
         raise AttributeError(
@@ -301,6 +307,8 @@ class IshConfig:
             return getattr(self.args, name)
         if self.conf is not None and hasattr(self.conf, name):
             return getattr(self.conf, name)
+        if self.repo_conf is not None and hasattr(self.repo_conf, name):
+            return getattr(self.repo_conf, name)
         if name in self.defaults:
             return self.defaults[name]
         return None if default is _MISSING else default
