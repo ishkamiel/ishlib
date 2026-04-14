@@ -1116,6 +1116,26 @@ class TestParser:
                         forwarded_args = mock_launch.call_args.args[0]
                         assert forwarded_args.command == ["ls", "-la"]
 
+    def test_main_rejects_empty_run(self):
+        """`isholate --run` with no command must error out, not drop to a shell."""
+        with patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
+        ):
+            with patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=_fake_user_info(),
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    return_value=None,
+                ):
+                    with patch(
+                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    ) as mock_launch:
+                        rc = cli_main(["--run"])
+                        assert rc == 2
+                        mock_launch.assert_not_called()
+
     def test_run_after_positional_is_absorbed_by_positional(self):
         """When a positional command comes first, REMAINDER absorbs --run.
 

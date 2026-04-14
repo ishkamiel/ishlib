@@ -185,9 +185,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="CMD",
         help=(
-            "Run CMD inside the container and exit. Everything after --run is "
-            "treated as the command and its arguments, so isholate flags must "
-            "appear before --run."
+            "Run CMD inside the container and exit. If --run appears before "
+            "any positional command tokens, everything after it is treated "
+            "as the command and its arguments. If positional command parsing "
+            "has already started, --run is treated as part of the command, "
+            "so all isholate flags must appear before the command or before "
+            "--run."
         ),
     )
     parser.add_argument(
@@ -244,6 +247,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --run takes precedence over the positional command form: everything
     # after --run is the command to run inside the container.
     if args.run is not None:
+        if not args.run:
+            print(
+                "isholate: error: --run requires a command to execute",
+                file=sys.stderr,
+            )
+            return 2
         if args.command:
             print(
                 "isholate: error: --run cannot be combined with a positional "
