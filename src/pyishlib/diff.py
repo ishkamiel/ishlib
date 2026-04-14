@@ -28,7 +28,13 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-def print_diff(old: Path, new: Path, old_label: str, new_label: str) -> None:
+def print_diff(
+    old: Path,
+    new: Path,
+    old_label: str,
+    new_label: str,
+    force_python: bool = False,
+) -> None:
     """Print a unified diff between two files.
 
     Tries ``git diff --no-index`` first for coloured output.  Falls back
@@ -36,14 +42,19 @@ def print_diff(old: Path, new: Path, old_label: str, new_label: str) -> None:
 
     The *old_label* and *new_label* are used in the Python fallback's
     ``---`` / ``+++`` headers; git uses the actual file paths instead.
+    Callers that need the labels honoured (e.g. because *old* or *new*
+    is a temporary file that does not represent a meaningful path)
+    should pass ``force_python=True`` to skip the git backend.
 
     Args:
-        old:       Path to the "before" file.
-        new:       Path to the "after" file.
-        old_label: Label for the ``---`` header (Python fallback only).
-        new_label: Label for the ``+++`` header (Python fallback only).
+        old:          Path to the "before" file.
+        new:          Path to the "after" file.
+        old_label:    Label for the ``---`` header (Python fallback only).
+        new_label:    Label for the ``+++`` header (Python fallback only).
+        force_python: When *True*, skip the git backend so the caller-
+                      supplied labels are used verbatim.
     """
-    if _git_diff(old, new):
+    if not force_python and _git_diff(old, new):
         return
     _python_diff(old, new, old_label, new_label)
 

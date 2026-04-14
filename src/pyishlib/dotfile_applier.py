@@ -262,7 +262,7 @@ class DotfileApplier:
         """
         try:
             patch = json.loads(staged_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as err:
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as err:
             log.warning(
                 "mergejson source is not valid JSON, skipping %s: %s",
                 dotfile.source,
@@ -275,7 +275,7 @@ class DotfileApplier:
         if target.exists() and target.is_file():
             try:
                 base = json.loads(target.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as err:
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError) as err:
                 log.warning(
                     "mergejson target is not valid JSON, overwriting %s: %s",
                     target,

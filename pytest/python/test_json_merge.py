@@ -105,3 +105,12 @@ class TestSemanticEqual:
             a.write_text("{}\n")
             b.write_text("not json")
             assert semantic_equal(a, b) is False
+
+    def test_non_utf8_file_returns_false(self):
+        """Binary / non-UTF-8 bytes must not propagate as an exception."""
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.json"
+            b = Path(tmp) / "b.json"
+            a.write_text("{}\n")
+            b.write_bytes(b"\xff\xfe\x00\x00")
+            assert semantic_equal(a, b) is False
