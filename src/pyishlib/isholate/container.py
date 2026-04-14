@@ -84,20 +84,21 @@ def _incus_install_hint() -> str:
 def _check_incus_available() -> Optional[str]:
     """Probe the incus daemon and return setup guidance on failure.
 
-    Returns ``None`` when incus is installed, the daemon is reachable by the
-    current user, and at least one storage pool exists (so ``incus init`` has
-    been run).  Otherwise returns a multi-line, user-facing message (with the
-    ``isholate:`` prefix already applied) describing what to do next.
+    Returns ``None`` when incus is installed and the daemon is reachable by
+    the current user via a successful ``incus info`` probe.  Otherwise
+    returns a multi-line, user-facing message (with the ``isholate:`` prefix
+    already applied) describing what to do next.
 
-    The probe is deliberately cheap — a single ``incus info`` invocation with
-    a short timeout — so the healthy path adds negligible overhead.
+    The probe is deliberately cheap — a single ``incus info`` invocation
+    with a short timeout and no further output inspection — so the healthy
+    path adds negligible overhead.
     """
     if shutil.which("incus") is None:
         return (
             "isholate: error: the 'incus' command was not found on PATH.\n"
             f"{_incus_install_hint()}\n"
             "After installing, run 'sudo incus admin init' and add your user\n"
-            "to the 'incus-admin' group (see below)."
+            "to the 'incus-admin' group."
         )
 
     try:
