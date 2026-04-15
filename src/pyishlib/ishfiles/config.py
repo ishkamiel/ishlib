@@ -22,7 +22,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
-from .._compat import tomllib
+from .._compat import load_toml_file
 from ..ish_config import IshConfig
 
 log = logging.getLogger(__name__)
@@ -185,13 +185,6 @@ def _load_data_section(config_path: Path) -> Dict[str, Any]:
     Returns an empty dict if the file does not exist, TOML is unavailable,
     or there is no ``[data]`` section.
     """
-    if tomllib is None or not config_path.is_file():
-        return {}
-    try:
-        with open(config_path, "rb") as fh:
-            raw = tomllib.load(fh)
-        result = raw.get("data", {})
-        return result if isinstance(result, dict) else {}
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to read [data] from %s: %s", config_path, exc)
-        return {}
+    raw = load_toml_file(config_path, default={})
+    result = raw.get("data", {}) if isinstance(raw, dict) else {}
+    return result if isinstance(result, dict) else {}

@@ -20,7 +20,7 @@ try:
 except ImportError:
     HAS_JSONSCHEMA = False
 
-from ._compat import HAS_TOML, tomllib  # HAS_TOML re-exported for callers
+from ._compat import HAS_TOML, load_toml_file_strict  # noqa: F401  # HAS_TOML re-exported for callers
 
 log = logging.getLogger(__name__)
 
@@ -122,17 +122,5 @@ class InstallerConfigTOML(InstallerConfig):
     """Class for handling installer configuration from a TOML file"""
 
     def __init__(self, config_fn: Path, cfg: Optional[Any] = None, **kwargs) -> None:
-        if not HAS_TOML:
-            raise ImportError(
-                "TOML support requires Python 3.11+ (tomllib) "
-                "or the 'tomli' package for older Python versions"
-            )
-
-        # Load TOML config
-        try:
-            with open(config_fn, "rb") as config_fh:
-                config: Mapping[str, Any] = tomllib.load(config_fh)
-        except tomllib.TOMLDecodeError as e:
-            raise ValueError(f"Config file is not valid TOML: {e}") from e
-
+        config: Mapping[str, Any] = load_toml_file_strict(config_fn)
         super().__init__(config=config, config_fn=config_fn, cfg=cfg, **kwargs)

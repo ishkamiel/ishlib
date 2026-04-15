@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from .dotfile_context import DotfileContext
 
-from ._compat import tomllib
+from ._compat import load_toml_file
 
 _log = logging.getLogger(__name__)
 
@@ -123,17 +123,9 @@ class IshConfig:
         if not path.is_file():
             _log.debug("Config file not found: %s", path)
             return None
-        if tomllib is None:
-            _log.warning(
-                "TOML support unavailable (need Python 3.11+ or 'tomli'); ignoring %s",
-                path,
-            )
-            return None
 
-        with open(path, "rb") as fh:
-            data = tomllib.load(fh)
-
-        if not data:
+        data = load_toml_file(path, default=None, warn_missing_toml=True)
+        if data is None:
             return None
 
         if schema is None:

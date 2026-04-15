@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from .._compat import tomllib
+from .._compat import load_toml_file
 from ..ish_config import IshConfig
 from ..userio import normalise_bool, normalise_str, prompt_yes_no_always
 
@@ -194,14 +194,8 @@ def _load_template(path: Path) -> Dict[str, Dict[str, Any]]:
     Returns a dict mapping variable names to their spec dicts
     (with ``prompt`` and ``default`` keys).  Returns empty dict on error.
     """
-    if tomllib is None:
-        log.warning("TOML support unavailable; cannot load data template %s", path)
-        return {}
-    try:
-        with open(path, "rb") as fh:
-            raw = tomllib.load(fh)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to load data template %s: %s", path, exc)
+    raw = load_toml_file(path, default=None, warn_missing_toml=True)
+    if raw is None:
         return {}
 
     result: Dict[str, Dict[str, Any]] = {}
