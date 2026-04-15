@@ -34,7 +34,9 @@ from pyishlib.isholate.config import (
     load_project_config,
 )
 from pyishlib.isholate.container import (
+    _CLAUDE_ALLOW_HOSTS,
     _META_SOURCE_HASH,
+    _apply_network_restrictions,
     _assert_no_isholate_devices,
     _check_incus_available,
     _host_base_name,
@@ -78,6 +80,7 @@ def _make_args(**overrides):
         "rw_cwd": False,
         "ro_cwd": False,
         "claude": False,
+        "no_network": False,
         "no_host_ishfiles": False,
         "no_project_ishfiles": False,
         "no_cache": False,
@@ -2069,3 +2072,170 @@ class TestCliIncusPreflight:
         # Usage text reaches stdout; our guidance string does not.
         assert "usage" in captured.out.lower()
         assert "SHOULD NOT BE PRINTED" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# --no-network flag and _apply_network_restrictions helper
+# ---------------------------------------------------------------------------
+
+
+class TestNoNetworkCliFlag:
+    """The --no-network flag parses and stacks with --claude."""
+
+    def test_flag_defaults_false(self):
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.no_network is False
+
+    def test_flag_sets_true(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-network"])
+        assert args.no_network is True
+
+    def test_flag_stacks_with_claude(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-network", "--claude"])
+        assert args.no_network is True
+        assert args.claude is True
+
+
+class TestApplyNetworkRestrictions:
+    """Unit tests for _apply_network_restrictions command sequencing."""
+
+    @staticmethod
+    def _collect_cmds(calls):
+        """Flatten Mock call() objects into their cmd argv lists."""
+        cmds = []
+        for c in calls:
+            if c.args:
+                cmds.append(list(c.args[0]))
+            elif "cmd" in c.kwargs:
+                cmds.append(list(c.kwargs["cmd"]))
+        return cmds
+
+    def test_no_claude_brings_eth0_down(self):
+        """Without --claude we just disable eth0; no iptables involvement."""
+        with patch("pyishlib.isholate.container._run") as mock_run, patch(
+            "pyishlib.isholate.container._run_checked"
+        ) as mock_checked:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            mock_checked.return_value = SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            )
+            _apply_network_restrictions("ctr", allow_claude=False)
+
+        run_cmds = self._collect_cmds(mock_run.call_args_list)
+        checked_cmds = self._collect_cmds(mock_checked.call_args_list)
+        all_cmds = run_cmds + checked_cmds
+
+        # eth0 gets brought down via _run_checked.
+        eth0_down = [
+            cmd
+            for cmd in checked_cmds
+            if cmd[:3] == ["incus", "exec", "ctr"]
+            and "ip" in cmd
+            and "down" in cmd
+        ]
+        assert len(eth0_down) == 1, (
+            f"expected one eth0-down call, got {checked_cmds}"
+        )
+
+        # IPv6 gets disabled via _run (best-effort, check=False).
+        ipv6_off = [
+            cmd
+            for cmd in run_cmds
+            if any("disable_ipv6" in token for token in cmd)
+        ]
+        assert len(ipv6_off) == 1
+
+        # No iptables or apt machinery on the no-claude path.
+        for cmd in all_cmds:
+            joined = " ".join(cmd)
+            assert "iptables" not in joined
+            assert "apt-get" not in joined
+
+    def test_claude_installs_iptables_and_allowlist(self):
+        """With --claude we install iptables (guarded) and apply the allowlist."""
+        with patch("pyishlib.isholate.container._run") as mock_run, patch(
+            "pyishlib.isholate.container._run_checked"
+        ) as mock_checked:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            mock_checked.return_value = SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            )
+            _apply_network_restrictions("ctr", allow_claude=True)
+
+        checked_cmds = self._collect_cmds(mock_checked.call_args_list)
+
+        # The install step must be guarded by `command -v iptables` so
+        # a base with iptables already present skips the apt run.
+        install_shells = [
+            cmd
+            for cmd in checked_cmds
+            if any("command -v iptables" in tok for tok in cmd)
+        ]
+        assert len(install_shells) == 1, (
+            "expected one guarded iptables install step"
+        )
+        install_script = install_shells[0][-1]
+        assert "apt-get install" in install_script
+
+        # There's a single shell script that builds the iptables allowlist.
+        rule_scripts = [
+            cmd
+            for cmd in checked_cmds
+            if cmd[:5] == ["incus", "exec", "ctr", "--", "/bin/sh"]
+            and any("iptables -P OUTPUT DROP" in tok for tok in cmd)
+        ]
+        assert len(rule_scripts) == 1, (
+            f"expected one iptables rule script, got {checked_cmds}"
+        )
+        script = rule_scripts[0][-1]
+
+        # Each Claude allowlist host gets an ACCEPT rule on 443.
+        for host in _CLAUDE_ALLOW_HOSTS:
+            assert (
+                f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
+                in script
+            ), f"missing allow rule for {host}"
+
+        # Loopback, conntrack, and DNS must be allowed.
+        assert "iptables -A INPUT -i lo -j ACCEPT" in script
+        assert "iptables -A OUTPUT -o lo -j ACCEPT" in script
+        assert "ESTABLISHED,RELATED" in script
+
+        # DNS is pinned to /etc/resolv.conf nameservers (not wide-open port
+        # 53) to prevent DNS-based exfiltration.
+        assert "/etc/resolv.conf" in script
+        assert "nameserver" in script
+        assert '-d "$ns" -p udp --dport 53 -j ACCEPT' in script
+        assert '-d "$ns" -p tcp --dport 53 -j ACCEPT' in script
+        # Ensure we did NOT leave an any-destination DNS hole.
+        assert "iptables -A OUTPUT -p udp --dport 53 -j ACCEPT" not in script
+        assert "iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT" not in script
+
+        # DROP policy comes *after* the ACCEPT rules: check textual order.
+        drop_pos = script.index("iptables -P OUTPUT DROP")
+        for host in _CLAUDE_ALLOW_HOSTS:
+            host_pos = script.index(
+                f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
+            )
+            assert host_pos < drop_pos, (
+                f"ACCEPT for {host} must come before DROP policy"
+            )
+
+    def test_claude_disables_ipv6(self):
+        """The claude path also disables IPv6 so one rule-set is enough."""
+        with patch("pyishlib.isholate.container._run") as mock_run, patch(
+            "pyishlib.isholate.container._run_checked"
+        ):
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            _apply_network_restrictions("ctr", allow_claude=True)
+
+        run_cmds = self._collect_cmds(mock_run.call_args_list)
+        ipv6_off = [
+            cmd
+            for cmd in run_cmds
+            if any("disable_ipv6" in tok for tok in cmd)
+        ]
+        assert len(ipv6_off) == 1

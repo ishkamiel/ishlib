@@ -670,6 +670,162 @@ def _add_claude_mounts(
 
 
 # ---------------------------------------------------------------------------
+# Network isolation
+# ---------------------------------------------------------------------------
+
+# Hosts the Claude CLI needs to reach when running inside a locked-down
+# container.  iptables resolves each hostname at rule-add time and expands
+# to one rule per A/AAAA record, pinning the IPs for the session.
+_CLAUDE_ALLOW_HOSTS = (
+    "api.anthropic.com",
+    "statsig.anthropic.com",
+    "sentry.io",
+    "claude.ai",
+    "console.anthropic.com",
+)
+
+
+def _apply_network_restrictions(
+    name: str, *, allow_claude: bool, quiet: bool = False
+) -> None:
+    """Lock down network egress inside the ephemeral container.
+
+    All changes are made inside the container via ``incus exec`` — the host
+    firewall and Incus bridge are never touched.  This runs after
+    provisioning, so the provisioning phase (apt, ishfiles) still has full
+    network access.
+
+    Args:
+        name:         Incus container name.
+        allow_claude: If True, keep the NIC up and install an iptables
+                      allowlist so the Claude CLI can reach its API
+                      endpoints (see ``_CLAUDE_ALLOW_HOSTS``); block
+                      everything else.  If False, bring ``eth0`` down
+                      and disable IPv6 — a simpler, package-free cut-off.
+        quiet:        Suppress isholate progress messages.
+    """
+    if not allow_claude:
+        _say(
+            f"--no-network: bringing eth0 down inside '{name}'...",
+            quiet=quiet,
+        )
+        # Disable IPv6 first so lingering link-local chatter stops too.
+        _run(
+            [
+                "incus",
+                "exec",
+                name,
+                "--",
+                "/bin/sh",
+                "-c",
+                "sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true",
+            ],
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+        _run_checked(
+            ["incus", "exec", name, "--", "ip", "link", "set", "eth0", "down"],
+            "disable eth0 (--no-network)",
+            stdin=subprocess.DEVNULL,
+        )
+        return
+
+    _say(
+        f"--no-network --claude: installing egress allowlist in '{name}' "
+        "(Claude API hosts only)...",
+        quiet=quiet,
+    )
+
+    # Make sure iptables is available.  Guarded so repeated runs on a
+    # base that already has it don't re-run apt.
+    _run_checked(
+        [
+            "incus",
+            "exec",
+            name,
+            "--env",
+            "DEBIAN_FRONTEND=noninteractive",
+            "--",
+            "/bin/sh",
+            "-c",
+            "if ! command -v iptables >/dev/null 2>&1; then "
+            "  if command -v apt-get >/dev/null 2>&1; then "
+            "    apt-get update -qq && "
+            "    apt-get install -qq -y --no-install-recommends iptables; "
+            "  elif command -v dnf >/dev/null 2>&1; then "
+            "    dnf install -y iptables; "
+            "  else "
+            "    echo 'isholate: no package manager found for iptables' >&2; "
+            "    exit 1; "
+            "  fi; "
+            "fi",
+        ],
+        "install iptables (--no-network --claude)",
+        stdin=subprocess.DEVNULL,
+    )
+
+    # Disable IPv6 so we only have to manage one rule set.
+    _run(
+        [
+            "incus",
+            "exec",
+            name,
+            "--",
+            "/bin/sh",
+            "-c",
+            "sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true",
+        ],
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+
+    # Build the rule script.  ACCEPT rules are added *before* the DROP
+    # policy so hostname resolution for -d <host> doesn't get blocked by
+    # our own rules while the script is mid-flight.
+    #
+    # DNS egress is restricted to the resolvers the container is *already*
+    # configured to use (parsed from /etc/resolv.conf — typically the Incus
+    # bridge's dnsmasq).  Allowing port 53 to arbitrary destinations would
+    # let a malicious tool tunnel data over DNS to attacker-controlled
+    # resolvers and bypass the allowlist; pinning to the configured
+    # resolvers closes that channel while still letting the Claude CLI
+    # re-resolve CDN-backed hosts as their IPs rotate.
+    accept_host_cmds = " && ".join(
+        f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
+        for host in _CLAUDE_ALLOW_HOSTS
+    )
+    rule_script = (
+        # Flush any prior state.
+        "iptables -F && iptables -X && "
+        # Loopback.
+        "iptables -A INPUT -i lo -j ACCEPT && "
+        "iptables -A OUTPUT -o lo -j ACCEPT && "
+        # Conntrack — allow replies to our own outbound connections.
+        "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED "
+        "-j ACCEPT && "
+        "iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED "
+        "-j ACCEPT && "
+        # DNS — only to resolvers listed in /etc/resolv.conf.
+        "for ns in $(awk '/^[[:space:]]*nameserver[[:space:]]/ "
+        "{print $2}' /etc/resolv.conf 2>/dev/null); do "
+        'iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT && '
+        'iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT '
+        "|| exit 1; "
+        "done && "
+        # Claude API allowlist (HTTPS only).
+        f"{accept_host_cmds} && "
+        # Default DROP last.
+        "iptables -P OUTPUT DROP && "
+        "iptables -P INPUT DROP"
+    )
+    _run_checked(
+        ["incus", "exec", name, "--", "/bin/sh", "-c", rule_script],
+        "apply iptables egress allowlist (--no-network --claude)",
+        stdin=subprocess.DEVNULL,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Provisioning helpers (shared by both one-shot and base-creation paths)
 # ---------------------------------------------------------------------------
 
@@ -1435,6 +1591,13 @@ def _launch_ephemeral_from_base(
         if getattr(args, "claude", False):
             _add_claude_mounts(name, home, username, quiet=quiet)
 
+        if getattr(args, "no_network", False):
+            _apply_network_restrictions(
+                name,
+                allow_claude=getattr(args, "claude", False),
+                quiet=quiet,
+            )
+
         exec_cwd = str(cwd) if (args.rw_cwd or args.ro_cwd) else f"/home/{username}"
         exec_cmd = [
             "incus",
@@ -1601,6 +1764,13 @@ def _launch_one_shot(
 
         if getattr(args, "claude", False):
             _add_claude_mounts(name, home, username, quiet=quiet)
+
+        if getattr(args, "no_network", False):
+            _apply_network_restrictions(
+                name,
+                allow_claude=getattr(args, "claude", False),
+                quiet=quiet,
+            )
 
         exec_cwd = str(cwd) if (args.rw_cwd or args.ro_cwd) else f"/home/{username}"
         exec_cmd = [
