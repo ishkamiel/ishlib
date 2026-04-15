@@ -2352,6 +2352,113 @@ def _pull_container_logs(
 
 
 # ---------------------------------------------------------------------------
+# Container discovery (shared by purge / list / stop)
+# ---------------------------------------------------------------------------
+
+
+def _classify_isholate_name(
+    name: str, *, safe_user: "Optional[str]" = None
+) -> "Optional[tuple[str, str]]":
+    """Classify *name* as an isholate container.
+
+    When *safe_user* is given (already sanitised via :func:`_sanitize_for_name`),
+    the prefix is matched against the expected canonical form for that user
+    and the owner is returned verbatim.  Otherwise a best-effort heuristic is
+    used to extract the owner (ambiguous for host-base containers whose image
+    tag may contain hyphens — treated as ``"?"`` in that case).
+
+    Returns ``(kind, owner)`` where *kind* is one of ``"host-base"``,
+    ``"project-base"``, or ``"ephemeral"``.  Returns ``None`` for names that
+    don't look like isholate containers or don't belong to *safe_user*.
+    """
+    if not name.startswith("isholate-"):
+        return None
+    rest = name[len("isholate-") :]
+
+    # User-scoped matching uses exact prefixes.
+    if safe_user is not None:
+        if rest.startswith(f"base-{safe_user}-"):
+            return "host-base", safe_user
+        if rest.startswith(f"pbase-{safe_user}-"):
+            return "project-base", safe_user
+        if rest.startswith(f"{safe_user}-"):
+            return "ephemeral", safe_user
+        return None
+
+    # All-users heuristic (best effort — owner may be approximate for host-base).
+    if rest.startswith("base-"):
+        tail = rest[len("base-") :]
+        # Canonical form: <owner>-<image-tag>. Owner and image-tag can both
+        # contain '-', so we cannot recover owner unambiguously. Use the
+        # leading segment as a best-effort display value.
+        owner = tail.split("-", 1)[0] if "-" in tail else tail
+        return "host-base", owner or "?"
+    if rest.startswith("pbase-"):
+        tail = rest[len("pbase-") :]
+        # Canonical form: <owner>-<8-hex>. Strip the trailing hex chunk to
+        # recover owner.
+        if "-" not in tail:
+            return None
+        owner = tail.rsplit("-", 1)[0]
+        return "project-base", owner or "?"
+    # Ephemeral: <owner>-<6-char-suffix>.
+    if "-" not in rest:
+        return None
+    owner = rest.rsplit("-", 1)[0]
+    return "ephemeral", owner or "?"
+
+
+def _find_isholate_containers(
+    username: str,
+    *,
+    include_bases: bool = False,
+    all_users: bool = False,
+) -> "List[dict]":
+    """Return isholate containers known to Incus.
+
+    Calls ``incus list --format=json`` and classifies entries by prefix.  When
+    *all_users* is False (the default), only containers owned by *username*
+    (after :func:`_sanitize_for_name`) are returned.
+
+    Each returned dict has keys ``name``, ``status``, ``kind``, and ``owner``.
+    ``kind`` is one of ``"ephemeral"``, ``"host-base"``, ``"project-base"``.
+    ``status`` is passed through verbatim from Incus (e.g. ``"Running"``,
+    ``"Stopped"``, ``"Frozen"``).
+    """
+    safe_user = _sanitize_for_name(username)
+
+    result = subprocess.run(
+        ["incus", "list", "--format=json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    entries = []
+    for c in json.loads(result.stdout):
+        name = c.get("name", "")
+        classified = _classify_isholate_name(
+            name, safe_user=None if all_users else safe_user
+        )
+        if classified is None:
+            continue
+        kind, owner = classified
+        if kind in ("host-base", "project-base") and not include_bases:
+            continue
+        entries.append(
+            {
+                "name": name,
+                "status": c.get("status", ""),
+                "kind": kind,
+                "owner": owner,
+            }
+        )
+
+    entries.sort(key=lambda e: e["name"])
+    return entries
+
+
+# ---------------------------------------------------------------------------
 # Purge
 # ---------------------------------------------------------------------------
 
@@ -2363,7 +2470,7 @@ def purge_containers(
 
     By default only ephemeral containers are deleted; persistent base
     containers are preserved so the cache remains valid.  Pass
-    ``include_bases=True`` (via ``--purge-bases``) to also remove them.
+    ``include_bases=True`` (via ``--purge --bases``) to also remove them.
 
     Args:
         username:      The host username whose containers should be purged.
@@ -2374,27 +2481,8 @@ def purge_containers(
     Returns:
         0 if all deletions succeeded, 1 if any failed.
     """
-    safe_user = _sanitize_for_name(username)
-    ephemeral_prefix = f"isholate-{safe_user}-"
-    host_base_prefix = f"isholate-base-{safe_user}-"
-    pbase_prefix = f"isholate-pbase-{safe_user}-"
-
-    result = subprocess.run(
-        ["incus", "list", "--format=json"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    all_names = [c["name"] for c in json.loads(result.stdout)]
-
-    containers = []
-    for n in all_names:
-        if n.startswith(host_base_prefix) or n.startswith(pbase_prefix):
-            if include_bases:
-                containers.append(n)
-        elif n.startswith(ephemeral_prefix):
-            containers.append(n)
+    entries = _find_isholate_containers(username, include_bases=include_bases)
+    containers = [e["name"] for e in entries]
 
     if not containers:
         kind = (
@@ -2409,6 +2497,166 @@ def purge_containers(
         r = _run(["incus", "delete", name, "--force"], check=False)
         if r.returncode != 0:
             print(f"isholate: failed to delete {name}", file=sys.stderr)
+            failed = True
+
+    return 1 if failed else 0
+
+
+# ---------------------------------------------------------------------------
+# List
+# ---------------------------------------------------------------------------
+
+
+_KIND_LABELS = {
+    "ephemeral": "ephemeral",
+    "host-base": "host-base",
+    "project-base": "project-base",
+}
+
+
+def list_containers(
+    username: str,
+    *,
+    all_users: bool = False,
+    running_only: bool = False,
+    include_bases: bool = True,
+) -> int:
+    """Print a table of isholate containers to stdout.
+
+    The table is the command's product output (per the logging convention),
+    so it goes through :func:`print`.  When no containers match the filters,
+    the function logs an INFO message and prints nothing.
+
+    Args:
+        username:      Host username to filter by (ignored when *all_users*).
+        all_users:     When True, show containers for all users and add an
+                       ``USER`` column.
+        running_only:  When True, hide containers whose status is not
+                       ``Running``.
+        include_bases: When False, hide host-base and project-base
+                       containers (only show ephemerals).
+
+    Returns:
+        ``0`` on success.
+    """
+    entries = _find_isholate_containers(
+        username, include_bases=include_bases, all_users=all_users
+    )
+
+    if running_only:
+        entries = [e for e in entries if e["status"].lower() == "running"]
+
+    if not entries:
+        log.info("no isholate containers found")
+        return 0
+
+    show_user = all_users
+    columns: List[tuple] = [
+        ("NAME", lambda e: e["name"]),
+        ("STATE", lambda e: e["status"] or "-"),
+        ("KIND", lambda e: _KIND_LABELS.get(e["kind"], e["kind"])),
+    ]
+    if show_user:
+        columns.append(("USER", lambda e: e["owner"]))
+
+    # Compute column widths.
+    widths = []
+    for header, fn in columns:
+        w = len(header)
+        for e in entries:
+            w = max(w, len(fn(e)))
+        widths.append(w)
+
+    def _format_row(cells: List[str]) -> str:
+        parts = []
+        for i, cell in enumerate(cells):
+            if i == len(cells) - 1:
+                parts.append(cell)
+            else:
+                parts.append(cell.ljust(widths[i]))
+        return "  ".join(parts)
+
+    print(_format_row([header for header, _ in columns]))
+    for e in entries:
+        print(_format_row([fn(e) for _, fn in columns]))
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Stop
+# ---------------------------------------------------------------------------
+
+
+def stop_containers(
+    username: str,
+    names: "Optional[List[str]]" = None,
+    *,
+    include_bases: bool = False,
+) -> int:
+    """Stop running isholate containers.
+
+    With explicit *names*, each name is resolved against Incus state.
+    Containers that don't exist are reported as errors; already-stopped
+    containers are a no-op logged at INFO.
+
+    Without *names*, every running ephemeral belonging to *username* is
+    stopped.  When *include_bases* is True, running host-base and
+    project-base containers for *username* are also stopped.
+
+    Args:
+        username:      Host username (used when *names* is empty, and to
+                       produce the "no containers" message).
+        names:         Optional explicit container names to stop.
+        include_bases: When *names* is empty, also stop running bases.
+
+    Returns:
+        ``0`` if every targeted container stopped cleanly (or was already
+        stopped); ``1`` if any stop failed or any requested name was unknown.
+    """
+    # Always look up full state so we can distinguish unknown / already-stopped.
+    entries = _find_isholate_containers(username, include_bases=True)
+    by_name = {e["name"]: e for e in entries}
+
+    if names:
+        targets: List[str] = []
+        failed = False
+        for requested in names:
+            e = by_name.get(requested)
+            if e is None:
+                log.error("no such isholate container: %s", requested)
+                failed = True
+                continue
+            if e["status"].lower() != "running":
+                log.info("%s is already stopped", requested)
+                continue
+            targets.append(requested)
+    else:
+        kinds = (
+            {"ephemeral", "host-base", "project-base"}
+            if include_bases
+            else {"ephemeral"}
+        )
+        targets = [
+            e["name"]
+            for e in entries
+            if e["kind"] in kinds and e["status"].lower() == "running"
+        ]
+        failed = False
+        if not targets:
+            descr = (
+                "isholate containers"
+                if include_bases
+                else "ephemeral isholate containers"
+            )
+            log.info("no running %s found for user '%s'", descr, username)
+            return 0
+
+    for name in targets:
+        log.info("stopping %s...", name)
+        r = _run(["incus", "stop", name, "--force"], check=False)
+        if r.returncode != 0:
+            log.error("failed to stop %s", name)
             failed = True
 
     return 1 if failed else 0

@@ -50,6 +50,7 @@ from pyishlib.isholate.container import (
     _check_incus_available,
     _claude_firewall_rules_in_place,
     _ensure_claude_network,
+    _find_isholate_containers,
     _host_base_name,
     _image_tag,
     _install_claude_firewall,
@@ -64,7 +65,9 @@ from pyishlib.isholate.container import (
     generate_name,
     get_host_user_info,
     launch_and_exec,
+    list_containers,
     purge_containers,
+    stop_containers,
 )
 
 # ---------------------------------------------------------------------------
@@ -539,6 +542,333 @@ class TestPurgeContainers:
     def test_no_containers_returns_zero(self):
         rc, _ = self._run_purge("nobody", [])
         assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# _find_isholate_containers
+# ---------------------------------------------------------------------------
+
+
+def _fake_incus_list(containers):
+    """Return a fake subprocess.run replacement yielding *containers* as JSON."""
+
+    def _inner(cmd, **kwargs):
+        import json as _json
+
+        return SimpleNamespace(
+            returncode=0, stdout=_json.dumps(containers), stderr=""
+        )
+
+    return _inner
+
+
+class TestFindIsholateContainers:
+    def test_filters_by_user(self):
+        username = "alice"
+        existing = [
+            {"name": generate_name(username), "status": "Running"},
+            {"name": generate_name("bob"), "status": "Running"},
+            {"name": "not-an-isholate-container", "status": "Running"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            entries = _find_isholate_containers(username)
+
+        names = [e["name"] for e in entries]
+        assert len(entries) == 1
+        assert names[0].startswith("isholate-alice-")
+        assert entries[0]["kind"] == "ephemeral"
+        assert entries[0]["status"] == "Running"
+        assert entries[0]["owner"] == "alice"
+
+    def test_include_bases_false_hides_bases(self):
+        username = "alice"
+        existing = [
+            {"name": generate_name(username), "status": "Running"},
+            {"name": _host_base_name(username, _FAKE_IMAGE), "status": "Stopped"},
+            {"name": _project_base_name(username, Path("/p")), "status": "Stopped"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            entries = _find_isholate_containers(username, include_bases=False)
+
+        assert len(entries) == 1
+        assert entries[0]["kind"] == "ephemeral"
+
+    def test_include_bases_true_shows_bases(self):
+        username = "alice"
+        host_base = _host_base_name(username, _FAKE_IMAGE)
+        pbase = _project_base_name(username, Path("/p"))
+        existing = [
+            {"name": generate_name(username), "status": "Running"},
+            {"name": host_base, "status": "Stopped"},
+            {"name": pbase, "status": "Stopped"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            entries = _find_isholate_containers(username, include_bases=True)
+
+        kinds = {e["kind"] for e in entries}
+        assert kinds == {"ephemeral", "host-base", "project-base"}
+
+    def test_all_users_skips_user_filter(self):
+        existing = [
+            {"name": generate_name("alice"), "status": "Running"},
+            {"name": generate_name("bob"), "status": "Stopped"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            entries = _find_isholate_containers("carol", all_users=True)
+
+        owners = {e["owner"] for e in entries}
+        assert owners == {"alice", "bob"}
+        assert all(e["kind"] == "ephemeral" for e in entries)
+
+    def test_non_isholate_names_are_skipped(self):
+        existing = [
+            {"name": "other-container", "status": "Running"},
+            {"name": "isholate-", "status": "Running"},  # malformed
+            {"name": "isholate", "status": "Running"},  # also malformed
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            entries = _find_isholate_containers("alice", all_users=True)
+
+        assert entries == []
+
+    def test_entries_sorted_by_name(self):
+        username = "alice"
+        # Craft names with predictable ordering.
+        existing = [
+            {"name": f"isholate-{username}-zzz", "status": "Running"},
+            {"name": f"isholate-{username}-aaa", "status": "Running"},
+            {"name": f"isholate-{username}-mmm", "status": "Running"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            entries = _find_isholate_containers(username)
+
+        names = [e["name"] for e in entries]
+        assert names == sorted(names)
+
+
+# ---------------------------------------------------------------------------
+# list_containers
+# ---------------------------------------------------------------------------
+
+
+class TestListContainers:
+    def test_empty_returns_zero_and_no_stdout(self, capsys):
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list([]),
+        ):
+            rc = list_containers("alice")
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_prints_table_with_headers(self, capsys):
+        username = "alice"
+        ephemeral = generate_name(username)
+        existing = [
+            {"name": ephemeral, "status": "Running"},
+            {"name": _host_base_name(username, _FAKE_IMAGE), "status": "Stopped"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            rc = list_containers(username)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "NAME" in out
+        assert "STATE" in out
+        assert "KIND" in out
+        assert ephemeral in out
+        assert "ephemeral" in out
+        assert "host-base" in out
+        assert "Running" in out
+        assert "Stopped" in out
+
+    def test_running_only_filters(self, capsys):
+        username = "alice"
+        ephemeral_running = generate_name(username)
+        ephemeral_stopped = generate_name(username)
+        # generate_name is random, ensure the two names differ.
+        if ephemeral_running == ephemeral_stopped:
+            ephemeral_stopped = ephemeral_stopped + "2"
+        existing = [
+            {"name": ephemeral_running, "status": "Running"},
+            {"name": ephemeral_stopped, "status": "Stopped"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            rc = list_containers(username, running_only=True)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert ephemeral_running in out
+        assert ephemeral_stopped not in out
+
+    def test_no_bases_hides_bases(self, capsys):
+        username = "alice"
+        ephemeral = generate_name(username)
+        host_base = _host_base_name(username, _FAKE_IMAGE)
+        existing = [
+            {"name": ephemeral, "status": "Running"},
+            {"name": host_base, "status": "Stopped"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            list_containers(username, include_bases=False)
+        out = capsys.readouterr().out
+        assert ephemeral in out
+        assert host_base not in out
+
+    def test_all_users_adds_user_column(self, capsys):
+        existing = [
+            {"name": generate_name("alice"), "status": "Running"},
+            {"name": generate_name("bob"), "status": "Running"},
+        ]
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            list_containers("carol", all_users=True)
+        out = capsys.readouterr().out
+        assert "USER" in out
+        assert "alice" in out
+        assert "bob" in out
+
+
+# ---------------------------------------------------------------------------
+# stop_containers
+# ---------------------------------------------------------------------------
+
+
+class TestStopContainers:
+    def _run_stop(self, username, existing_containers, *, names=None,
+                  include_bases=False):
+        """Invoke stop_containers with mocked incus list + incus stop."""
+        stop_calls = []
+
+        def fake_run(cmd, **kwargs):
+            stop_calls.append(list(cmd))
+            return SimpleNamespace(returncode=0)
+
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing_containers),
+        ):
+            with patch(
+                "pyishlib.isholate.container._run", side_effect=fake_run
+            ):
+                rc = stop_containers(
+                    username, names=names, include_bases=include_bases
+                )
+        return rc, stop_calls
+
+    def test_no_names_stops_all_running_ephemerals(self):
+        username = "alice"
+        running = generate_name(username)
+        stopped = generate_name(username)
+        if stopped == running:
+            stopped = stopped + "2"
+        host_base = _host_base_name(username, _FAKE_IMAGE)
+        existing = [
+            {"name": running, "status": "Running"},
+            {"name": stopped, "status": "Stopped"},
+            {"name": host_base, "status": "Running"},
+        ]
+        rc, calls = self._run_stop(username, existing)
+        assert rc == 0
+        stopped_names = [c[2] for c in calls if c[:2] == ["incus", "stop"]]
+        assert running in stopped_names
+        assert stopped not in stopped_names
+        # Bases are NOT stopped without --all.
+        assert host_base not in stopped_names
+
+    def test_no_names_no_running_returns_zero(self):
+        username = "alice"
+        existing = [{"name": generate_name(username), "status": "Stopped"}]
+        rc, calls = self._run_stop(username, existing)
+        assert rc == 0
+        stopped = [c for c in calls if c[:2] == ["incus", "stop"]]
+        assert stopped == []
+
+    def test_include_bases_also_stops_running_bases(self):
+        username = "alice"
+        ephemeral = generate_name(username)
+        host_base = _host_base_name(username, _FAKE_IMAGE)
+        existing = [
+            {"name": ephemeral, "status": "Running"},
+            {"name": host_base, "status": "Running"},
+        ]
+        rc, calls = self._run_stop(username, existing, include_bases=True)
+        assert rc == 0
+        stopped_names = [c[2] for c in calls if c[:2] == ["incus", "stop"]]
+        assert ephemeral in stopped_names
+        assert host_base in stopped_names
+
+    def test_explicit_name_running(self):
+        username = "alice"
+        name = generate_name(username)
+        existing = [{"name": name, "status": "Running"}]
+        rc, calls = self._run_stop(username, existing, names=[name])
+        assert rc == 0
+        stopped_names = [c[2] for c in calls if c[:2] == ["incus", "stop"]]
+        assert stopped_names == [name]
+
+    def test_explicit_name_already_stopped_skipped(self):
+        username = "alice"
+        name = generate_name(username)
+        existing = [{"name": name, "status": "Stopped"}]
+        rc, calls = self._run_stop(username, existing, names=[name])
+        assert rc == 0
+        stopped = [c for c in calls if c[:2] == ["incus", "stop"]]
+        assert stopped == []
+
+    def test_unknown_name_returns_one(self):
+        username = "alice"
+        existing = [{"name": generate_name(username), "status": "Running"}]
+        rc, calls = self._run_stop(username, existing, names=["bogus-name"])
+        assert rc == 1
+        stopped = [c for c in calls if c[:2] == ["incus", "stop"]]
+        assert stopped == []
+
+    def test_stop_failure_returns_one(self):
+        username = "alice"
+        name = generate_name(username)
+        existing = [{"name": name, "status": "Running"}]
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=1)
+
+        with patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_incus_list(existing),
+        ):
+            with patch(
+                "pyishlib.isholate.container._run", side_effect=fake_run
+            ):
+                rc = stop_containers(username, names=[name])
+        assert rc == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1689,11 +2019,17 @@ class TestParser:
         with patch("pyishlib.isholate.cli._check_incus_available", return_value=None):
             yield
 
-    def test_defaults(self):
+    def test_subcommand_is_required(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args([])
+
+    def test_run_defaults(self):
         from pyishlib.isholate.cli import DEFAULT_IMAGE, DEFAULT_SHELL
 
         parser = build_parser()
-        args = parser.parse_args([])
+        args = parser.parse_args(["run"])
+        assert args.subcommand == "run"
         assert args.image == DEFAULT_IMAGE
         assert args.shell == DEFAULT_SHELL
         assert args.rw_cwd is False
@@ -1705,82 +2041,122 @@ class TestParser:
         assert args.rebuild is False
         assert args.rebuild_base is False
         assert args.rebuild_project_base is False
-        assert args.purge is False
-        assert args.purge_bases is False
-        assert args.purge_all is False
         assert args.verbose == 0
         assert args.quiet is False
         assert args.command == []
 
     def test_claude_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--claude"])
+        args = parser.parse_args(["run", "--claude"])
         assert args.claude is True
 
     def test_rw_cwd_and_ro_cwd_are_mutually_exclusive(self):
         parser = build_parser()
         with pytest.raises(SystemExit):
-            parser.parse_args(["--rw-cwd", "--ro-cwd"])
+            parser.parse_args(["run", "--rw-cwd", "--ro-cwd"])
 
     def test_custom_image(self):
         parser = build_parser()
-        args = parser.parse_args(["--image", "images:ubuntu/22.04"])
+        args = parser.parse_args(["run", "--image", "images:ubuntu/22.04"])
         assert args.image == "images:ubuntu/22.04"
 
     def test_no_host_ishfiles_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-host-ishfiles"])
+        args = parser.parse_args(["run", "--no-host-ishfiles"])
         assert args.no_host_ishfiles is True
 
     def test_no_project_ishfiles_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-project-ishfiles"])
+        args = parser.parse_args(["run", "--no-project-ishfiles"])
         assert args.no_project_ishfiles is True
 
     def test_no_ishfiles_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-ishfiles"])
+        args = parser.parse_args(["run", "--no-ishfiles"])
         assert args.no_ishfiles is True
 
     def test_no_cache_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-cache"])
+        args = parser.parse_args(["run", "--no-cache"])
         assert args.no_cache is True
 
     def test_rebuild_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--rebuild"])
+        args = parser.parse_args(["run", "--rebuild"])
         assert args.rebuild is True
 
     def test_rebuild_base_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--rebuild-base"])
+        args = parser.parse_args(["run", "--rebuild-base"])
         assert args.rebuild_base is True
 
     def test_rebuild_project_base_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--rebuild-project-base"])
+        args = parser.parse_args(["run", "--rebuild-project-base"])
         assert args.rebuild_project_base is True
 
     def test_rebuild_flags_are_mutually_exclusive(self):
         parser = build_parser()
         with pytest.raises(SystemExit):
-            parser.parse_args(["--rebuild", "--rebuild-base"])
+            parser.parse_args(["run", "--rebuild", "--rebuild-base"])
 
     def test_purge_flags_are_mutually_exclusive(self):
         parser = build_parser()
         with pytest.raises(SystemExit):
-            parser.parse_args(["--purge", "--purge-bases"])
+            parser.parse_args(["purge", "--bases", "--all"])
 
     def test_purge_bases_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--purge-bases"])
-        assert args.purge_bases is True
+        args = parser.parse_args(["purge", "--bases"])
+        assert args.subcommand == "purge"
+        assert args.bases is True
+        assert args.bases_alias is False
 
     def test_purge_all_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["--purge-all"])
-        assert args.purge_all is True
+        args = parser.parse_args(["purge", "--all"])
+        assert args.subcommand == "purge"
+        assert args.bases is False
+        assert args.bases_alias is True
+
+    def test_purge_plain(self):
+        parser = build_parser()
+        args = parser.parse_args(["purge"])
+        assert args.subcommand == "purge"
+        assert args.bases is False
+        assert args.bases_alias is False
+
+    def test_list_defaults(self):
+        parser = build_parser()
+        args = parser.parse_args(["list"])
+        assert args.subcommand == "list"
+        assert args.running is False
+        assert args.all_users is False
+        assert args.no_bases is False
+
+    def test_list_flags(self):
+        parser = build_parser()
+        args = parser.parse_args(["list", "--running", "--all-users", "--no-bases"])
+        assert args.running is True
+        assert args.all_users is True
+        assert args.no_bases is True
+
+    def test_stop_no_names(self):
+        parser = build_parser()
+        args = parser.parse_args(["stop"])
+        assert args.subcommand == "stop"
+        assert args.names == []
+        assert args.include_bases is False
+
+    def test_stop_with_names(self):
+        parser = build_parser()
+        args = parser.parse_args(["stop", "foo", "bar"])
+        assert args.names == ["foo", "bar"]
+
+    def test_stop_all(self):
+        parser = build_parser()
+        args = parser.parse_args(["stop", "--all"])
+        assert args.include_bases is True
 
     def test_no_ishfiles_suppresses_provisioning(self):
         """--no-ishfiles must pass None for both sources to launch_and_exec."""
@@ -1798,122 +2174,48 @@ class TestParser:
                     with patch(
                         "pyishlib.isholate.cli.launch_and_exec", return_value=0
                     ) as mock_launch:
-                        cli_main(["--no-ishfiles"])
+                        cli_main(["run", "--no-ishfiles"])
                         _, kwargs = mock_launch.call_args
                         assert kwargs["host_ishfiles_source"] is None
                         assert kwargs["project_overlay"] is None
 
     def test_command_passthrough(self):
         parser = build_parser()
-        args = parser.parse_args(["ls"])
+        args = parser.parse_args(["run", "ls"])
         assert args.command == ["ls"]
 
     def test_command_passthrough_with_flags(self):
         parser = build_parser()
-        args = parser.parse_args(["--", "ls", "-la"])
+        args = parser.parse_args(["run", "--", "ls", "-la"])
         assert args.command == ["--", "ls", "-la"]
-
-    def test_run_default_is_none(self):
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.run is None
-
-    def test_run_long_flag_captures_command(self):
-        parser = build_parser()
-        args = parser.parse_args(["--run", "ls", "-la"])
-        assert args.run == ["ls", "-la"]
-
-    def test_run_short_flag_captures_command(self):
-        parser = build_parser()
-        args = parser.parse_args(["-r", "echo", "hello"])
-        assert args.run == ["echo", "hello"]
-
-    def test_run_captures_flags_that_follow(self):
-        """Everything after --run is treated as the command, including flags."""
-        parser = build_parser()
-        args = parser.parse_args(["--quiet", "--run", "grep", "--color", "foo"])
-        assert args.quiet is True
-        assert args.run == ["grep", "--color", "foo"]
-
-    def test_main_copies_run_into_command(self):
-        """cli_main() must forward --run contents as args.command to launch_and_exec."""
-        with patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
-        ):
-            with patch(
-                "pyishlib.isholate.cli.get_host_user_info",
-                return_value=_fake_user_info(),
-            ):
-                with patch(
-                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
-                    return_value=None,
-                ):
-                    with patch(
-                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
-                    ) as mock_launch:
-                        cli_main(["--run", "ls", "-la"])
-                        forwarded_args = mock_launch.call_args.args[0]
-                        assert forwarded_args.command == ["ls", "-la"]
-
-    def test_main_rejects_empty_run(self):
-        """`isholate --run` with no command must error out, not drop to a shell."""
-        with patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
-        ):
-            with patch(
-                "pyishlib.isholate.cli.get_host_user_info",
-                return_value=_fake_user_info(),
-            ):
-                with patch(
-                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
-                    return_value=None,
-                ):
-                    with patch(
-                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
-                    ) as mock_launch:
-                        rc = cli_main(["--run"])
-                        assert rc == 2
-                        mock_launch.assert_not_called()
-
-    def test_run_after_positional_is_absorbed_by_positional(self):
-        """When a positional command comes first, REMAINDER absorbs --run.
-
-        This documents the expected argparse behaviour: once the positional
-        ``command`` starts consuming tokens, ``--run`` is treated as one of
-        its arguments rather than as a separate option. ``--run`` therefore
-        only has effect when it appears before any positional command.
-        """
-        parser = build_parser()
-        args = parser.parse_args(["ls", "--run", "echo", "hi"])
-        assert args.run is None
-        assert args.command == ["ls", "--run", "echo", "hi"]
-
-    def test_purge_flag(self):
-        parser = build_parser()
-        args = parser.parse_args(["--purge"])
-        assert args.purge is True
 
     def test_verbose_flag_counts(self):
         parser = build_parser()
-        assert parser.parse_args([]).verbose == 0
-        assert parser.parse_args(["-v"]).verbose == 1
-        assert parser.parse_args(["-vv"]).verbose == 2
-        assert parser.parse_args(["--verbose"]).verbose == 1
+        assert parser.parse_args(["run"]).verbose == 0
+        assert parser.parse_args(["run", "-v"]).verbose == 1
+        assert parser.parse_args(["run", "-vv"]).verbose == 2
+        assert parser.parse_args(["run", "--verbose"]).verbose == 1
+        # -v/-q are available on every subcommand.
+        assert parser.parse_args(["purge", "-v"]).verbose == 1
+        assert parser.parse_args(["list", "-v"]).verbose == 1
+        assert parser.parse_args(["stop", "-v"]).verbose == 1
 
     def test_quiet_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["-q"])
+        args = parser.parse_args(["run", "-q"])
         assert args.quiet is True
-        args = parser.parse_args(["--quiet"])
+        args = parser.parse_args(["run", "--quiet"])
         assert args.quiet is True
+        # -q works on every subcommand.
+        assert parser.parse_args(["purge", "-q"]).quiet is True
 
     def test_main_rejects_non_linux(self):
         with patch("sys.platform", "darwin"):
-            rc = cli_main([])
+            rc = cli_main(["run"])
         assert rc == 1
 
     def test_purge_bases_calls_purge_with_include_bases(self):
-        """--purge-bases must call purge_containers with include_bases=True."""
+        """`purge --bases` must call purge_containers with include_bases=True."""
         with patch(
             "pyishlib.isholate.cli.get_host_user_info",
             return_value=_fake_user_info(),
@@ -1921,12 +2223,12 @@ class TestParser:
             with patch(
                 "pyishlib.isholate.cli.purge_containers", return_value=0
             ) as mock_purge:
-                cli_main(["--purge-bases"])
+                cli_main(["purge", "--bases"])
                 _, kwargs = mock_purge.call_args
                 assert kwargs.get("include_bases") is True
 
     def test_purge_all_calls_purge_with_include_bases(self):
-        """--purge-all must also call purge_containers with include_bases=True."""
+        """`purge --all` must also call purge_containers with include_bases=True."""
         with patch(
             "pyishlib.isholate.cli.get_host_user_info",
             return_value=_fake_user_info(),
@@ -1934,12 +2236,12 @@ class TestParser:
             with patch(
                 "pyishlib.isholate.cli.purge_containers", return_value=0
             ) as mock_purge:
-                cli_main(["--purge-all"])
+                cli_main(["purge", "--all"])
                 _, kwargs = mock_purge.call_args
                 assert kwargs.get("include_bases") is True
 
     def test_purge_does_not_include_bases(self):
-        """Plain --purge must NOT pass include_bases=True."""
+        """Plain `purge` must NOT pass include_bases=True."""
         with patch(
             "pyishlib.isholate.cli.get_host_user_info",
             return_value=_fake_user_info(),
@@ -1947,9 +2249,92 @@ class TestParser:
             with patch(
                 "pyishlib.isholate.cli.purge_containers", return_value=0
             ) as mock_purge:
-                cli_main(["--purge"])
+                cli_main(["purge"])
                 _, kwargs = mock_purge.call_args
                 assert not kwargs.get("include_bases", False)
+
+    def test_list_dispatch(self):
+        """`list` subcommand dispatches to list_containers with the right kwargs."""
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.list_containers", return_value=0
+            ) as mock_list:
+                cli_main(["list"])
+                _, kwargs = mock_list.call_args
+                assert kwargs == {
+                    "all_users": False,
+                    "running_only": False,
+                    "include_bases": True,
+                }
+
+    def test_list_dispatch_flags(self):
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.list_containers", return_value=0
+            ) as mock_list:
+                cli_main(["list", "--running", "--all-users", "--no-bases"])
+                _, kwargs = mock_list.call_args
+                assert kwargs == {
+                    "all_users": True,
+                    "running_only": True,
+                    "include_bases": False,
+                }
+
+    def test_stop_dispatch_no_names(self):
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.stop_containers", return_value=0
+            ) as mock_stop:
+                cli_main(["stop"])
+                _, kwargs = mock_stop.call_args
+                assert kwargs == {"names": None, "include_bases": False}
+
+    def test_stop_dispatch_with_names(self):
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.stop_containers", return_value=0
+            ) as mock_stop:
+                cli_main(["stop", "a", "b"])
+                _, kwargs = mock_stop.call_args
+                assert kwargs == {"names": ["a", "b"], "include_bases": False}
+
+    def test_stop_dispatch_all(self):
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.stop_containers", return_value=0
+            ) as mock_stop:
+                cli_main(["stop", "--all"])
+                _, kwargs = mock_stop.call_args
+                assert kwargs == {"names": None, "include_bases": True}
+
+    def test_list_does_not_call_launch_and_exec(self):
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli.list_containers", return_value=0
+            ):
+                with patch(
+                    "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                ) as mock_launch:
+                    cli_main(["list"])
+                    mock_launch.assert_not_called()
 
     def test_project_config_overrides_image_default(self, tmp_path):
         """Image from .ishlib/isholate/config.toml becomes the argparse default."""
@@ -1977,7 +2362,7 @@ class TestParser:
                             "pyishlib.isholate.cli.launch_and_exec",
                             return_value=0,
                         ) as mock_launch:
-                            cli_main([])
+                            cli_main(["run"])
                             called_args = mock_launch.call_args[0][0]
                             assert called_args.image == "images:debian/12"
 
@@ -1997,7 +2382,7 @@ class TestParser:
                     with patch(
                         "pyishlib.isholate.cli.launch_and_exec", return_value=0
                     ) as mock_launch:
-                        cli_main(["--image", "images:ubuntu/22.04"])
+                        cli_main(["run", "--image", "images:ubuntu/22.04"])
                         called_args = mock_launch.call_args[0][0]
                         assert called_args.image == "images:ubuntu/22.04"
 
@@ -2017,7 +2402,7 @@ class TestParser:
                     with patch(
                         "pyishlib.isholate.cli.launch_and_exec", return_value=0
                     ) as mock_launch:
-                        cli_main(["--rebuild"])
+                        cli_main(["run", "--rebuild"])
                         called_args = mock_launch.call_args[0][0]
                         assert called_args.rebuild_base is True
                         assert called_args.rebuild_project_base is True
@@ -2042,7 +2427,7 @@ class TestParser:
                 with patch(
                     "pyishlib.isholate.cli.launch_and_exec", return_value=0
                 ) as mock_launch:
-                    result = cli_main(["--project-root", str(tmp_path)])
+                    result = cli_main(["run", "--project-root", str(tmp_path)])
                     assert result == 0
                     _, kwargs = mock_launch.call_args
                     assert kwargs["project_overlay"] == overlay
@@ -2069,7 +2454,7 @@ class TestParser:
                 with patch(
                     "pyishlib.isholate.cli.launch_and_exec", return_value=0
                 ) as mock_launch:
-                    result = cli_main(["--project-root", str(tmp_path)])
+                    result = cli_main(["run", "--project-root", str(tmp_path)])
                     assert result == 0
                     called_args = mock_launch.call_args[0][0]
                     assert called_args.image == "images:debian/12"
@@ -2081,7 +2466,7 @@ class TestParser:
             "pyishlib.isholate.cli.get_host_user_info",
             return_value=_fake_user_info(),
         ):
-            result = cli_main(["--project-root", str(nonexistent)])
+            result = cli_main(["run", "--project-root", str(nonexistent)])
             assert result == 2
 
     def test_project_root_file_not_directory_exits_2(self, tmp_path):
@@ -2092,7 +2477,7 @@ class TestParser:
             "pyishlib.isholate.cli.get_host_user_info",
             return_value=_fake_user_info(),
         ):
-            result = cli_main(["--project-root", str(a_file)])
+            result = cli_main(["run", "--project-root", str(a_file)])
             assert result == 2
 
 
@@ -2406,7 +2791,7 @@ class TestCliIncusPreflight:
             "pyishlib.isholate.cli._check_incus_available",
             return_value="isholate: error: TEST GUIDANCE",
         ):
-            rc = cli_main([])
+            rc = cli_main(["run"])
         captured = capsys.readouterr()
         assert rc == 1
         assert "TEST GUIDANCE" in captured.err
@@ -2439,30 +2824,30 @@ class TestClaudeCliFlags:
 
     def test_claude_defaults_false(self):
         parser = build_parser()
-        args = parser.parse_args([])
+        args = parser.parse_args(["run"])
         assert args.claude is False
 
     def test_claude_base_defaults_false(self):
         parser = build_parser()
-        args = parser.parse_args([])
+        args = parser.parse_args(["run"])
         assert args.claude_base is False
 
     def test_claude_sets_true(self):
         parser = build_parser()
-        args = parser.parse_args(["--claude"])
+        args = parser.parse_args(["run", "--claude"])
         assert args.claude is True
         assert args.claude_base is False
 
     def test_claude_base_sets_true(self):
         parser = build_parser()
-        args = parser.parse_args(["--claude-base"])
+        args = parser.parse_args(["run", "--claude-base"])
         assert args.claude_base is True
         assert args.claude is False
 
     def test_claude_and_claude_base_are_mutually_exclusive(self):
         parser = build_parser()
         with pytest.raises(SystemExit):
-            parser.parse_args(["--claude", "--claude-base"])
+            parser.parse_args(["run", "--claude", "--claude-base"])
 
 
 class TestNoNetworkCliFlag:
@@ -2470,23 +2855,23 @@ class TestNoNetworkCliFlag:
 
     def test_flag_defaults_false(self):
         parser = build_parser()
-        args = parser.parse_args([])
+        args = parser.parse_args(["run"])
         assert args.no_network is False
 
     def test_flag_sets_true(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-network"])
+        args = parser.parse_args(["run", "--no-network"])
         assert args.no_network is True
 
     def test_flag_stacks_with_claude(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-network", "--claude"])
+        args = parser.parse_args(["run", "--no-network", "--claude"])
         assert args.no_network is True
         assert args.claude is True
 
     def test_flag_stacks_with_claude_base(self):
         parser = build_parser()
-        args = parser.parse_args(["--no-network", "--claude-base"])
+        args = parser.parse_args(["run", "--no-network", "--claude-base"])
         assert args.no_network is True
         assert args.claude_base is True
 
@@ -3354,7 +3739,7 @@ class TestCliPreflightClaudeHostTools:
         ), patch(
             "pyishlib.isholate.cli.launch_and_exec"
         ) as mock_launch:
-            rc = cli_main(["--no-network", "--claude"])
+            rc = cli_main(["run", "--no-network", "--claude"])
 
         assert rc == 1
         mock_launch.assert_not_called()
@@ -3381,9 +3766,11 @@ class TestCliPreflightClaudeHostTools:
         ), patch(
             "pyishlib.isholate.cli.load_project_config", return_value={}
         ), patch(
+            "pyishlib.isholate.cli.resolve_default_shell", return_value=None
+        ), patch(
             "pyishlib.isholate.cli.launch_and_exec", return_value=0
         ) as mock_launch:
-            rc = cli_main(["--no-network", "--claude"])
+            rc = cli_main(["run", "--no-network", "--claude"])
 
         assert rc == 0
         mock_launch.assert_called_once()
@@ -3406,7 +3793,7 @@ class TestCliPreflightClaudeHostTools:
         ), patch(
             "pyishlib.isholate.cli.launch_and_exec"
         ) as mock_launch:
-            rc = cli_main(["--no-network", "--claude-base"])
+            rc = cli_main(["run", "--no-network", "--claude-base"])
 
         assert rc == 1
         mock_launch.assert_not_called()

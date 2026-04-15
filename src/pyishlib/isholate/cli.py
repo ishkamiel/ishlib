@@ -5,10 +5,12 @@
 # Distributed under terms of the MIT license.
 """Command-line interface for isholate.
 
-Entry point for the ``isholate`` tool.  Launches an Incus container with
-the host user mirrored and optional bind mounts.  Uses a three-tier
-persistent-base caching model to avoid re-running apt and ishfiles on every
-invocation.
+Entry point for the ``isholate`` tool.  Exposes four subcommands:
+
+* ``run``   — launch a container and exec a command (or interactive shell).
+* ``purge`` — delete the user's isholate containers.
+* ``list``  — print a table of isholate containers.
+* ``stop``  — stop running isholate containers.
 """
 
 from __future__ import annotations
@@ -31,7 +33,9 @@ from .container import (
     _preflight_claude_host_tools,
     get_host_user_info,
     launch_and_exec,
+    list_containers,
     purge_containers,
+    stop_containers,
 )
 
 DEFAULT_IMAGE = "images:ubuntu/24.04"
@@ -40,17 +44,34 @@ DEFAULT_SHELL = "/bin/bash"
 log = logging.getLogger(__name__)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Construct the argument parser for isholate."""
-    parser = argparse.ArgumentParser(
-        prog="isholate",
-        description=(
-            "Launch an isolated Incus container with the host user mirrored. "
-            "Persistent base containers cache expensive provisioning steps so "
-            "subsequent runs start in seconds."
+def _add_common_args(parser: argparse.ArgumentParser) -> None:
+    """Add ``-v/-q`` to *parser* in a consistent way.
+
+    Attached to each subparser individually — NOT to the top-level parser,
+    because argparse subparser namespace defaults silently overwrite
+    top-level values.
+    """
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help=(
+            "Show output from apt and ishfiles during provisioning. "
+            "Repeat (-vv) to enable ishfiles --debug."
         ),
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Suppress isholate's own progress messages",
+    )
 
+
+def _add_run_args(parser: argparse.ArgumentParser) -> None:
+    """Attach all ``run``-subcommand arguments to *parser*."""
     parser.add_argument(
         "--image",
         metavar="IMAGE",
@@ -190,147 +211,137 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force rebuild of the project-overlay base only",
     )
 
-    # --- Purge control ---
-    purge_group = parser.add_mutually_exclusive_group()
-    purge_group.add_argument(
-        "--purge",
-        action="store_true",
-        default=False,
-        help=(
-            "Delete ephemeral isholate containers belonging to the current user "
-            "(persistent bases are preserved)"
-        ),
-    )
-    purge_group.add_argument(
-        "--purge-bases",
-        action="store_true",
-        default=False,
-        help=(
-            "Delete ephemeral containers AND persistent base containers "
-            "(isholate-base-* and isholate-pbase-*)"
-        ),
-    )
-    purge_group.add_argument(
-        "--purge-all",
-        action="store_true",
-        default=False,
-        help="Alias for --purge-bases (delete everything isholate created)",
-    )
-
-    # --- Verbosity ---
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help=(
-            "Show output from apt and ishfiles during provisioning. "
-            "Repeat (-vv) to enable ishfiles --debug."
-        ),
-    )
-    parser.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        default=False,
-        help="Suppress isholate's own progress messages",
-    )
-
-    parser.add_argument(
-        "-r",
-        "--run",
-        nargs=argparse.REMAINDER,
-        default=None,
-        metavar="CMD",
-        help=(
-            "Run CMD inside the container and exit. If --run appears before "
-            "any positional command tokens, everything after it is treated "
-            "as the command and its arguments. If positional command parsing "
-            "has already started, --run is treated as part of the command, "
-            "so all isholate flags must appear before the command or before "
-            "--run."
-        ),
-    )
     parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help=(
-            "Positional command to run inside the container (default: "
-            "interactive shell). Prefer --run for unambiguous parsing."
+            "Command (and args) to run inside the container. Use `--` before "
+            "the command if it contains flags that collide with isholate's. "
+            "Default when omitted: interactive shell."
+        ),
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argument parser for isholate."""
+    parser = argparse.ArgumentParser(
+        prog="isholate",
+        description=(
+            "Launch an isolated Incus container with the host user mirrored. "
+            "Persistent base containers cache expensive provisioning steps so "
+            "subsequent runs start in seconds."
+        ),
+    )
+    # -v/-q live on each subparser (not the top-level parser) because argparse
+    # subparsers overwrite parent namespace values with their own defaults,
+    # which would silently discard flags placed before the subcommand.
+
+    sub = parser.add_subparsers(dest="subcommand", required=True, metavar="COMMAND")
+
+    # --- run ---
+    p_run = sub.add_parser(
+        "run",
+        help="Launch a container and run a command (or shell)",
+        description=(
+            "Launch an Incus container with the host user mirrored and run "
+            "a command inside it.  When no command is given, an interactive "
+            "shell is started."
+        ),
+    )
+    _add_common_args(p_run)
+    _add_run_args(p_run)
+
+    # --- purge ---
+    p_purge = sub.add_parser(
+        "purge",
+        help="Delete isholate containers for the current user",
+        description=(
+            "Delete isholate containers belonging to the current user.  "
+            "By default only ephemeral containers are deleted; pass "
+            "--bases (or --all) to also delete persistent base containers."
+        ),
+    )
+    _add_common_args(p_purge)
+    purge_group = p_purge.add_mutually_exclusive_group()
+    purge_group.add_argument(
+        "--bases",
+        action="store_true",
+        default=False,
+        help=(
+            "Also delete persistent base containers "
+            "(isholate-base-* and isholate-pbase-*)"
+        ),
+    )
+    purge_group.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        dest="bases_alias",
+        help="Alias of --bases (delete everything isholate created)",
+    )
+
+    # --- list ---
+    p_list = sub.add_parser(
+        "list",
+        help="List isholate containers",
+        description="Print a table of isholate containers (ephemerals and bases).",
+    )
+    _add_common_args(p_list)
+    p_list.add_argument(
+        "--running",
+        action="store_true",
+        default=False,
+        help="Only show containers whose state is Running",
+    )
+    p_list.add_argument(
+        "--all-users",
+        action="store_true",
+        default=False,
+        help="Show containers for all users (adds a USER column)",
+    )
+    p_list.add_argument(
+        "--no-bases",
+        action="store_true",
+        default=False,
+        help="Hide persistent base containers (shown by default)",
+    )
+
+    # --- stop ---
+    p_stop = sub.add_parser(
+        "stop",
+        help="Stop running isholate containers",
+        description=(
+            "Stop running isholate containers.  With no names, stops every "
+            "running ephemeral belonging to the current user.  Pass --all to "
+            "also stop running base containers."
+        ),
+    )
+    _add_common_args(p_stop)
+    p_stop.add_argument(
+        "names",
+        nargs="*",
+        metavar="NAME",
+        help=(
+            "Container name(s) to stop.  With no names, every running "
+            "ephemeral belonging to the current user is stopped."
+        ),
+    )
+    p_stop.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        dest="include_bases",
+        help=(
+            "When no names are given, also stop running base containers "
+            "(otherwise only ephemerals are stopped)"
         ),
     )
 
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    """CLI entry point.
-
-    Args:
-        argv: Argument list (defaults to ``sys.argv[1:]``).
-
-    Returns:
-        Exit code.
-    """
-    # Set up logging early with a default level; re-configure after argparse.
-    setup_logging(logging.WARNING)
-
-    if not is_linux():
-        log.critical("isholate is only supported on Linux")
-        return 1
-
-    _, home, cwd = get_host_user_info()
-
-    # Build the parser first so we can do a pre-parse to extract
-    # --project-root before loading project config (project config
-    # influences argparse defaults, so it must be loaded before the full
-    # parse_args call).
-    parser = build_parser()
-
-    # Pre-parse to extract --project-root only.  parse_known_args ignores
-    # unknown tokens so positional/remainder arguments don't interfere.
-    pre_args, _ = parser.parse_known_args(argv)
-
-    if pre_args.project_root is not None:
-        project_root_path = Path(pre_args.project_root).resolve()
-        if not project_root_path.is_dir():
-            log.error(
-                "--project-root '%s' is not an existing directory",
-                pre_args.project_root,
-            )
-            return 2
-    else:
-        project_root_path = cwd.resolve()
-
-    # Discover the project overlay (if any) before the full parse so that
-    # image/shell overrides from .ishlib/isholate/config.toml can be
-    # applied as argparse defaults (CLI flags still take precedence).
-    # The isholate config and the ishfiles overlay are independent — either
-    # may be present without the other.
-    project_cfg = load_project_config(project_root_path)
-    overlay_dir = discover_project_overlay(project_root_path)
-
-    if project_cfg.get("image"):
-        parser.set_defaults(image=project_cfg["image"])
-
-    # Shell default resolution — lowest to highest priority via successive
-    # set_defaults calls (last call wins):
-    #   1. ishfiles default_shell (from project overlay / host user / repo config)
-    #   2. isholate project config shell (.ishlib/isholate/config.toml)
-    #   3. --shell CLI flag (handled by argparse automatically)
-    ishfiles_shell = resolve_default_shell(
-        home,
-        discover_host_ishfiles_source(home),
-        overlay_dir,
-    )
-    if ishfiles_shell:
-        parser.set_defaults(shell=ishfiles_shell)
-    if project_cfg.get("shell"):
-        parser.set_defaults(shell=project_cfg["shell"])
-
-    args = parser.parse_args(argv)
-
-    # Reconfigure logging now that we know the user's verbosity preference.
+def _configure_logging_from_args(args: argparse.Namespace) -> None:
+    """Reconfigure logging based on parsed ``-v/-q`` flags."""
     if args.verbose >= 2:
         setup_logging(logging.DEBUG, quiet=args.quiet)
     elif args.verbose >= 1:
@@ -338,43 +349,53 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         setup_logging(logging.WARNING, quiet=args.quiet)
 
-    # Run the incus preflight after argparse so that `--help` / `--version`
-    # still work on hosts without a healthy incus setup (argparse exits
-    # inside parse_args before we get here in those cases).
-    incus_guidance = _check_incus_available()
-    if incus_guidance is not None:
-        log.error("%s", incus_guidance)
-        return 1
+
+def _run_subcommand(args: argparse.Namespace, home: Path, cwd: Path) -> int:
+    """Dispatch the ``run`` subcommand — the main container-launch pipeline."""
+    # Resolve project root (dir that may contain .ishlib/).
+    if args.project_root is not None:
+        project_root_path = Path(args.project_root).resolve()
+        if not project_root_path.is_dir():
+            log.error(
+                "--project-root '%s' is not an existing directory",
+                args.project_root,
+            )
+            return 2
+    else:
+        project_root_path = cwd.resolve()
+
+    # Load project config so image/shell overrides from
+    # .ishlib/isholate/config.toml can fill in any CLI defaults the user
+    # didn't override.  CLI flags still take precedence.
+    project_cfg = load_project_config(project_root_path)
+    overlay_dir = discover_project_overlay(project_root_path)
+
+    if project_cfg.get("image") and args.image == DEFAULT_IMAGE:
+        args.image = project_cfg["image"]
+
+    # Shell default resolution — lowest to highest priority:
+    #   1. ishfiles default_shell (from project overlay / host user / repo config)
+    #   2. isholate project config shell (.ishlib/isholate/config.toml)
+    #   3. --shell CLI flag (user override)
+    # We only apply lower-priority sources when the user hasn't set --shell.
+    if args.shell == DEFAULT_SHELL:
+        ishfiles_shell = resolve_default_shell(
+            home,
+            discover_host_ishfiles_source(home),
+            overlay_dir,
+        )
+        if project_cfg.get("shell"):
+            args.shell = project_cfg["shell"]
+        elif ishfiles_shell:
+            args.shell = ishfiles_shell
 
     # Check host tool dependencies for --no-network --claude before creating
-    # any container or Incus network state.  Without this, a missing 'ipset'
-    # or 'iptables' package produces a raw Python traceback mid-run after
-    # the ephemeral container and the isholate-claude bridge already exist.
+    # any container or Incus network state.
     if args.no_network and (args.claude or args.claude_base):
         tools_msg = _preflight_claude_host_tools()
         if tools_msg is not None:
             log.error("%s", tools_msg)
             return 1
-
-    # --run takes precedence over the positional command form: everything
-    # after --run is the command to run inside the container.
-    if args.run is not None:
-        if not args.run:
-            log.error("--run requires a command to execute")
-            return 2
-        if args.command:
-            log.error(
-                "--run cannot be combined with a positional command; "
-                "put all command arguments after --run"
-            )
-            return 2
-        args.command = list(args.run)
-
-    # --- Purge handling ---
-    include_bases = args.purge_bases or args.purge_all
-    if args.purge or include_bases:
-        username, _, _ = get_host_user_info()
-        return purge_containers(username, quiet=args.quiet, include_bases=include_bases)
 
     # --no-ishfiles is a shorthand that implies both granular skip flags.
     if args.no_ishfiles:
@@ -401,9 +422,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     project_root: Optional[Path] = None
     if not args.no_project_ishfiles and overlay_dir is not None:
         resolved_overlay = overlay_dir
-        # Project root is the directory that contains the .ishlib/ umbrella
-        # — used for stable project-base container naming (independent of
-        # the overlay's path within .ishlib/ and of the invocation cwd).
         project_root = project_root_path
 
     return launch_and_exec(
@@ -412,3 +430,59 @@ def main(argv: Optional[List[str]] = None) -> int:
         project_overlay=resolved_overlay,
         project_root=project_root,
     )
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point.
+
+    Args:
+        argv: Argument list (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        Exit code.
+    """
+    setup_logging(logging.WARNING)
+
+    if not is_linux():
+        log.critical("isholate is only supported on Linux")
+        return 1
+
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    _configure_logging_from_args(args)
+
+    # Run the incus preflight after argparse so that `--help` still works on
+    # hosts without a healthy incus setup.
+    incus_guidance = _check_incus_available()
+    if incus_guidance is not None:
+        log.error("%s", incus_guidance)
+        return 1
+
+    username, home, cwd = get_host_user_info()
+
+    if args.subcommand == "purge":
+        include_bases = args.bases or args.bases_alias
+        return purge_containers(username, quiet=args.quiet, include_bases=include_bases)
+
+    if args.subcommand == "list":
+        return list_containers(
+            username,
+            all_users=args.all_users,
+            running_only=args.running,
+            include_bases=not args.no_bases,
+        )
+
+    if args.subcommand == "stop":
+        return stop_containers(
+            username,
+            names=list(args.names) if args.names else None,
+            include_bases=args.include_bases,
+        )
+
+    if args.subcommand == "run":
+        return _run_subcommand(args, home, cwd)
+
+    # argparse enforces required=True, so we should never get here.
+    parser.error(f"unknown subcommand: {args.subcommand}")
+    return 2  # pragma: no cover
