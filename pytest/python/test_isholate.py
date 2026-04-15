@@ -2128,6 +2128,18 @@ class TestApplyNetworkRestrictions:
         checked_cmds = self._collect_cmds(mock_checked.call_args_list)
         all_cmds = run_cmds + checked_cmds
 
+        # A best-effort device-remove is attempted first (via _run, not
+        # _run_checked) so the subsequent add succeeds even when eth0 already
+        # exists at the instance level.
+        remove = [
+            cmd
+            for cmd in run_cmds
+            if cmd == ["incus", "config", "device", "remove", "ctr", "eth0"]
+        ]
+        assert len(remove) == 1, (
+            f"expected one best-effort device-remove call, got {run_cmds}"
+        )
+
         # eth0 is detached via an Incus device-override (not ip link down).
         detach = [
             cmd

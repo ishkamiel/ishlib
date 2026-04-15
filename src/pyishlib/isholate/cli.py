@@ -107,8 +107,10 @@ def build_parser() -> argparse.ArgumentParser:
             "claude.ai, statsig.com, statsigapi.net, sentry.io — including all "
             "subdomains). CDN IP rotation is handled transparently because "
             "dnsmasq populates the ipset on every DNS lookup rather than "
-            "pinning IPs at rule-add time. All restrictions are applied inside "
-            "the container; the host firewall is not touched."
+            "pinning IPs at rule-add time. The host firewall is not touched, "
+            "but Incus may modify the container instance's device "
+            "configuration (for example detaching eth0) to enforce the "
+            "restriction."
         ),
     )
 

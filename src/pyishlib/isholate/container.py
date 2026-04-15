@@ -715,6 +715,16 @@ def _apply_network_restrictions(
         # systemd-networkd / netplan cannot bring it back up — unlike
         # `ip link set eth0 down`, which is advisory inside the container and
         # gets immediately undone by the DHCP client.
+        #
+        # `device add` fails if eth0 already exists at the instance level (e.g.
+        # from a prior run or an instance-level config override).  Remove any
+        # existing instance-level device first; this is a no-op (returns non-zero)
+        # if eth0 only comes from a profile, which is the common case.
+        _run(
+            ["incus", "config", "device", "remove", name, "eth0"],
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
         _run_checked(
             ["incus", "config", "device", "add", name, "eth0", "none"],
             "detach eth0 via Incus device override (--no-network)",
@@ -768,10 +778,15 @@ def _apply_network_restrictions(
     #      - tcp/443 to the ipset (populated dynamically by dnsmasq)
     #      - default INPUT/OUTPUT DROP
     setup_script = (
-        # 1. Capture upstream resolver.
+        # 1. Capture upstream resolver.  Try /etc/resolv.conf first; in
+        #    containers using systemd-resolved the stub symlink may not be
+        #    written yet at this point, so fall back to the default-route
+        #    gateway (the Incus bridge also acts as DNS forwarder).
         "upstream=$(awk '/^[[:space:]]*nameserver[[:space:]]/{print $2; exit}' "
         "/etc/resolv.conf 2>/dev/null) && "
-        '[ -n "$upstream" ] || { echo "isholate: no nameserver in /etc/resolv.conf" >&2; exit 1; } && '
+        '[ -n "$upstream" ] || '
+        "upstream=$(ip route show default 2>/dev/null | awk '/default via/{print $3; exit}') && "
+        '[ -n "$upstream" ] || { echo "isholate: cannot determine upstream DNS resolver" >&2; exit 1; } && '
         # 2. Write dnsmasq config.
         "mkdir -p /etc/dnsmasq.d && "
         f'printf "{dnsmasq_conf}" > /etc/dnsmasq.d/isholate-claude.conf && '
@@ -782,13 +797,21 @@ def _apply_network_restrictions(
         # 4. Lock /etc/resolv.conf to 127.0.0.1.
         "chattr -i /etc/resolv.conf 2>/dev/null || true && "
         'printf "nameserver 127.0.0.1\\n" > /etc/resolv.conf && '
-        "chattr +i /etc/resolv.conf && "
+        # chattr +i locks the file immutable so the DHCP client can't clobber
+        # it on lease renewal.  Made conditional: some images lack e2fsprogs,
+        # and some filesystems (btrfs, tmpfs) don't support the immutable flag.
+        # If chattr isn't available the iptables rules still enforce that DNS
+        # only reaches 127.0.0.1 (our dnsmasq), so an overwritten resolv.conf
+        # can't redirect traffic outside the allowlist.
+        "if command -v chattr >/dev/null 2>&1; then "
+        "  chattr +i /etc/resolv.conf 2>/dev/null || true; "
+        "fi && "
         # 5. Start dnsmasq.  Prefer systemctl on systemd hosts; otherwise
         #    kill any running instance and let dnsmasq daemonize itself
         #    (the default, no --no-daemon needed).  Use --conf-file=/dev/null
         #    so the system /etc/dnsmasq.conf (if any) cannot override our
         #    settings; our config lives exclusively in /etc/dnsmasq.d/.
-        "if [ $(cat /proc/1/comm 2>/dev/null) = systemd ]; then "
+        'if [ "$(cat /proc/1/comm 2>/dev/null)" = systemd ]; then '
         "  systemctl enable dnsmasq 2>/dev/null || true && "
         "  systemctl restart dnsmasq; "
         "else "
