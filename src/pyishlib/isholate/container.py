@@ -406,26 +406,44 @@ def _assert_no_isholate_devices(name: str) -> None:
 def _source_fingerprint(source: Path) -> str:
     """Compute a reproducible fingerprint for a source tree.
 
-    Uses ``git rev-parse HEAD`` + ``git status --porcelain`` when the path
-    is inside a git repo (fast).  Falls back to a recursive content hash for
-    non-git trees.
+    When *source* is inside a git repo, the fingerprint is **path-scoped**:
+    it only reflects state of files under *source*, not the whole repo.
+    This matters when *source* is a subdirectory (e.g. ``.ishlib/ishfiles/``)
+    of a larger, actively developed repo — unrelated commits or working-tree
+    changes elsewhere in the repo must not invalidate the cache.
+
+    Git strategy:
+
+    - ``git log -1 --format=%H -- .`` → the SHA of the last commit that
+      touched anything under *source*.
+    - ``git status --porcelain -- .`` → dirty/untracked files under *source*
+      only.
+
+    Falls back to a recursive content hash for non-git trees, when git is
+    unavailable, or when nothing under *source* has ever been committed
+    (so untracked-only directories still contribute to the fingerprint).
     """
     try:
         head = subprocess.run(
-            ["git", "-C", str(source), "rev-parse", "HEAD"],
+            ["git", "-C", str(source), "log", "-1", "--format=%H", "--", "."],
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
+        if not head:
+            # No committed history under this path — fall back to content
+            # hash so untracked files still contribute to the fingerprint.
+            raise subprocess.CalledProcessError(1, "git log")
         status = subprocess.run(
-            ["git", "-C", str(source), "status", "--porcelain"],
+            ["git", "-C", str(source), "status", "--porcelain", "--", "."],
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
         raw = f"{head}\n{status}"
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # Non-git or git not available: hash the file tree.
+        # Non-git, git not available, or no committed history under the path:
+        # hash the file tree.
         h = hashlib.sha256()
         for p in sorted(source.rglob("*")):
             if p.is_file():
