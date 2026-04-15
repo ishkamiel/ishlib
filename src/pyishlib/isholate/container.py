@@ -673,15 +673,16 @@ def _add_claude_mounts(
 # Network isolation
 # ---------------------------------------------------------------------------
 
-# Hosts the Claude CLI needs to reach when running inside a locked-down
-# container.  iptables resolves each hostname at rule-add time and expands
-# to one rule per A/AAAA record, pinning the IPs for the session.
-_CLAUDE_ALLOW_HOSTS = (
-    "api.anthropic.com",
-    "statsig.anthropic.com",
-    "sentry.io",
-    "claude.ai",
-    "console.anthropic.com",
+# Domain suffixes the Claude CLI needs to reach when running inside a
+# locked-down container.  dnsmasq matches these as suffix patterns (all
+# subdomains are covered automatically) and populates an ipset on each
+# lookup so iptables never pins a CDN IP at rule-add time.
+_CLAUDE_ALLOW_DOMAINS = (
+    "anthropic.com",  # api., console., statsig., auth fronts
+    "claude.ai",  # OAuth redirect target
+    "statsig.com",  # feature flags / analytics
+    "statsigapi.net",  # Statsig events endpoint
+    "sentry.io",  # covers *.ingest.*.sentry.io too
 )
 
 
@@ -697,11 +698,11 @@ def _apply_network_restrictions(
 
     Args:
         name:         Incus container name.
-        allow_claude: If True, keep the NIC up and install an iptables
-                      allowlist so the Claude CLI can reach its API
-                      endpoints (see ``_CLAUDE_ALLOW_HOSTS``); block
-                      everything else.  If False, bring ``eth0`` down
-                      and disable IPv6 — a simpler, package-free cut-off.
+        allow_claude: If True, keep the NIC up and install a dnsmasq +
+                      ipset allowlist so the Claude CLI can reach its API
+                      endpoints (see ``_CLAUDE_ALLOW_DOMAINS``); block
+                      everything else.  If False, detach ``eth0`` at the
+                      Incus layer — a simpler, config-free cut-off.
         quiet:        Suppress isholate progress messages.
     """
     if not allow_claude:
@@ -721,37 +722,8 @@ def _apply_network_restrictions(
         return
 
     _say(
-        f"--no-network --claude: installing egress allowlist in '{name}' "
-        "(Claude API hosts only)...",
+        f"--no-network --claude: configuring dnsmasq+ipset egress allowlist in '{name}'...",
         quiet=quiet,
-    )
-
-    # Make sure iptables is available.  Guarded so repeated runs on a
-    # base that already has it don't re-run apt.
-    _run_checked(
-        [
-            "incus",
-            "exec",
-            name,
-            "--env",
-            "DEBIAN_FRONTEND=noninteractive",
-            "--",
-            "/bin/sh",
-            "-c",
-            "if ! command -v iptables >/dev/null 2>&1; then "
-            "  if command -v apt-get >/dev/null 2>&1; then "
-            "    apt-get update -qq && "
-            "    apt-get install -qq -y --no-install-recommends iptables; "
-            "  elif command -v dnf >/dev/null 2>&1; then "
-            "    dnf install -y iptables; "
-            "  else "
-            "    echo 'isholate: no package manager found for iptables' >&2; "
-            "    exit 1; "
-            "  fi; "
-            "fi",
-        ],
-        "install iptables (--no-network --claude)",
-        stdin=subprocess.DEVNULL,
     )
 
     # Disable IPv6 so we only have to manage one rule set.
@@ -769,48 +741,81 @@ def _apply_network_restrictions(
         stdin=subprocess.DEVNULL,
     )
 
-    # Build the rule script.  ACCEPT rules are added *before* the DROP
-    # policy so hostname resolution for -d <host> doesn't get blocked by
-    # our own rules while the script is mid-flight.
-    #
-    # DNS egress is restricted to the resolvers the container is *already*
-    # configured to use (parsed from /etc/resolv.conf — typically the Incus
-    # bridge's dnsmasq).  Allowing port 53 to arbitrary destinations would
-    # let a malicious tool tunnel data over DNS to attacker-controlled
-    # resolvers and bypass the allowlist; pinning to the configured
-    # resolvers closes that channel while still letting the Claude CLI
-    # re-resolve CDN-backed hosts as their IPs rotate.
-    accept_host_cmds = " && ".join(
-        f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
-        for host in _CLAUDE_ALLOW_HOSTS
+    # Build the dnsmasq ipset suffix list: "/domain1/domain2/.../setname"
+    domain_list = "/".join(_CLAUDE_ALLOW_DOMAINS)
+    dnsmasq_conf = (
+        "no-resolv\\n"
+        "listen-address=127.0.0.1\\n"
+        "bind-interfaces\\n"
+        # ipset=/<suffix1>/<suffix2>/<setname>  — populates on every lookup
+        f"ipset=/{domain_list}/claude-allowed\\n"
     )
-    rule_script = (
-        # Flush any prior state.
+
+    # The full setup script runs inside the container.  Steps:
+    #
+    # 1. Capture the upstream resolver from /etc/resolv.conf *before* we
+    #    overwrite it.  Typically the Incus bridge's dnsmasq at 10.x.x.1.
+    # 2. Write /etc/dnsmasq.d/isholate-claude.conf (server= points upstream).
+    # 3. Create the ipset before dnsmasq starts (dnsmasq fails if the set
+    #    referenced in ipset= doesn't exist yet).
+    # 4. Replace /etc/resolv.conf with nameserver 127.0.0.1 and mark it
+    #    immutable so the DHCP client can't clobber it on renewal.
+    # 5. Start dnsmasq (systemctl if systemd is PID1, else background daemon).
+    # 6. Build iptables rules:
+    #      - lo pass-through
+    #      - conntrack ESTABLISHED,RELATED (replies to our own flows)
+    #      - DNS to 127.0.0.1 (our dnsmasq) + upstream (dnsmasq's egress)
+    #      - tcp/443 to the ipset (populated dynamically by dnsmasq)
+    #      - default INPUT/OUTPUT DROP
+    setup_script = (
+        # 1. Capture upstream resolver.
+        "upstream=$(awk '/^[[:space:]]*nameserver[[:space:]]/{print $2; exit}' "
+        "/etc/resolv.conf 2>/dev/null) && "
+        '[ -n "$upstream" ] || { echo "isholate: no nameserver in /etc/resolv.conf" >&2; exit 1; } && '
+        # 2. Write dnsmasq config.
+        "mkdir -p /etc/dnsmasq.d && "
+        f'printf "{dnsmasq_conf}" > /etc/dnsmasq.d/isholate-claude.conf && '
+        'printf "server=%s\\n" "$upstream" >> /etc/dnsmasq.d/isholate-claude.conf && '
+        # 3. Create the ipset (idempotent — destroy first if it already exists).
+        "ipset destroy claude-allowed 2>/dev/null || true && "
+        "ipset create claude-allowed hash:ip family inet timeout 600 && "
+        # 4. Lock /etc/resolv.conf to 127.0.0.1.
+        "chattr -i /etc/resolv.conf 2>/dev/null || true && "
+        'printf "nameserver 127.0.0.1\\n" > /etc/resolv.conf && '
+        "chattr +i /etc/resolv.conf && "
+        # 5. Start dnsmasq.  Prefer systemctl on systemd hosts; otherwise
+        #    kill any running instance and let dnsmasq daemonize itself
+        #    (the default, no --no-daemon needed).  Use --conf-file=/dev/null
+        #    so the system /etc/dnsmasq.conf (if any) cannot override our
+        #    settings; our config lives exclusively in /etc/dnsmasq.d/.
+        "if [ $(cat /proc/1/comm 2>/dev/null) = systemd ]; then "
+        "  systemctl enable dnsmasq 2>/dev/null || true && "
+        "  systemctl restart dnsmasq; "
+        "else "
+        "  pkill -x dnsmasq 2>/dev/null || true && "
+        "  dnsmasq --conf-file=/dev/null --conf-dir=/etc/dnsmasq.d; "
+        "fi && "
+        # 6. iptables rules.
         "iptables -F && iptables -X && "
-        # Loopback.
         "iptables -A INPUT -i lo -j ACCEPT && "
         "iptables -A OUTPUT -o lo -j ACCEPT && "
-        # Conntrack — allow replies to our own outbound connections.
-        "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED "
-        "-j ACCEPT && "
-        "iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED "
-        "-j ACCEPT && "
-        # DNS — only to resolvers listed in /etc/resolv.conf.
-        "for ns in $(awk '/^[[:space:]]*nameserver[[:space:]]/ "
-        "{print $2}' /etc/resolv.conf 2>/dev/null); do "
-        'iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT && '
-        'iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT '
-        "|| exit 1; "
-        "done && "
-        # Claude API allowlist (HTTPS only).
-        f"{accept_host_cmds} && "
-        # Default DROP last.
+        "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT && "
+        "iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT && "
+        # DNS to our local dnsmasq.
+        "iptables -A OUTPUT -d 127.0.0.1 -p udp --dport 53 -j ACCEPT && "
+        "iptables -A OUTPUT -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT && "
+        # DNS from dnsmasq to the upstream resolver.
+        'iptables -A OUTPUT -d "$upstream" -p udp --dport 53 -j ACCEPT && '
+        'iptables -A OUTPUT -d "$upstream" -p tcp --dport 53 -j ACCEPT && '
+        # HTTPS to any IP that dnsmasq resolved into the allowlist ipset.
+        "iptables -A OUTPUT -p tcp --dport 443 -m set --match-set claude-allowed dst -j ACCEPT && "
+        # Default DROP.
         "iptables -P OUTPUT DROP && "
         "iptables -P INPUT DROP"
     )
     _run_checked(
-        ["incus", "exec", name, "--", "/bin/sh", "-c", rule_script],
-        "apply iptables egress allowlist (--no-network --claude)",
+        ["incus", "exec", name, "--", "/bin/sh", "-c", setup_script],
+        "configure dnsmasq+ipset egress allowlist (--no-network --claude)",
         stdin=subprocess.DEVNULL,
     )
 
@@ -824,8 +829,14 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     """Bootstrap a freshly-started container: staging dir, ishlib mount, apt.
 
     Sets up the ``/run/isholate`` staging area, mounts the ishlib checkout,
-    probes network connectivity, and installs ``python3`` + ``sudo`` via apt
-    (or dnf on Fedora-family images).  Called once during host-base creation.
+    probes network connectivity, and installs base packages via apt (or dnf
+    on Fedora-family images).  Called once during host-base creation.
+
+    Base packages installed:
+    - ``python3``, ``sudo`` — required for ishfiles provisioning.
+    - ``iptables``, ``ipset``, ``dnsmasq`` — pre-installed so that
+      ``--no-network --claude`` can configure the egress allowlist without
+      needing network access at lockdown time.
 
     Args:
         name:    Container name.
@@ -848,7 +859,8 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     )
 
     _say(
-        "installing base packages in container (python3, sudo); "
+        "installing base packages in container "
+        "(python3, sudo, iptables, ipset, dnsmasq); "
         "this can take a minute on first run...",
         quiet=quiet,
     )
@@ -901,10 +913,11 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
         )
 
     apt_update = "apt-get update" if verbose else "apt-get update -qq"
+    _base_pkgs = "python3 sudo iptables ipset dnsmasq"
     apt_install = (
-        "apt-get install -y --no-install-recommends python3 sudo"
+        f"apt-get install -y --no-install-recommends {_base_pkgs}"
         if verbose
-        else "apt-get install -qq -y --no-install-recommends python3 sudo"
+        else f"apt-get install -qq -y --no-install-recommends {_base_pkgs}"
     )
     _run_checked(
         [
@@ -919,10 +932,10 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
             f"if command -v apt-get >/dev/null 2>&1; then "
             f"{apt_update} && {apt_install}; "
             "elif command -v dnf >/dev/null 2>&1; then "
-            "dnf install -y python3 sudo; "
+            f"dnf install -y {_base_pkgs}; "
             "fi",
         ],
-        "bootstrap (python3 + sudo install)",
+        f"bootstrap ({_base_pkgs} install)",
         stdin=subprocess.DEVNULL,
     )
 

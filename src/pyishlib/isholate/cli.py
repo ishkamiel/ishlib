@@ -101,11 +101,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Block all network traffic from the ephemeral container (applied "
             "after provisioning, so apt and ishfiles still run). When combined "
-            "with --claude, an egress allowlist is installed inside the "
-            "container so the Claude CLI can still reach its API endpoints "
-            "(api.anthropic.com, console.anthropic.com, statsig.anthropic.com, "
-            "sentry.io, claude.ai). All restrictions are applied inside the "
-            "container; the host firewall is not touched."
+            "with --claude, dnsmasq is configured as the container's sole "
+            "resolver and an ipset-backed iptables allowlist is installed so "
+            "the Claude CLI can reach its API endpoints (anthropic.com, "
+            "claude.ai, statsig.com, statsigapi.net, sentry.io — including all "
+            "subdomains). CDN IP rotation is handled transparently because "
+            "dnsmasq populates the ipset on every DNS lookup rather than "
+            "pinning IPs at rule-add time. All restrictions are applied inside "
+            "the container; the host firewall is not touched."
         ),
     )
 

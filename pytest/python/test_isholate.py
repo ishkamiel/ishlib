@@ -34,7 +34,7 @@ from pyishlib.isholate.config import (
     load_project_config,
 )
 from pyishlib.isholate.container import (
-    _CLAUDE_ALLOW_HOSTS,
+    _CLAUDE_ALLOW_DOMAINS,
     _META_SOURCE_HASH,
     _apply_network_restrictions,
     _assert_no_isholate_devices,
@@ -2150,8 +2150,12 @@ class TestApplyNetworkRestrictions:
             assert "iptables" not in joined
             assert "apt-get" not in joined
 
-    def test_claude_installs_iptables_and_allowlist(self):
-        """With --claude we install iptables (guarded) and apply the allowlist."""
+    def test_claude_configures_dnsmasq_ipset_allowlist(self):
+        """With --claude we configure dnsmasq+ipset and apply an iptables allowlist.
+
+        Packages (iptables, ipset, dnsmasq) are assumed pre-installed in the
+        base image by _bootstrap_base — no per-run apt install step here.
+        """
         with patch("pyishlib.isholate.container._run") as mock_run, patch(
             "pyishlib.isholate.container._run_checked"
         ) as mock_checked:
@@ -2163,62 +2167,70 @@ class TestApplyNetworkRestrictions:
 
         checked_cmds = self._collect_cmds(mock_checked.call_args_list)
 
-        # The install step must be guarded by `command -v iptables` so
-        # a base with iptables already present skips the apt run.
-        install_shells = [
-            cmd
-            for cmd in checked_cmds
-            if any("command -v iptables" in tok for tok in cmd)
-        ]
-        assert len(install_shells) == 1, (
-            "expected one guarded iptables install step"
-        )
-        install_script = install_shells[0][-1]
-        assert "apt-get install" in install_script
+        # No guarded apt/dnf install — packages live in the base image.
+        for cmd in checked_cmds:
+            joined = " ".join(cmd)
+            assert "command -v iptables" not in joined, (
+                "iptables install guard should not appear; packages are in base"
+            )
+            assert "apt-get install" not in joined, (
+                "apt-get install should not appear in the claude lockdown step"
+            )
 
-        # There's a single shell script that builds the iptables allowlist.
-        rule_scripts = [
+        # There's a single setup script that configures dnsmasq+ipset+iptables.
+        setup_scripts = [
             cmd
             for cmd in checked_cmds
             if cmd[:5] == ["incus", "exec", "ctr", "--", "/bin/sh"]
             and any("iptables -P OUTPUT DROP" in tok for tok in cmd)
         ]
-        assert len(rule_scripts) == 1, (
-            f"expected one iptables rule script, got {checked_cmds}"
+        assert len(setup_scripts) == 1, (
+            f"expected one dnsmasq+ipset setup script, got {checked_cmds}"
         )
-        script = rule_scripts[0][-1]
+        script = setup_scripts[0][-1]
 
-        # Each Claude allowlist host gets an ACCEPT rule on 443.
-        for host in _CLAUDE_ALLOW_HOSTS:
+        # dnsmasq must be configured with all allowlisted domain suffixes.
+        for domain in _CLAUDE_ALLOW_DOMAINS:
+            assert domain in script, f"domain {domain!r} missing from dnsmasq config"
+        assert "ipset=/" in script, "dnsmasq ipset= directive missing"
+        assert "claude-allowed" in script, "ipset name 'claude-allowed' missing"
+
+        # ipset is created before dnsmasq starts.
+        assert "ipset create claude-allowed" in script
+
+        # resolv.conf is replaced with 127.0.0.1 and locked immutable.
+        assert "nameserver 127.0.0.1" in script
+        assert "chattr +i /etc/resolv.conf" in script
+
+        # iptables allows HTTPS to ipset members (not per-host rules).
+        assert "--match-set claude-allowed dst" in script
+        assert "--dport 443" in script
+        # No old-style per-host -d <fqdn> ACCEPT rules on port 443.
+        for domain in _CLAUDE_ALLOW_DOMAINS:
             assert (
-                f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
-                in script
-            ), f"missing allow rule for {host}"
+                f"iptables -A OUTPUT -d {domain} -p tcp --dport 443 -j ACCEPT"
+                not in script
+            ), f"old per-host rule for {domain!r} must not appear"
 
-        # Loopback, conntrack, and DNS must be allowed.
+        # Loopback, conntrack, and DNS rules are all present.
         assert "iptables -A INPUT -i lo -j ACCEPT" in script
         assert "iptables -A OUTPUT -o lo -j ACCEPT" in script
         assert "ESTABLISHED,RELATED" in script
-
-        # DNS is pinned to /etc/resolv.conf nameservers (not wide-open port
-        # 53) to prevent DNS-based exfiltration.
-        assert "/etc/resolv.conf" in script
-        assert "nameserver" in script
-        assert '-d "$ns" -p udp --dport 53 -j ACCEPT' in script
-        assert '-d "$ns" -p tcp --dport 53 -j ACCEPT' in script
-        # Ensure we did NOT leave an any-destination DNS hole.
+        # DNS is allowed to 127.0.0.1 (our dnsmasq) and the upstream resolver.
+        assert "iptables -A OUTPUT -d 127.0.0.1 -p udp --dport 53 -j ACCEPT" in script
+        assert "iptables -A OUTPUT -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT" in script
+        assert 'iptables -A OUTPUT -d "$upstream" -p udp --dport 53' in script
+        assert 'iptables -A OUTPUT -d "$upstream" -p tcp --dport 53' in script
+        # Wide-open port-53 holes must not exist.
         assert "iptables -A OUTPUT -p udp --dport 53 -j ACCEPT" not in script
         assert "iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT" not in script
 
-        # DROP policy comes *after* the ACCEPT rules: check textual order.
+        # DROP policy is present and comes after all ACCEPT rules.
         drop_pos = script.index("iptables -P OUTPUT DROP")
-        for host in _CLAUDE_ALLOW_HOSTS:
-            host_pos = script.index(
-                f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
-            )
-            assert host_pos < drop_pos, (
-                f"ACCEPT for {host} must come before DROP policy"
-            )
+        ipset_rule_pos = script.index("--match-set claude-allowed dst")
+        assert ipset_rule_pos < drop_pos, (
+            "ipset ACCEPT rule must come before DROP policy"
+        )
 
     def test_claude_disables_ipv6(self):
         """The claude path also disables IPv6 so one rule-set is enough."""
