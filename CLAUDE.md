@@ -150,7 +150,7 @@ def test_example(shell, tmp_path, ishlib):
     out = gen_script_and_check_output(shell, tmp_path, inspect.cleandoc(f"""
     #!/usr/bin/env {shell}
     . "{ishlib}"
-    ish_say "hello"
+    ish_info "hello"
     """))
     assert "hello" in out
 ```
@@ -406,9 +406,7 @@ Use the canonical function names that mirror Python's `logging` vocabulary:
 |---|---|---|
 | `ish_debug` | `debug` | Internal trace; shown only at `--debug` |
 | `ish_info` | `info` | Normal progress; shown with `-v` |
-| `ish_say` | `info` | Alias for `ish_info` |
 | `ish_warning` | `warning` | Recoverable issue; shown by default |
-| `ish_warn` | `warning` | Alias for `ish_warning` |
 | `ish_error` | `error` | Failure of a unit of work; shown by default |
 | `ish_critical` | `critical` | Fatal abort; stops subsequent scripts |
 

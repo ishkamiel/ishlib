@@ -51,19 +51,6 @@ ish_debug() {
   return 0
 }
 
-: <<'DOCSTRING'
-`ish_say ...`
-
-Print an info message.  Alias for `ish_info`.
-DOCSTRING
-ish_say() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'info\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  else
-    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
-  fi
-  return 0
-}
 
 : <<'DOCSTRING'
 `ish_info ...`
@@ -102,9 +89,6 @@ Print a warning message.
 
 When `ISHLIB_LOG_OUT` is set, writes `warning<TAB><message>` to that path
 instead of stderr.
-
-`ish_warn` is an alias kept for compatibility; prefer `ish_warning` in new
-code.
 DOCSTRING
 ish_warning() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
@@ -121,29 +105,6 @@ ish_warning() {
   return 0
 }
 
-: <<'DOCSTRING'
-`ish_warn ...`
-
-Alias for `ish_warning`.
-
-Note: unlike a simple delegation, this function duplicates the terminal-output
-path so that `caller 0` reports the call site of `ish_warn` rather than the
-internal call site within `ish_warning`.  The ISHLIB_LOG_OUT path is identical.
-DOCSTRING
-ish_warn() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'warning\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[WW] %b%b (at %b)%b\n" "${ish_ColorWarn}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  return 0
-}
 
 : <<'DOCSTRING'
 `ish_error ...`

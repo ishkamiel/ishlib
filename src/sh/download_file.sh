@@ -30,10 +30,10 @@ Returns:
 
 DOCSTRING
 download_file() {
-  [ -z "$1" ] && ish_warn "downloadFile: bad 1st arg" && return 1
-  [ -z "$2" ] && ish_warn "downloadFile: bad 2nd arg" && return 1
+  [ -z "$1" ] && ish_warning "downloadFile: bad 1st arg" && return 1
+  [ -z "$2" ] && ish_warning "downloadFile: bad 2nd arg" && return 1
 
-  ish_say "downloading ${1} to ${2}"
+  ish_info "downloading ${1} to ${2}"
   mkdir -p "$(dirname "$2")"
 
   if command -v curl >/dev/null 2>&1; then
@@ -53,5 +53,5 @@ download_file() {
       return $?
     fi
   fi
-  ish_warn "downloadFile: Cannot find curl or wget!" && return 2
+  ish_warning "downloadFile: Cannot find curl or wget!" && return 2
 }

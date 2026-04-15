@@ -23,7 +23,7 @@ C() {
 }
 
 do_a_warn() {
-  ish_warn "warning"
+  ish_warning "warning"
 }
 
 case $1 in

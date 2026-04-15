@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-15.0440"
+export ish_VERSION_NUMBER="2026-04-15.0443"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -117,7 +117,7 @@ ishlib_main() {
       shift
       ;;
     *)
-      ish_warn "Unknown option: $1"
+      ish_warning "Unknown option: $1"
       shift
       ;;
     esac
@@ -172,8 +172,8 @@ EOF
       exit 0
   fi
 
-  ish_warn "ishlib run directly without parameters!"
-  ish_say "To print docs:       ./ishlib.sh -h"
+  ish_warning "ishlib run directly without parameters!"
+  ish_info "To print docs:       ./ishlib.sh -h"
   exit 0
 }
 
@@ -225,7 +225,7 @@ print_docstrings() {
       ;;
     *)
       if [ -n "${_filename}" ]; then
-        ish_warn "${_t} multiple filenames given: ${_filename} and ${1}"
+        ish_warning "${_t} multiple filenames given: ${_filename} and ${1}"
         return 1
       fi
       _filename="$1"
@@ -402,20 +402,6 @@ ish_debug() {
 }
 
 : <<'DOCSTRING'
-`ish_say ...`
-
-Print an info message.  Alias for `ish_info`.
-DOCSTRING
-ish_say() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'info\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  else
-    printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
-  fi
-  return 0
-}
-
-: <<'DOCSTRING'
 `ish_info ...`
 
 Print an info message.
@@ -452,35 +438,8 @@ Print a warning message.
 
 When `ISHLIB_LOG_OUT` is set, writes `warning<TAB><message>` to that path
 instead of stderr.
-
-`ish_warn` is an alias kept for compatibility; prefer `ish_warning` in new
-code.
 DOCSTRING
 ish_warning() {
-  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'warning\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
-  elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[WW] %b%b (at %b)%b\n" "${ish_ColorWarn}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  return 0
-}
-
-: <<'DOCSTRING'
-`ish_warn ...`
-
-Alias for `ish_warning`.
-
-Note: unlike a simple delegation, this function duplicates the terminal-output
-path so that `caller 0` reports the call site of `ish_warn` rather than the
-internal call site within `ish_warning`.  The ISHLIB_LOG_OUT path is identical.
-DOCSTRING
-ish_warn() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
     printf 'warning\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
   elif [ -z "${BASH_VERSION:-}" ]; then
@@ -604,10 +563,10 @@ Returns:
 
 DOCSTRING
 download_file() {
-  [ -z "$1" ] && ish_warn "downloadFile: bad 1st arg" && return 1
-  [ -z "$2" ] && ish_warn "downloadFile: bad 2nd arg" && return 1
+  [ -z "$1" ] && ish_warning "downloadFile: bad 1st arg" && return 1
+  [ -z "$2" ] && ish_warning "downloadFile: bad 2nd arg" && return 1
 
-  ish_say "downloading ${1} to ${2}"
+  ish_info "downloading ${1} to ${2}"
   mkdir -p "$(dirname "$2")"
 
   if command -v curl >/dev/null 2>&1; then
@@ -627,7 +586,7 @@ download_file() {
       return $?
     fi
   fi
-  ish_warn "downloadFile: Cannot find curl or wget!" && return 2
+  ish_warning "downloadFile: Cannot find curl or wget!" && return 2
 }
 
 : <<'DOCSTRING'
@@ -645,7 +604,7 @@ Returns:
   2 - if argument was missing
 DOCSTRING
 has_command() {
-  [ -z "$1" ] && ish_warn "has_command: bad 1st arg" && return 2
+  [ -z "$1" ] && ish_warning "has_command: bad 1st arg" && return 2
   if command -v "$1" >/dev/null 2>&1; then return 0; fi
   return 1
 }
@@ -665,7 +624,7 @@ substr() {
     case "$1" in
     --var)
       if [ -z "$2" ]; then
-        ish_warn "${_t} --var requires a non-empty variable name"
+        ish_warning "${_t} --var requires a non-empty variable name"
         return 1
       fi
       _ishlib_var="$2"
@@ -682,7 +641,7 @@ substr() {
         _ishlib_res=3
         _ishlib_end="$1"
       else
-        ish_warn "${_t} too many arguments!"
+        ish_warning "${_t} too many arguments!"
         return 1
       fi
       shift 1
@@ -691,7 +650,7 @@ substr() {
   done
 
   if [ "${_ishlib_res}" -lt 2 ]; then
-    ish_warn "${_t} too few arguments ${_ishlib_res}!"
+    ish_warning "${_t} too few arguments ${_ishlib_res}!"
     return 1
   fi
 
@@ -715,7 +674,7 @@ substr() {
 `strlen string [--var result_var]`
 DOCSTRING
 strlen() {
-  ish_warn "Just use \${\#var}"
+  ish_warning "Just use \${\#var}"
   _ishlib_str=
   _ishlib_var=
   _ishlib_res=
@@ -724,14 +683,14 @@ strlen() {
     case "$1" in
     --var)
       if [ -z "$2" ]; then
-        ish_warn "strlen: --var requires a non-empty variable name"
+        ish_warning "strlen: --var requires a non-empty variable name"
         return 1
       fi
       _ishlib_var="$2"
       shift 2
       ;;
     *)
-      [ -z "${_ishlib_str}" ] || (ish_warn "bad arguments to strlen" && return 1)
+      [ -z "${_ishlib_str}" ] || (ish_warning "bad arguments to strlen" && return 1)
       _ishlib_str="$1"
       shift
       ;;
@@ -880,7 +839,7 @@ find_or_install() {
     ish_debug "ishlib:find_or_install: running $func $var" "$@"
     if $func "$var" "$@"; then
       if ! has_command "${!var}"; then
-        ish_warn "ishlib:find_or_install: custom installer for $name reported success, but $var is set to ${!var}, which is not a valid command"
+        ish_warning "ishlib:find_or_install: custom installer for $name reported success, but $var is set to ${!var}, which is not a valid command"
         if is_dry; then return 0; fi
         return 1
       fi
@@ -908,9 +867,9 @@ dump() {
   local unbound=0
   for var in "${vars[@]}"; do
     if [[ -n "${var+x}" ]]; then
-      ish_say "$var=${!var}"
+      ish_info "$var=${!var}"
     else
-      ish_say "$var is unbound"
+      ish_info "$var is unbound"
       unbound=$((unbound + 1))
     fi
   done
@@ -923,10 +882,10 @@ assert_dir() {
 
   for d in "${vars[@]}"; do
     if ! [[ -e "$d" ]]; then
-      ish_warn "does not exist: $d"
+      ish_warning "does not exist: $d"
       bad=$((bad + 1))
     elif ! [[ -d "$d" ]]; then
-      ish_warn "not a directory: $d"
+      ish_warning "not a directory: $d"
       bad=$((bad + 1))
     fi
   done
@@ -940,7 +899,7 @@ assert_exists() {
 
   for d in "${vars[@]}"; do
     if ! [[ -e "$d" ]]; then
-      ish_warn "does not exist: $d"
+      ish_warning "does not exist: $d"
       bad=$((bad + 1))
     fi
   done
@@ -989,7 +948,7 @@ do_or_dry() {
     ish_say_dry_run "$cmd" "${args[@]}"
   else
     if ! $cmd "${args[@]}"; then
-      ish_warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
+      ish_warning "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
       return 1
     fi
   fi
@@ -1096,7 +1055,7 @@ ish_run() {
         break
         ;;
       -*)
-        ish_warn "Invalid option: $1" >&2
+        ish_warning "Invalid option: $1" >&2
         return 1
         ;;
       *)
@@ -1140,7 +1099,7 @@ git_clone_or_update() {
   local t="ishlib:git_clone_or_update:"
 
   local bin_git=${bin_git:-git}
-  has_command "${bin_git}" || (ish_warn "$t cannot find ${bin_git}" && return 1)
+  has_command "${bin_git}" || (ish_warning "$t cannot find ${bin_git}" && return 1)
 
   local url=""
   local dir=""
@@ -1174,7 +1133,7 @@ git_clone_or_update() {
         dir="$1"
         shift
       else
-        ish_warn "$t unknown argument $1"
+        ish_warning "$t unknown argument $1"
         bad_args=$((bad_args + 1))
         shift
       fi
@@ -1190,33 +1149,33 @@ git_clone_or_update() {
     git_args+=("$url" "$dir")
 
     ish_debug "$t cloning ${url} to ${dir}"
-    do_or_dry mkdir -p "${dir}" || (ish_warn "$t failed to enter $dir" && return 1)
-    do_or_dry "$bin_git" clone "${git_args[@]}" || (ish_warn "$t git clone failed" && return 1)
+    do_or_dry mkdir -p "${dir}" || (ish_warning "$t failed to enter $dir" && return 1)
+    do_or_dry "$bin_git" clone "${git_args[@]}" || (ish_warning "$t git clone failed" && return 1)
 
     if [[ "${update_submodules}" = "1" ]]; then
       ish_debug "$t initializing submodules"
-      do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
-      do_or_dry "$bin_git" submodule update --init --recursive || (ish_warn "$t submodule update failed" && return 1)
-      do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
+      do_or_dry pushd "${dir}" || (ish_warning "$t failed to pushd ${dir}" && return 1)
+      do_or_dry "$bin_git" submodule update --init --recursive || (ish_warning "$t submodule update failed" && return 1)
+      do_or_dry popd || (ish_warning "$t failed to popd" && return 1)
     fi
   else
     ish_debug "$t updating ${dir}"
 
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warning "$t failed to pushd ${dir}" && return 1)
 
     if [[ -n "$branch" ]]; then
-      do_or_dry "$bin_git" checkout "$branch" || (ish_warn "$t checkout $branch failed" && return 1)
+      do_or_dry "$bin_git" checkout "$branch" || (ish_warning "$t checkout $branch failed" && return 1)
     fi
 
-    do_or_dry "$bin_git" pull || (ish_warn "$t failed to git pull ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
+    do_or_dry "$bin_git" pull || (ish_warning "$t failed to git pull ${dir}" && return 1)
+    do_or_dry popd || (ish_warning "$t failed to popd" && return 1)
   fi
 
   if [[ -n "${commit}" ]]; then
     ish_debug "${t} checking out ${commit}"
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
-    do_or_dry "$bin_git" checkout "${commit}" || (ish_warn "$t failed to checkout ${commit} in ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warning "$t failed to pushd ${dir}" && return 1)
+    do_or_dry "$bin_git" checkout "${commit}" || (ish_warning "$t failed to checkout ${commit} in ${dir}" && return 1)
+    do_or_dry popd || (ish_warning "$t failed to popd" && return 1)
   fi
 
   return 0

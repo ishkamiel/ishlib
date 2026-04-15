@@ -33,11 +33,11 @@ ish_apt_add_ppa() {
   local _ppa_name="${_ppa#ppa:}"
 
   if grep -rqs "${_ppa_name}" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
-    ish_say "PPA already present: ${_ppa}"
+    ish_info "PPA already present: ${_ppa}"
     return 0
   fi
 
-  ish_say "Adding PPA: ${_ppa}"
+  ish_info "Adding PPA: ${_ppa}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     ish_say_dry_run sudo add-apt-repository -y "${_ppa}"
     ish_say_dry_run sudo apt-get update -q
@@ -45,7 +45,7 @@ ish_apt_add_ppa() {
   fi
 
   if ! sudo add-apt-repository -y "${_ppa}"; then
-    ish_warn "Failed to add PPA: ${_ppa}"
+    ish_warning "Failed to add PPA: ${_ppa}"
     return 1
   fi
   sudo apt-get update -q
@@ -77,11 +77,11 @@ ish_apt_add_key() {
   local _dest="/etc/apt/keyrings/${_name}.gpg"
 
   if [[ -f "${_dest}" ]]; then
-    ish_say "GPG key already present: ${_dest}"
+    ish_info "GPG key already present: ${_dest}"
     return 0
   fi
 
-  ish_say "Adding GPG key to ${_dest}"
+  ish_info "Adding GPG key to ${_dest}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     ish_say_dry_run sudo mkdir -p /etc/apt/keyrings
     ish_say_dry_run "curl -sSL ${_url} | gpg --dearmor | sudo tee ${_dest}"
@@ -91,7 +91,7 @@ ish_apt_add_key() {
 
   sudo mkdir -p /etc/apt/keyrings
   if ! curl -sSL "${_url}" | gpg --dearmor | sudo tee "${_dest}" > /dev/null; then
-    ish_warn "Failed to fetch/dearmor GPG key from ${_url}"
+    ish_warning "Failed to fetch/dearmor GPG key from ${_url}"
     return 1
   fi
   sudo chmod a+r "${_dest}"
@@ -120,11 +120,11 @@ ish_apt_add_repo() {
   local _list_file="/etc/apt/sources.list.d/${_name}.list"
 
   if [[ -f "${_list_file}" ]]; then
-    ish_say "apt repo already present: ${_list_file}"
+    ish_info "apt repo already present: ${_list_file}"
     return 0
   fi
 
-  ish_say "Adding apt repo: ${_list_file}"
+  ish_info "Adding apt repo: ${_list_file}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     ish_say_dry_run "echo '${_deb_line}' | sudo tee \"${_list_file}\""
     ish_say_dry_run sudo apt-get update -q
@@ -132,7 +132,7 @@ ish_apt_add_repo() {
   fi
 
   if ! echo "${_deb_line}" | sudo tee "${_list_file}" > /dev/null; then
-    ish_warn "Failed to write apt repo file: ${_list_file}"
+    ish_warning "Failed to write apt repo file: ${_list_file}"
     return 1
   fi
   sudo apt-get update -q
@@ -153,7 +153,7 @@ DOCSTRING
 ish_apt_update_once() {
   local _sentinel="${XDG_RUNTIME_DIR:-/tmp}/ishfiles-apt-updated-$$"
   if [[ -f "${_sentinel}" ]]; then
-    ish_say "apt-get update already done this session"
+    ish_info "apt-get update already done this session"
     return 0
   fi
 
@@ -189,19 +189,19 @@ ish_dnf_import_key() {
 
   if [[ -n "${_name}" ]]; then
     if rpm -q gpg-pubkey --qf '%{summary}\n' 2>/dev/null | grep -qi "${_name}"; then
-      ish_say "GPG key '${_name}' already imported"
+      ish_info "GPG key '${_name}' already imported"
       return 0
     fi
   fi
 
-  ish_say "Importing GPG key from ${_url}"
+  ish_info "Importing GPG key from ${_url}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     ish_say_dry_run sudo rpm --import "${_url}"
     return 0
   fi
 
   if ! sudo rpm --import "${_url}"; then
-    ish_warn "Failed to import GPG key from ${_url}"
+    ish_warning "Failed to import GPG key from ${_url}"
     return 1
   fi
 }
@@ -229,18 +229,18 @@ ish_dnf_add_repo() {
   local _repo_file="/etc/yum.repos.d/${_name}.repo"
 
   if [[ -f "${_repo_file}" ]]; then
-    ish_say "dnf repo already present: ${_repo_file}"
+    ish_info "dnf repo already present: ${_repo_file}"
     return 0
   fi
 
-  ish_say "Adding dnf repo: ${_repo_file}"
+  ish_info "Adding dnf repo: ${_repo_file}"
   if [[ "${DRY_RUN:-}" = 1 ]]; then
     ish_say_dry_run "printf '%s\\n' '...' | sudo tee ${_repo_file}"
     return 0
   fi
 
   if ! printf '%s\n' "${_content}" | sudo tee "${_repo_file}" > /dev/null; then
-    ish_warn "Failed to write dnf repo file: ${_repo_file}"
+    ish_warning "Failed to write dnf repo file: ${_repo_file}"
     return 1
   fi
 }

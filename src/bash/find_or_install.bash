@@ -55,7 +55,7 @@ find_or_install() {
     ish_debug "ishlib:find_or_install: running $func $var" "$@"
     if $func "$var" "$@"; then
       if ! has_command "${!var}"; then
-        ish_warn "ishlib:find_or_install: custom installer for $name reported success, but $var is set to ${!var}, which is not a valid command"
+        ish_warning "ishlib:find_or_install: custom installer for $name reported success, but $var is set to ${!var}, which is not a valid command"
         if is_dry; then return 0; fi
         return 1
       fi
