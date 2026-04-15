@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from .._compat import tomllib
+from .._compat import load_toml_file
 
 log = logging.getLogger(__name__)
 
@@ -132,10 +132,6 @@ def load_externals(cfg) -> List[ExternalSpec]:
     Returns:
         List of :class:`ExternalSpec` objects in TOML order.
     """
-    if tomllib is None:
-        log.warning("TOML support unavailable; externals not loaded")
-        return []
-
     source = Path(cfg.get_opt("source") or "").expanduser().resolve()
     config_dir = cfg.get_opt("config_dir")
     config_file = cfg.get_opt("externals_config_file")
@@ -144,11 +140,8 @@ def load_externals(cfg) -> List[ExternalSpec]:
     if not config_path.is_file():
         return []
 
-    try:
-        with open(config_path, "rb") as fh:
-            raw = tomllib.load(fh)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to read %s: %s", config_path, exc)
+    raw = load_toml_file(config_path, default=None, warn_missing_toml=True)
+    if not raw:
         return []
 
     specs: List[ExternalSpec] = []

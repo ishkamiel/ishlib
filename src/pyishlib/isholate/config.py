@@ -33,13 +33,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-try:
-    import tomllib  # Python 3.11+
-except ImportError:
-    try:
-        import tomli as tomllib  # type: ignore[no-redef]
-    except ImportError:
-        tomllib = None  # type: ignore[assignment]
+from .._compat import load_toml_file
 
 # Umbrella project-local config directory.
 PROJECT_DIR_NAME = ".ishlib"
@@ -96,15 +90,11 @@ def load_project_config(root: Path) -> Dict[str, Any]:
     Returns:
         Parsed config dict, possibly empty.
     """
-    if tomllib is None:
-        return {}
     config_file = (
         root.resolve() / PROJECT_DIR_NAME / ISHOLATE_SUBDIR / ISHOLATE_CONFIG_FILE
     )
-    if not config_file.is_file():
-        return {}
-    with open(config_file, "rb") as fh:
-        return tomllib.load(fh)
+    result = load_toml_file(config_file, default={})
+    return result if isinstance(result, dict) else {}
 
 
 def discover_host_ishfiles_source(home: Path) -> Optional[Path]:
@@ -129,9 +119,8 @@ def discover_host_ishfiles_source(home: Path) -> Optional[Path]:
     source: Optional[Path] = None
 
     config_file = home / ".config" / "ishfiles" / "config.toml"
-    if config_file.is_file() and tomllib is not None:
-        with open(config_file, "rb") as fh:
-            data = tomllib.load(fh)
+    data = load_toml_file(config_file, default=None)
+    if isinstance(data, dict):
         raw = data.get("source")
         if raw:
             source = Path(raw)
