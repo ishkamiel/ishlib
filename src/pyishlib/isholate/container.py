@@ -778,12 +778,16 @@ def _apply_network_restrictions(
     #      - tcp/443 to the ipset (populated dynamically by dnsmasq)
     #      - default INPUT/OUTPUT DROP
     setup_script = (
-        # 1. Capture upstream resolver.  Try /etc/resolv.conf first; in
-        #    containers using systemd-resolved the stub symlink may not be
-        #    written yet at this point, so fall back to the default-route
-        #    gateway (the Incus bridge also acts as DNS forwarder).
-        "upstream=$(awk '/^[[:space:]]*nameserver[[:space:]]/{print $2; exit}' "
-        "/etc/resolv.conf 2>/dev/null) && "
+        # 1. Capture the real (non-loopback) upstream resolver *before* we
+        #    stop systemd-resolved.  On Ubuntu containers /etc/resolv.conf
+        #    symlinks to the systemd-resolved stub at 127.0.0.53; the actual
+        #    uplink nameservers live in /run/systemd/resolve/resolv.conf.
+        #    We skip loopback addresses (127.x.x.x) in both files and fall
+        #    back to the default-route gateway (the Incus bridge also
+        #    provides DNS forwarding).
+        "upstream=$(awk '/^[[:space:]]*nameserver[[:space:]]/{ip=$2; "
+        "if (ip !~ /^127\\./) {print ip; exit}}' "
+        "/run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null) && "
         '[ -n "$upstream" ] || '
         "upstream=$(ip route show default 2>/dev/null | awk '/default via/{print $3; exit}') && "
         '[ -n "$upstream" ] || { echo "isholate: cannot determine upstream DNS resolver" >&2; exit 1; } && '
@@ -794,15 +798,17 @@ def _apply_network_restrictions(
         # 3. Create the ipset (idempotent — destroy first if it already exists).
         "ipset destroy claude-allowed 2>/dev/null || true && "
         "ipset create claude-allowed hash:ip family inet timeout 600 && "
-        # 4. Lock /etc/resolv.conf to 127.0.0.1.
-        "chattr -i /etc/resolv.conf 2>/dev/null || true && "
+        # 4. Replace /etc/resolv.conf with a static file pointing to our
+        #    dnsmasq.  On Ubuntu containers this path is a symlink to the
+        #    systemd-resolved stub at 127.0.0.53; we must:
+        #      a) stop systemd-resolved so it won't recreate the symlink, and
+        #      b) rm -f the symlink (not overwrite through it) so the new file
+        #         is a regular file on the real filesystem where chattr works.
+        "systemctl stop systemd-resolved 2>/dev/null || true && "
+        "rm -f /etc/resolv.conf && "
         'printf "nameserver 127.0.0.1\\n" > /etc/resolv.conf && '
-        # chattr +i locks the file immutable so the DHCP client can't clobber
-        # it on lease renewal.  Made conditional: some images lack e2fsprogs,
-        # and some filesystems (btrfs, tmpfs) don't support the immutable flag.
-        # If chattr isn't available the iptables rules still enforce that DNS
-        # only reaches 127.0.0.1 (our dnsmasq), so an overwritten resolv.conf
-        # can't redirect traffic outside the allowlist.
+        # chattr +i prevents the DHCP client from clobbering the file.
+        # Conditional: some filesystems (tmpfs, btrfs) don't support it.
         "if command -v chattr >/dev/null 2>&1; then "
         "  chattr +i /etc/resolv.conf 2>/dev/null || true; "
         "fi && "
