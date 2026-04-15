@@ -43,6 +43,7 @@ import logging
 
 from ..environment import detect_distro
 from .config import FAILED_LOGS_STATE_DIR
+from .locks import base_build_lock
 
 log = logging.getLogger(__name__)
 
@@ -1742,121 +1743,149 @@ def ensure_host_base(
     name = _host_base_name(username, image)
     fingerprint = _host_base_fingerprint(host_source)
 
-    # Check whether an up-to-date base already exists.
+    # Fast path (no lock): up-to-date base already exists.  Keeps the common
+    # no-op case zero-cost — no lock file touch, no fcntl syscalls.
     if not rebuild and _container_exists(name):
         stored = _get_stored_fingerprint(name)
         if stored == fingerprint:
             _say(f"reusing host base '{name}'", quiet=quiet)
-            # Scrub any stale isholate-* devices that may have been left by a
-            # previously interrupted run before returning the cached base, and
-            # verify the scrub succeeded so we never return a poisoned base.
             _remove_isholate_devices(name)
             try:
                 _assert_no_isholate_devices(name)
             except RuntimeError:
-                # Poisoned base — devices could not be removed.  Force a
-                # rebuild so the user is not permanently stuck.
-                _say(
-                    f"host base '{name}' has un-removable isholate devices "
-                    "— forcing rebuild...",
-                    quiet=quiet,
-                )
-                del_r = _run(
-                    ["incus", "delete", name, "--force"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if _container_exists(name):
-                    detail = (del_r.stderr or del_r.stdout or "").strip()
-                    raise RuntimeError(
-                        f"failed to delete poisoned host base '{name}' "
-                        f"(incus delete exited with {del_r.returncode})"
-                        + (f": {detail}" if detail else "")
-                        + "; remove it manually with "
-                        "'incus delete --force' and retry"
-                    )
-                # Fall through to the create path below.
+                # Poisoned — fall through to the locked rebuild path below.
+                pass
             else:
                 return name
+
+    # Slow path: build or rebuild under a per-base lock so parallel isholate
+    # invocations targeting the same base serialize instead of racing.  The
+    # double-checked re-read inside the lock lets a waiter observe a peer's
+    # just-finished build and skip its own redundant rebuild.
+    with base_build_lock(name):
+        # Re-check under the lock: a peer may have just built the base.
+        if not rebuild and _container_exists(name):
+            stored = _get_stored_fingerprint(name)
+            if stored == fingerprint:
+                _remove_isholate_devices(name)
+                try:
+                    _assert_no_isholate_devices(name)
+                except RuntimeError:
+                    # Poisoned base — devices could not be removed.  Force a
+                    # rebuild so the user is not permanently stuck.  Use the
+                    # strict post-delete check because a poisoned base that
+                    # won't delete would leave us stuck in a rebuild loop.
+                    _say(
+                        f"host base '{name}' has un-removable isholate devices "
+                        "— forcing rebuild...",
+                        quiet=quiet,
+                    )
+                    del_r = _run(
+                        ["incus", "delete", name, "--force"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if _container_exists(name):
+                        detail = (del_r.stderr or del_r.stdout or "").strip()
+                        raise RuntimeError(
+                            f"failed to delete poisoned host base '{name}' "
+                            f"(incus delete exited with {del_r.returncode})"
+                            + (f": {detail}" if detail else "")
+                            + "; remove it manually with "
+                            "'incus delete --force' and retry"
+                        )
+                    # Fall through to the create path below.
+                else:
+                    _say(
+                        f"reusing host base '{name}' (built by peer)",
+                        quiet=quiet,
+                    )
+                    return name
+            else:
+                _say(
+                    f"host base '{name}' is stale (source changed) — rebuilding...",
+                    quiet=quiet,
+                )
+                _run(["incus", "delete", name, "--force"], check=False)
+        elif rebuild and _container_exists(name):
+            _say(
+                f"rebuilding host base '{name}' (--rebuild requested)...",
+                quiet=quiet,
+            )
+            _run(["incus", "delete", name, "--force"], check=False)
+
         _say(
-            f"host base '{name}' is stale (source changed) — rebuilding...", quiet=quiet
-        )
-        _run(["incus", "delete", name, "--force"], check=False)
-    elif rebuild and _container_exists(name):
-        _say(f"rebuilding host base '{name}' (--rebuild requested)...", quiet=quiet)
-        _run(["incus", "delete", name, "--force"], check=False)
-
-    _say(
-        f"creating host base '{name}' from {image} "
-        "(may pull the image on first use)...",
-        quiet=quiet,
-    )
-    _run(
-        ["incus", "init", image, name, "--config", "security.nesting=true"], check=True
-    )
-    started = False
-
-    try:
-        _say(f"starting host base '{name}'...", quiet=quiet)
-        _run(["incus", "start", name], check=True)
-        started = True
-
-        # Create the container user matching the host username.
-        _say(f"creating user '{username}' in host base...", quiet=quiet)
-        _run(
-            ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
-            check=False,
-        )
-        _run(
-            ["incus", "exec", name, "--", "useradd", "-m", "-s", shell, username],
-            check=True,
-        )
-        uid_result = subprocess.run(
-            ["incus", "exec", name, "--", "id", "-u", username],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        uid = int(uid_result.stdout.strip())
-        _set_stored_uid(name, uid)
-
-        # Bootstrap (apt) and apply host ishfiles.
-        ishfiles_flags: List[str] = []
-        if verbose >= 2:
-            ishfiles_flags.append("--debug")
-        elif verbose >= 1:
-            ishfiles_flags.append("-v")
-        ishfiles_flags.extend(["--custom-username", username])
-
-        _bootstrap_base(name, verbose=verbose, quiet=quiet)
-        _apply_host_ishfiles(
-            name,
-            username,
-            uid,
-            host_source,
-            host_config_dir,
-            ishfiles_flags,
+            f"creating host base '{name}' from {image} "
+            "(may pull the image on first use)...",
             quiet=quiet,
         )
+        _run(
+            ["incus", "init", image, name, "--config", "security.nesting=true"],
+            check=True,
+        )
+        started = False
 
-        # Stop the base, then remove host-path mounts and verify they are gone.
-        # Device removal runs after stop so Incus can cleanly detach bind-mounts
-        # without racing a live container.  The assertion ensures a silently-failing
-        # removal cannot poison the base for future copies.
-        _say(f"stopping and saving host base '{name}'...", quiet=quiet)
-        _run(["incus", "stop", name, "--force"], check=False)
-        _remove_isholate_devices(name)
-        _assert_no_isholate_devices(name)
-        _set_stored_fingerprint(name, fingerprint)
+        try:
+            _say(f"starting host base '{name}'...", quiet=quiet)
+            _run(["incus", "start", name], check=True)
+            started = True
 
-        return name
+            # Create the container user matching the host username.
+            _say(f"creating user '{username}' in host base...", quiet=quiet)
+            _run(
+                ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
+                check=False,
+            )
+            _run(
+                ["incus", "exec", name, "--", "useradd", "-m", "-s", shell, username],
+                check=True,
+            )
+            uid_result = subprocess.run(
+                ["incus", "exec", name, "--", "id", "-u", username],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            uid = int(uid_result.stdout.strip())
+            _set_stored_uid(name, uid)
 
-    except (subprocess.CalledProcessError, RuntimeError):
-        if started:
+            # Bootstrap (apt) and apply host ishfiles.
+            ishfiles_flags: List[str] = []
+            if verbose >= 2:
+                ishfiles_flags.append("--debug")
+            elif verbose >= 1:
+                ishfiles_flags.append("-v")
+            ishfiles_flags.extend(["--custom-username", username])
+
+            _bootstrap_base(name, verbose=verbose, quiet=quiet)
+            _apply_host_ishfiles(
+                name,
+                username,
+                uid,
+                host_source,
+                host_config_dir,
+                ishfiles_flags,
+                quiet=quiet,
+            )
+
+            # Stop the base, then remove host-path mounts and verify they are gone.
+            # Device removal runs after stop so Incus can cleanly detach bind-mounts
+            # without racing a live container.  The assertion ensures a silently-failing
+            # removal cannot poison the base for future copies.
+            _say(f"stopping and saving host base '{name}'...", quiet=quiet)
             _run(["incus", "stop", name, "--force"], check=False)
-            _run(["incus", "delete", name, "--force"], check=False)
-        raise
+            _remove_isholate_devices(name)
+            _assert_no_isholate_devices(name)
+            _set_stored_fingerprint(name, fingerprint)
+
+            return name
+
+        except (subprocess.CalledProcessError, RuntimeError):
+            if started:
+                _run(["incus", "stop", name, "--force"], check=False)
+                _run(["incus", "delete", name, "--force"], check=False)
+            raise
 
 
 def ensure_project_base(
@@ -1893,106 +1922,130 @@ def ensure_project_base(
         RuntimeError: if provisioning raises.
     """
     name = _project_base_name(username, project_root)
-
-    # Combine host-base fingerprint with the overlay content fingerprint so
-    # that rebuilding the host base automatically cascades to the project base.
-    host_fp = _get_stored_fingerprint(host_base) or ""
     overlay_fp = _source_fingerprint(project_overlay)
+
+    # Fast path (no lock): up-to-date project base already exists.  Combine
+    # host-base fingerprint with the overlay content fingerprint so that
+    # rebuilding the host base automatically cascades to the project base.
+    host_fp = _get_stored_fingerprint(host_base) or ""
     combined_fp = f"{host_fp}:{overlay_fp}"
 
     if not rebuild and _container_exists(name):
-        stored = _get_stored_fingerprint(name)
-        if stored == combined_fp:
+        if _get_stored_fingerprint(name) == combined_fp:
             _say(f"reusing project base '{name}'", quiet=quiet)
             return name
+
+    # Slow path: build/rebuild under a per-base lock.  Re-read the host-base
+    # fingerprint *inside* the lock — a third party may have rebuilt the host
+    # base while we were queued, which cascades into the combined fingerprint.
+    with base_build_lock(name):
+        host_fp = _get_stored_fingerprint(host_base) or ""
+        combined_fp = f"{host_fp}:{overlay_fp}"
+
+        if not rebuild and _container_exists(name):
+            if _get_stored_fingerprint(name) == combined_fp:
+                _say(
+                    f"reusing project base '{name}' (built by peer)",
+                    quiet=quiet,
+                )
+                return name
+
+        if _container_exists(name):
+            if rebuild:
+                _say(
+                    f"rebuilding project base '{name}' (--rebuild requested)...",
+                    quiet=quiet,
+                )
+            else:
+                _say(
+                    f"project base '{name}' is stale (overlay changed) — rebuilding...",
+                    quiet=quiet,
+                )
+            _run(["incus", "delete", name, "--force"], check=False)
+
         _say(
-            f"project base '{name}' is stale (overlay changed) — rebuilding...",
+            f"creating project base '{name}' from host base '{host_base}'...",
             quiet=quiet,
         )
-        _run(["incus", "delete", name, "--force"], check=False)
-    elif rebuild and _container_exists(name):
-        _say(f"rebuilding project base '{name}' (--rebuild requested)...", quiet=quiet)
-        _run(["incus", "delete", name, "--force"], check=False)
-
-    _say(f"creating project base '{name}' from host base '{host_base}'...", quiet=quiet)
-    _run(["incus", "copy", host_base, name], check=True)
-    # Strip any isholate-* devices inherited from the host base.  The host base
-    # is supposed to be device-free when stopped, but a stale base from an
-    # interrupted earlier run may still carry them; starting a container with a
-    # stale disk device causes "The device already exists" from Incus.  The
-    # assertion ensures a silently-failing removal cannot leave devices behind.
-    _remove_isholate_devices(name)
-    _assert_no_isholate_devices(name)
-    started = False
-
-    try:
-        _say(f"starting project base '{name}'...", quiet=quiet)
-        _run(["incus", "start", name], check=True)
-        started = True
-
-        # Retrieve the uid stored in the host base (inherited by the copy).
-        uid = _get_stored_uid(name)
-        if uid is None:
-            uid_result = subprocess.run(
-                ["incus", "exec", name, "--", "id", "-u", username],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            uid = int(uid_result.stdout.strip())
-
-        # Re-create the staging dir (it lives in /run, which is tmpfs and
-        # does not persist across container stop/start).
-        _run_checked(
-            ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
-            "create staging directory",
-            stdin=subprocess.DEVNULL,
-        )
-
-        # Re-mount the ishlib so the ishfiles CLI is available.
-        _add_mount(
-            name,
-            "isholate-ishlib",
-            _ISHLIB_ROOT,
-            f"{_ISHOLATE_RUN_DIR}/ishlib",
-            readonly=True,
-        )
-
-        # Apply the project overlay.
-        ishfiles_flags: List[str] = []
-        if verbose >= 2:
-            ishfiles_flags.append("--debug")
-        elif verbose >= 1:
-            ishfiles_flags.append("-v")
-        ishfiles_flags.extend(["--custom-username", username])
-
-        _apply_project_overlay(
-            name, username, uid, project_overlay, ishfiles_flags, quiet=quiet
-        )
-
-        # Remove host-path mounts before freezing.
+        _run(["incus", "copy", host_base, name], check=True)
+        # Strip any isholate-* devices inherited from the host base.  The host
+        # base is supposed to be device-free when stopped, but a stale base from
+        # an interrupted earlier run may still carry them; starting a container
+        # with a stale disk device causes "The device already exists" from
+        # Incus.  The assertion ensures a silently-failing removal cannot leave
+        # devices behind.
         _remove_isholate_devices(name)
+        _assert_no_isholate_devices(name)
+        started = False
 
-        _say(f"stopping and saving project base '{name}'...", quiet=quiet)
-        _run(["incus", "stop", name, "--force"], check=False)
-        _set_stored_fingerprint(name, combined_fp)
+        try:
+            _say(f"starting project base '{name}'...", quiet=quiet)
+            _run(["incus", "start", name], check=True)
+            started = True
 
-        return name
+            # Retrieve the uid stored in the host base (inherited by the copy).
+            uid = _get_stored_uid(name)
+            if uid is None:
+                uid_result = subprocess.run(
+                    ["incus", "exec", name, "--", "id", "-u", username],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                uid = int(uid_result.stdout.strip())
 
-    except (subprocess.CalledProcessError, RuntimeError):
-        if started and verbose >= 1:
-            dev_r = _run(
-                ["incus", "config", "device", "list", name],
-                capture_output=True,
-                text=True,
-                check=False,
+            # Re-create the staging dir (it lives in /run, which is tmpfs and
+            # does not persist across container stop/start).
+            _run_checked(
+                ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
+                "create staging directory",
+                stdin=subprocess.DEVNULL,
             )
-            if dev_r.returncode == 0 and dev_r.stdout.strip():
-                _say(f"devices on '{name}' at failure: {dev_r.stdout.strip()}")
-        if started:
+
+            # Re-mount the ishlib so the ishfiles CLI is available.
+            _add_mount(
+                name,
+                "isholate-ishlib",
+                _ISHLIB_ROOT,
+                f"{_ISHOLATE_RUN_DIR}/ishlib",
+                readonly=True,
+            )
+
+            # Apply the project overlay.
+            ishfiles_flags: List[str] = []
+            if verbose >= 2:
+                ishfiles_flags.append("--debug")
+            elif verbose >= 1:
+                ishfiles_flags.append("-v")
+            ishfiles_flags.extend(["--custom-username", username])
+
+            _apply_project_overlay(
+                name, username, uid, project_overlay, ishfiles_flags, quiet=quiet
+            )
+
+            # Remove host-path mounts before freezing.
+            _remove_isholate_devices(name)
+
+            _say(f"stopping and saving project base '{name}'...", quiet=quiet)
             _run(["incus", "stop", name, "--force"], check=False)
-            _run(["incus", "delete", name, "--force"], check=False)
-        raise
+            _set_stored_fingerprint(name, combined_fp)
+
+            return name
+
+        except (subprocess.CalledProcessError, RuntimeError):
+            if started and verbose >= 1:
+                dev_r = _run(
+                    ["incus", "config", "device", "list", name],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if dev_r.returncode == 0 and dev_r.stdout.strip():
+                    _say(f"devices on '{name}' at failure: {dev_r.stdout.strip()}")
+            if started:
+                _run(["incus", "stop", name, "--force"], check=False)
+                _run(["incus", "delete", name, "--force"], check=False)
+            raise
 
 
 # ---------------------------------------------------------------------------

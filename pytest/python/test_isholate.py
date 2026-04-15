@@ -1894,6 +1894,347 @@ class TestStaleDeviceHandling:
 
 
 # ---------------------------------------------------------------------------
+# Parallel-safety: base-build locking
+# ---------------------------------------------------------------------------
+
+
+class TestBaseBuildLocking:
+    """Verify that concurrent invocations against the same base serialize,
+    while parallel ephemeral launches from an already-valid base do not.
+    """
+
+    @staticmethod
+    def _redirect_lock_dir(monkeypatch, tmp_path):
+        """Point the base-build lock directory at a per-test tmp path.
+
+        LOCKS_STATE_DIR is patched to an absolute path; ``Path.home() /
+        <absolute>`` yields the absolute path on POSIX, bypassing $HOME and
+        keeping parallel pytest-xdist workers isolated from one another.
+        """
+        import pyishlib.isholate.locks as locks_mod
+
+        monkeypatch.setattr(locks_mod, "LOCKS_STATE_DIR", tmp_path / "locks")
+        # Short poll interval keeps the test snappy.
+        monkeypatch.setattr(locks_mod, "_POLL_INTERVAL_SECONDS", 0.01)
+        monkeypatch.setattr(locks_mod, "_WAIT_LOG_AFTER_SECONDS", 0.05)
+
+    def test_concurrent_host_base_builds_serialize(self, tmp_path, monkeypatch):
+        """Two threads building the same host base: exactly one ``incus init``
+        call; the waiter observes the peer's finished base and returns it."""
+        import threading
+        import time
+
+        self._redirect_lock_dir(monkeypatch, tmp_path)
+
+        state = {"exists": False, "fingerprint": ""}
+        init_calls = []
+        init_entered = threading.Event()
+        release_init = threading.Event()
+        state_lock = threading.Lock()
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["incus", "info"]:
+                with state_lock:
+                    rc = 0 if state["exists"] else 1
+                return SimpleNamespace(returncode=rc, stdout="", stderr="")
+            if (
+                cmd[:3] == ["incus", "config", "get"]
+                and _META_SOURCE_HASH in cmd
+            ):
+                with state_lock:
+                    fp = state["fingerprint"]
+                return SimpleNamespace(returncode=0, stdout=fp, stderr="")
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            if cmd[:2] == ["incus", "init"]:
+                init_calls.append(list(cmd))
+                init_entered.set()
+                # Block until the main thread has confirmed the second
+                # worker is queued on the lock.
+                assert release_init.wait(timeout=5.0)
+                with state_lock:
+                    state["exists"] = True
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if (
+                cmd[:3] == ["incus", "config", "set"]
+                and len(cmd) >= 6
+                and cmd[4] == _META_SOURCE_HASH
+            ):
+                # The build writes the fingerprint last; that is what the
+                # waiter observes via the re-check under the lock.
+                with state_lock:
+                    state["fingerprint"] = cmd[5]
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        results = {}
+        errors = {}
+
+        def worker(idx):
+            try:
+                results[idx] = ensure_host_base(
+                    _FAKE_IMAGE,
+                    _FAKE_USER,
+                    Path("/fake/src"),
+                    None,
+                    _FAKE_SHELL,
+                    quiet=True,
+                )
+            except Exception as exc:  # pragma: no cover - surfaced via assert
+                errors[idx] = exc
+
+        # Patches applied once outside the threads — unittest.mock.patch is
+        # not thread-safe, and both workers must see the same mocked state.
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_subprocess_run,
+        ), patch.object(Path, "is_dir", return_value=True), patch(
+            "pyishlib.isholate.container._host_base_fingerprint",
+            return_value="COMPUTED",
+        ):
+            t1 = threading.Thread(target=worker, args=(1,))
+            t2 = threading.Thread(target=worker, args=(2,))
+            t1.start()
+            # Wait for thread 1 to be blocked inside incus init (i.e. it
+            # holds the lock).
+            assert init_entered.wait(timeout=5.0), (
+                "worker 1 never entered init"
+            )
+            t2.start()
+            # Give t2 time to reach the flock() and block on it.
+            time.sleep(0.2)
+            # Release t1's init; it finishes, releases the lock; t2 wakes
+            # and observes the now-valid base via its locked re-check.
+            release_init.set()
+            t1.join(timeout=5.0)
+            t2.join(timeout=5.0)
+
+        assert not errors, f"worker errors: {errors}"
+        assert len(init_calls) == 1, (
+            f"expected exactly one incus init under lock, got {len(init_calls)}"
+        )
+        assert results[1] == results[2] == _FAKE_BASE_NAME
+
+    def test_concurrent_project_base_builds_serialize(self, tmp_path, monkeypatch):
+        """Two threads building the same project base: exactly one ``incus
+        copy <host_base> <pbase>``; waiter returns the peer's result."""
+        import threading
+        import time
+
+        self._redirect_lock_dir(monkeypatch, tmp_path)
+
+        # Map container-name -> (exists, fingerprint).  The host base starts
+        # out "already built" with a known fingerprint; the project base is
+        # initially absent.
+        state = {
+            _FAKE_BASE_NAME: {"exists": True, "fp": "HOSTFP"},
+            _FAKE_PBASE_NAME: {"exists": False, "fp": ""},
+        }
+        copy_calls = []
+        copy_entered = threading.Event()
+        release_copy = threading.Event()
+        state_lock = threading.Lock()
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["incus", "info"] and len(cmd) >= 3:
+                target = cmd[2]
+                with state_lock:
+                    rc = 0 if state.get(target, {}).get("exists") else 1
+                return SimpleNamespace(returncode=rc, stdout="", stderr="")
+            if (
+                cmd[:3] == ["incus", "config", "get"]
+                and _META_SOURCE_HASH in cmd
+                and len(cmd) >= 4
+            ):
+                target = cmd[3]
+                with state_lock:
+                    fp = state.get(target, {}).get("fp", "")
+                return SimpleNamespace(returncode=0, stdout=fp, stderr="")
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            if cmd[:2] == ["incus", "copy"] and len(cmd) >= 4:
+                copy_calls.append(list(cmd))
+                copy_entered.set()
+                assert release_copy.wait(timeout=5.0)
+                target = cmd[3]
+                with state_lock:
+                    state[target] = {"exists": True, "fp": ""}
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if (
+                cmd[:3] == ["incus", "config", "set"]
+                and len(cmd) >= 6
+                and cmd[4] == _META_SOURCE_HASH
+            ):
+                target = cmd[3]
+                with state_lock:
+                    state.setdefault(target, {"exists": True, "fp": ""})[
+                        "fp"
+                    ] = cmd[5]
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        results = {}
+        errors = {}
+
+        def worker(idx):
+            try:
+                results[idx] = ensure_project_base(
+                    _FAKE_BASE_NAME,
+                    _FAKE_USER,
+                    Path("/fake/overlay"),
+                    project_root=Path("/work/myproject"),
+                    quiet=True,
+                )
+            except Exception as exc:  # pragma: no cover
+                errors[idx] = exc
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_subprocess_run,
+        ), patch.object(Path, "is_dir", return_value=True), patch(
+            "pyishlib.isholate.container._source_fingerprint",
+            return_value="OVERLAYFP",
+        ):
+            t1 = threading.Thread(target=worker, args=(1,))
+            t2 = threading.Thread(target=worker, args=(2,))
+            t1.start()
+            assert copy_entered.wait(timeout=5.0), (
+                "worker 1 never entered copy"
+            )
+            t2.start()
+            time.sleep(0.2)
+            release_copy.set()
+            t1.join(timeout=5.0)
+            t2.join(timeout=5.0)
+
+        assert not errors, f"worker errors: {errors}"
+        # Exactly one incus copy <host_base> <pbase> — the waiter must have
+        # observed the finished pbase and returned without a second copy.
+        pbase_copies = [
+            c
+            for c in copy_calls
+            if len(c) >= 4 and c[2] == _FAKE_BASE_NAME and c[3] == _FAKE_PBASE_NAME
+        ]
+        assert len(pbase_copies) == 1, (
+            f"expected exactly one project-base copy, got {len(pbase_copies)}"
+        )
+        assert results[1] == results[2] == _FAKE_PBASE_NAME
+
+    def test_parallel_ephemeral_launches_do_not_serialize(
+        self, tmp_path, monkeypatch
+    ):
+        """Two ensure_host_base calls where the base is already valid must
+        not queue on the base-build lock.  Both workers must be able to pass
+        through the fast path concurrently."""
+        import threading
+
+        self._redirect_lock_dir(monkeypatch, tmp_path)
+
+        in_fast_path = threading.Barrier(2, timeout=5.0)
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["incus", "info"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if (
+                cmd[:3] == ["incus", "config", "get"]
+                and _META_SOURCE_HASH in cmd
+            ):
+                # Synchronise both threads inside the fast-path check.  If
+                # one were holding the base-build lock, the other could
+                # never reach this point — the barrier would time out.
+                in_fast_path.wait()
+                return SimpleNamespace(returncode=0, stdout="COMPUTED", stderr="")
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        results = {}
+        errors = {}
+
+        def worker(idx):
+            try:
+                results[idx] = ensure_host_base(
+                    _FAKE_IMAGE,
+                    _FAKE_USER,
+                    Path("/fake/src"),
+                    None,
+                    _FAKE_SHELL,
+                    quiet=True,
+                )
+            except Exception as exc:  # pragma: no cover
+                errors[idx] = exc
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container.subprocess.run",
+            side_effect=_fake_subprocess_run,
+        ), patch.object(Path, "is_dir", return_value=True), patch(
+            "pyishlib.isholate.container._host_base_fingerprint",
+            return_value="COMPUTED",
+        ):
+            t1 = threading.Thread(target=worker, args=(1,))
+            t2 = threading.Thread(target=worker, args=(2,))
+            t1.start()
+            t2.start()
+            t1.join(timeout=5.0)
+            t2.join(timeout=5.0)
+
+        assert not errors, f"worker errors: {errors}"
+        assert results[1] == results[2] == _FAKE_BASE_NAME
+
+    def test_double_check_elides_redundant_rebuild(self, tmp_path, monkeypatch):
+        """A single caller with an up-to-date base issues no incus init or
+        incus delete — proves the double-checked fast path still works after
+        the locking refactor."""
+        self._redirect_lock_dir(monkeypatch, tmp_path)
+
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+            if cmd[:2] == ["incus", "info"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if (
+                cmd[:3] == ["incus", "config", "get"]
+                and _META_SOURCE_HASH in cmd
+            ):
+                return SimpleNamespace(
+                    returncode=0, stdout="COMPUTED", stderr=""
+                )
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with patch(
+                "pyishlib.isholate.container.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ):
+                with patch.object(Path, "is_dir", return_value=True):
+                    with patch(
+                        "pyishlib.isholate.container._host_base_fingerprint",
+                        return_value="COMPUTED",
+                    ):
+                        name = ensure_host_base(
+                            _FAKE_IMAGE,
+                            _FAKE_USER,
+                            Path("/fake/src"),
+                            None,
+                            _FAKE_SHELL,
+                            quiet=True,
+                        )
+
+        assert name == _FAKE_BASE_NAME
+        assert not any(c[:2] == ["incus", "init"] for c in calls)
+        assert not any(c[:2] == ["incus", "delete"] for c in calls)
+
+
+# ---------------------------------------------------------------------------
 # Network pre-flight
 # ---------------------------------------------------------------------------
 
