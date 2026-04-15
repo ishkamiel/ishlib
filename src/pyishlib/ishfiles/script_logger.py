@@ -408,10 +408,10 @@ class ScriptLogger:
     def _reader_loop_polled(self) -> None:
         """Background thread: poll a plain file and dispatch structured lines.
 
-        Used on Windows where POSIX FIFOs are not available.  The sink file is
-        re-read from scratch on every poll cycle (``Path.read_bytes()``) so the
-        reader always sees the latest data written by any process.  A running
-        byte offset avoids reprocessing data that has already been dispatched.
+        Used on Windows where POSIX FIFOs are not available.  The file is
+        opened once and read from the current position on every poll cycle so
+        only new (appended) bytes are processed — avoiding an O(log-size)
+        re-read on every tick.
 
         After the stop event fires a final read captures any bytes written just
         before the signal, so no messages are lost in the race between the
@@ -421,28 +421,36 @@ class ScriptLogger:
         if sink_path is None:
             return
         buf = b""
-        offset = 0
-        while not self._stop_event.is_set():
-            try:
-                data = sink_path.read_bytes()
-            except OSError:
-                time.sleep(0.05)
-                continue
-            if len(data) > offset:
-                buf += data[offset:]
-                offset = len(data)
-                while b"\n" in buf:
-                    line, buf = buf.split(b"\n", 1)
-                    self._dispatch(line.decode("utf-8", errors="replace"))
-            else:
-                time.sleep(0.05)
-        # Final drain: capture any bytes written just before stop was signalled.
         try:
-            data = sink_path.read_bytes()
+            fh = open(sink_path, "rb", buffering=0)  # noqa: WPS515
         except OSError:
-            data = b""
-        if len(data) > offset:
-            buf += data[offset:]
+            return
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    chunk = fh.read(4096)
+                except OSError:
+                    time.sleep(0.05)
+                    continue
+                if chunk:
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        self._dispatch(line.decode("utf-8", errors="replace"))
+                else:
+                    time.sleep(0.05)
+            # Final drain: capture any bytes written just before stop was signalled.
+            try:
+                chunk = fh.read(4096)
+            except OSError:
+                chunk = b""
+            if chunk:
+                buf += chunk
+        finally:
+            try:
+                fh.close()
+            except OSError:
+                pass
         # Dispatch any remaining complete lines.
         while b"\n" in buf:
             line, buf = buf.split(b"\n", 1)

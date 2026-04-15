@@ -111,7 +111,7 @@ pytest -k "test_pattern"                          # by name pattern
   ```
 
 - Variable naming: globals use `ish_` prefix (e.g., `ish_VERSION`), locals use `_` prefix (e.g., `_target`), constants are UPPERCASE
-- Output goes to stderr via `ish_say`, `ish_warn`, `ish_fail`
+- Output goes to stderr via `ish_warning`, `ish_error`, `ish_critical`
 - Many functions respect the `DRY_RUN` flag
 - Shebangs: `#!/usr/bin/env sh` for POSIX files, `#!/usr/bin/env bash` for Bash files
 
@@ -411,8 +411,6 @@ Use the canonical function names that mirror Python's `logging` vocabulary:
 | `ish_warn` | `warning` | Alias for `ish_warning`; prefer `ish_warning` |
 | `ish_error` | `error` | Failure of a unit of work; shown by default |
 | `ish_critical` | `critical` | Fatal abort; stops subsequent scripts |
-| `ish_fatal` | `critical` | Alias for `ish_critical`; prefer `ish_critical` |
-| `ish_fail` | `critical` | `ish_critical` + `exit 1` |
 
 Do not `echo` or `printf` directly to stderr for diagnostics; the helpers
 honour `ISHLIB_LOG_OUT` and get captured into the run log. Raw stdout/stderr
