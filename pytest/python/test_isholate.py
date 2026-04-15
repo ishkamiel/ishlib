@@ -610,19 +610,26 @@ class TestLaunchAndExec:
         assert exec_cmd[cwd_idx] == f"/home/{_FAKE_USER}"
 
     def test_progress_messages_on_stderr_by_default(self, capsys):
+        import logging
+        from pyishlib.ish_logging import setup_logging
+        setup_logging(logging.INFO)
         args = _make_args()
         self._run_with_mocks(args)
         err = capsys.readouterr().err
-        assert "isholate:" in err
+        # Progress messages now go through logging at INFO level with [--] prefix.
         assert "creating container" in err
         assert "starting container" in err
         assert "creating user" in err
 
     def test_quiet_suppresses_progress_messages(self, capsys):
+        import logging
+        from pyishlib.ish_logging import setup_logging
+        setup_logging(logging.WARNING)
         args = _make_args(quiet=True)
         self._run_with_mocks(args)
         err = capsys.readouterr().err
-        assert "isholate:" not in err
+        # INFO-level progress messages should not appear at WARNING level.
+        assert "creating container" not in err
 
 
 # ---------------------------------------------------------------------------

@@ -6,15 +6,15 @@
 """Per-run structured logging for ishfiles script execution.
 
 Every ishscript automatically receives the full ``ishlib.sh`` shell library
-(sourced via ``ISHLIB_SH``) which provides ``ish_info``, ``ish_warn``,
-``ish_error``, and ``ish_fatal``.  When ``ISHLIB_LOG_OUT`` is set in the
+(sourced via ``ISHLIB_SH``) which provides ``ish_info``, ``ish_warning``,
+``ish_error``, and ``ish_critical``.  When ``ISHLIB_LOG_OUT`` is set in the
 environment those functions write structured ``level<TAB>message`` lines to
 that path (a named FIFO owned by :class:`ScriptLogger`) instead of stderr.
 
 A background thread reads those lines and writes them to a timestamped log
 file under ``<target>/.local/state/ishfiles/logs/``.  All script
 stdout/stderr is also captured and appended to the same log file.
-``ish_fatal`` sets an abort flag that prevents subsequent scripts from
+``ish_critical`` sets an abort flag that prevents subsequent scripts from
 running.
 
 Public API
@@ -27,15 +27,16 @@ Prelude injected into every shell script
 
 .. code-block:: bash
 
-    # Source ishlib.sh for ish_info/warn/error/fatal (which honour ISHLIB_LOG_OUT).
+    # Source ishlib.sh for ish_info/warning/error/critical (which honour ISHLIB_LOG_OUT).
     if [ -n "${ISHLIB_SH:-}" ] && [ -f "${ISHLIB_SH}" ]; then
       . "${ISHLIB_SH}"
     else
       # Minimal fallback when ishlib.sh is unavailable.
-      ish_info()  { printf 'info\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
-      ish_warn()  { printf 'warn\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
-      ish_error() { printf 'error\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
-      ish_fatal() { printf 'fatal\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; exit 1; }
+      ish_debug()    { printf 'debug\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_info()     { printf 'info\\t%s\\n'     "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_warning()  { printf 'warning\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_error()    { printf 'error\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; }
+      ish_critical() { printf 'critical\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}"; exit 1; }
     fi
 
 ``ISHLIB_LOG_OUT`` points to the FIFO.  Append-mode writes do not block
@@ -49,7 +50,6 @@ import errno
 import logging
 import os
 import select
-import sys
 import tempfile
 import threading
 import time
@@ -62,6 +62,14 @@ from typing import Dict, IO, List, Optional, Tuple
 _USE_FIFO: bool = hasattr(os, "mkfifo")
 
 log = logging.getLogger(__name__)
+
+# Sub-loggers for script-originated messages.
+# pyishlib.script.ish  — structured ish_info/warning/error/critical messages
+# pyishlib.script.stdout — captured stdout lines (1> prefix)
+# pyishlib.script.stderr — captured stderr lines (2> prefix)
+_log_ish = logging.getLogger("pyishlib.script.ish")
+_log_stdout = logging.getLogger("pyishlib.script.stdout")
+_log_stderr = logging.getLogger("pyishlib.script.stderr")
 
 # Number of log files to keep per log directory.
 _MAX_LOGS: int = 10
@@ -77,31 +85,33 @@ _LOG_TIMESTAMP_FMT: str = "%H:%M:%S"
 _ISHLIB_SH: Path = Path(__file__).resolve().parent.parent.parent.parent / "ishlib.sh"
 
 # Bash snippet injected after the shebang of every shell script.
-# Sources ishlib.sh (which honours ISHLIB_LOG_OUT for ish_info/warn/error/fatal).
+# Sources ishlib.sh (which honours ISHLIB_LOG_OUT for ish_info/warning/error/critical).
 # Falls back to minimal inline definitions when ishlib.sh is unavailable.
 BASH_PRELUDE: str = """\
 # -- ishfiles (auto-injected) --
 if [ -n "${ISHLIB_SH:-}" ] && [ -f "${ISHLIB_SH}" ]; then
   . "${ISHLIB_SH}"
 else
-  ish_info()  { printf 'info\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
-  ish_warn()  { printf 'warn\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
-  ish_error() { printf 'error\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
-  ish_fatal() { printf 'fatal\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; exit 1; }
+  ish_debug()    { printf 'debug\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_info()     { printf 'info\\t%s\\n'     "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_warning()  { printf 'warning\\t%s\\n'  "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_error()    { printf 'error\\t%s\\n'    "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; }
+  ish_critical() { printf 'critical\\t%s\\n' "$*" >> "${ISHLIB_LOG_OUT:-/dev/stderr}" 2>/dev/null || true; exit 1; }
 fi
 # -- end ishfiles --
 """
 
-_LEVELS = ("info", "warn", "error", "fatal")
+_LEVELS = ("debug", "info", "warning", "error", "critical")
 
 # PowerShell equivalent of BASH_PRELUDE.  Appends structured ``level<TAB>msg``
 # lines to ``$env:ISHLIB_LOG_OUT`` using ``Add-Content`` (thread-safe append).
 PS_PRELUDE: str = """\
 # -- ishfiles (auto-injected) --
-function ish_info  { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "info`t$m" } }
-function ish_warn  { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warn`t$m" } }
-function ish_error { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "error`t$m" } }
-function ish_fatal { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "fatal`t$m" }; exit 1 }
+function ish_debug    { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "debug`t$m" } }
+function ish_info     { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "info`t$m" } }
+function ish_warning  { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warning`t$m" } }
+function ish_error    { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "error`t$m" } }
+function ish_critical { param([string]$m) if ($env:ISHLIB_LOG_OUT) { Add-Content -Path $env:ISHLIB_LOG_OUT -Value "critical`t$m" }; exit 1 }
 # -- end ishfiles --
 """
 
@@ -239,8 +249,8 @@ class ScriptLogger:
         Returns a dict containing:
 
         - ``ISHLIB_LOG_OUT``: path to the log sink (a FIFO on POSIX, a plain
-          file on Windows) that ``ish_info``/``ish_warn``/``ish_error``/
-          ``ish_fatal`` write structured messages to.
+          file on Windows) that ``ish_info``/``ish_warning``/``ish_error``/
+          ``ish_critical`` write structured messages to.
         - ``ISHLIB_SH``: path to the compiled ``ishlib.sh`` shell library, so
           the :data:`BASH_PRELUDE` can source it.  Omitted when the file does
           not exist (e.g. in a clean checkout before ``make ishlib.sh``).
@@ -252,17 +262,17 @@ class ScriptLogger:
 
     @staticmethod
     def bash_prelude() -> str:
-        """Return the bash snippet that defines ish_info/warn/error/fatal."""
+        """Return the bash snippet that defines ish_info/warning/error/critical."""
         return BASH_PRELUDE
 
     @staticmethod
     def powershell_prelude() -> str:
-        """Return the PowerShell snippet that defines ish_info/warn/error/fatal."""
+        """Return the PowerShell snippet that defines ish_info/warning/error/critical."""
         return PS_PRELUDE
 
     @property
     def aborted(self) -> bool:
-        """True after ``ish_fatal`` was called by any script in this run."""
+        """True after ``ish_critical`` was called by any script in this run."""
         return self._aborted
 
     @property
@@ -279,7 +289,7 @@ class ScriptLogger:
     def set_current_script(self, name: str) -> None:
         """Set the currently-running script for per-script message attribution.
 
-        Call this just before executing each script so that ``ish_warn`` /
+        Call this just before executing each script so that ``ish_warning`` /
         ``ish_error`` messages are associated with the right script name.
 
         Args:
@@ -294,14 +304,16 @@ class ScriptLogger:
         """Return per-script issue counts for scripts that had warnings or errors.
 
         Returns a list of ``(script_name, counts_dict)`` for every script
-        where at least one ``warn``, ``error``, or ``fatal`` message was
+        where at least one ``warning``, ``error``, or ``critical`` message was
         logged, in execution order.
         """
         with self._lock:
             return [
                 (name, dict(counts))
                 for name, counts in self._script_counts.items()
-                if any(counts.get(lvl, 0) > 0 for lvl in ("warn", "error", "fatal"))
+                if any(
+                    counts.get(lvl, 0) > 0 for lvl in ("warning", "error", "critical")
+                )
             ]
 
     def summary_line(self) -> str:
@@ -310,23 +322,44 @@ class ScriptLogger:
             parts = [f"{self._counts[k]} {k}" for k in _LEVELS if self._counts[k]]
         return ", ".join(parts) if parts else "no messages"
 
-    def log_script_output(self, script_name: str, output: str) -> None:
-        """Write captured stdout/stderr of a script to the log file.
+    def log_stream(self, stream: str, script_name: str, line: str) -> None:
+        """Route one captured stdout/stderr line through the logging system.
+
+        Called by :mod:`~pyishlib.dotfile_script` for each line read from
+        the script's stdout (``stream="stdout"``) or stderr
+        (``stream="stderr"``).
+
+        - stdout lines are emitted at DEBUG via ``pyishlib.script.stdout``.
+        - stderr lines are emitted at WARNING via ``pyishlib.script.stderr``.
+
+        Both carry ``extra={"script": script_name}`` so
+        :class:`~pyishlib.ish_logging.IshLogFormatter` renders the script
+        label.  They are also written to the run-log file directly so the
+        file always contains the full stream regardless of the terminal
+        handler's level filter.
 
         Args:
-            script_name: Human-readable label (e.g. the script filename).
-            output:      Combined stdout+stderr text from the script.
+            stream:      ``"stdout"`` or ``"stderr"``.
+            script_name: Filename of the script being run.
+            line:        One decoded text line (without trailing newline).
         """
-        if not output:
-            return
+        prefix = "1>" if stream == "stdout" else "2>"
+        logger = _log_stdout if stream == "stdout" else _log_stderr
+        level_int = logging.DEBUG if stream == "stdout" else logging.WARNING
+        logger.log(
+            level_int,
+            "%s %s",
+            prefix,
+            line,
+            extra={"script": script_name},
+        )
+        # Always write to the run-log file (bypasses handler level filters).
+        ts = datetime.now().strftime(_LOG_TIMESTAMP_FMT)
+        tag = "[DD]" if stream == "stdout" else "[WW]"
         with self._lock:
-            if self._log_fh is None:
-                return
-            ts = datetime.now().strftime(_LOG_TIMESTAMP_FMT)
-            self._log_fh.write(f"[{ts}] [OUTPUT] {script_name}:\n")
-            for line in output.rstrip("\n").splitlines():
-                self._log_fh.write(f"  {line}\n")
-            self._log_fh.flush()
+            if self._log_fh is not None:
+                self._log_fh.write(f"[{ts}] {tag} [{script_name}] {prefix} {line}\n")
+                self._log_fh.flush()
 
     def log_message(self, level: str, message: str) -> None:
         """Write a structured message directly (bypassing the FIFO).
@@ -334,7 +367,8 @@ class ScriptLogger:
         Useful for the Python side to log events in the same log file.
 
         Args:
-            level:   One of ``"info"``, ``"warn"``, ``"error"``, ``"fatal"``.
+            level:   One of ``"debug"``, ``"info"``, ``"warning"``,
+                     ``"error"``, ``"critical"``.
             message: The message text.
         """
         self._dispatch(f"{level}\t{message}")
@@ -374,24 +408,54 @@ class ScriptLogger:
     def _reader_loop_polled(self) -> None:
         """Background thread: poll a plain file and dispatch structured lines.
 
-        Used on Windows where POSIX FIFOs are not available.  The sink file
-        is opened once; the thread reads new bytes as they arrive and feeds
-        them through the same dispatch path as the FIFO reader.
+        Used on Windows where POSIX FIFOs are not available.  The file is
+        opened once and read from the current position on every poll cycle so
+        only new (appended) bytes are processed — avoiding an O(log-size)
+        re-read on every tick.
+
+        After the stop event fires a final read captures any bytes written just
+        before the signal, so no messages are lost in the race between the
+        writer and the stop event.
         """
+        sink_path = self._sink_path
+        if sink_path is None:
+            return
         buf = b""
-        offset = 0
-        with open(self._sink_path, "rb") as fh:  # type: ignore[arg-type]
+        try:
+            fh = open(sink_path, "rb", buffering=0)  # noqa: WPS515
+        except OSError:
+            return
+        try:
             while not self._stop_event.is_set():
-                chunk = fh.read(4096)
-                if not chunk:
+                try:
+                    chunk = fh.read(4096)
+                except OSError:
                     time.sleep(0.05)
                     continue
-                offset += len(chunk)
+                if chunk:
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        self._dispatch(line.decode("utf-8", errors="replace"))
+                else:
+                    time.sleep(0.05)
+            # Final drain: capture any bytes written just before stop was signalled.
+            try:
+                chunk = fh.read(4096)
+            except OSError:
+                chunk = b""
+            if chunk:
                 buf += chunk
-                while b"\n" in buf:
-                    line, buf = buf.split(b"\n", 1)
-                    self._dispatch(line.decode("utf-8", errors="replace"))
-        # Drain any remaining data after stop is signalled.
+        finally:
+            try:
+                fh.close()
+            except OSError:
+                pass
+        # Dispatch any remaining complete lines.
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            self._dispatch(line.decode("utf-8", errors="replace"))
+        # Handle an unterminated final line (no trailing newline).
         if buf.strip():
             self._dispatch(buf.decode("utf-8", errors="replace"))
 
@@ -408,30 +472,34 @@ class ScriptLogger:
 
         with self._lock:
             self._counts[level] = self._counts.get(level, 0) + 1
-            if self._current_script:
-                self._script_counts[self._current_script][level] = (
-                    self._script_counts[self._current_script].get(level, 0) + 1
+            script_name = self._current_script
+            if script_name:
+                self._script_counts[script_name][level] = (
+                    self._script_counts[script_name].get(level, 0) + 1
                 )
-                script_label = f" [{self._current_script}]"
-            else:
-                script_label = ""
-            formatted = f"[{ts}] [{level.upper():5s}]{script_label} {message}\n"
+            if level == "critical":
+                self._aborted = True
+            script_label = f" [{script_name}]" if script_name else ""
+            formatted = f"[{ts}] [{level.upper():8s}]{script_label} {message}\n"
             if self._log_fh is not None:
                 self._log_fh.write(formatted)
                 self._log_fh.flush()
 
-        # Mirror to stderr based on configured verbosity.
-        quiet = getattr(self._cfg, "quiet", False)
-        verbose = getattr(self._cfg, "verbose", False)
-        if level == "fatal":
-            self._aborted = True
-            sys.stderr.write(f"FATAL: {message}\n")
-        elif level == "error" and not quiet:
-            sys.stderr.write(f"ERROR: {message}\n")
-        elif level == "warn" and not quiet:
-            sys.stderr.write(f"WARNING: {message}\n")
-        elif level == "info" and verbose:
-            sys.stderr.write(f"INFO: {message}\n")
+        # Mirror to terminal via the pyishlib.script.ish logger so that
+        # IshLogFormatter and handler level filters apply uniformly.
+        _level_map = {
+            "debug": logging.DEBUG,
+            "info": logging.INFO,
+            "warning": logging.WARNING,
+            "error": logging.ERROR,
+            "critical": logging.CRITICAL,
+        }
+        _log_ish.log(
+            _level_map[level],
+            "%s",
+            message,
+            extra={"script": script_name},
+        )
 
 
 def _prune_logs(log_dir: Path) -> None:

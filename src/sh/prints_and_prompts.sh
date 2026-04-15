@@ -20,17 +20,37 @@ followed by all arguments colorized as specified by global color tags.
 At present, all printouts are to stderr. All functions return 0, or, in
 case of failure, do not return.
 
+When `ISHLIB_LOG_OUT` is set (a path to a FIFO or file managed by the
+Python-side ScriptLogger), functions write `level<TAB>message` to that
+path for structured capture instead of printing to stderr.  Valid levels
+mirror Python's `logging` vocabulary: `debug`, `info`, `warning`, `error`,
+`critical`.
+
 DOCSTRING
 
 : <<'DOCSTRING'
-`ish_say ...`
+`ish_debug ...`
 
-Print an info message.
+Print a debug message if DEBUG is set to 1.
+
+When `ISHLIB_LOG_OUT` is set, writes `debug<TAB><message>` to that path
+regardless of the `DEBUG` environment variable (the Python side filters
+by handler level).
+
+Globals:
+  DEBUG          - when not set to 1, skips terminal output
+  ISHLIB_LOG_OUT - when set, writes structured log line instead
 DOCSTRING
-ish_say() {
-  printf >&2 "[--] %b%b%b\n" "${ish_ColorSay}" "$*" "${ish_ColorNC}"
+ish_debug() {
+  if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
+    printf 'debug\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+  else
+    [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
+    printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
+  fi
   return 0
 }
+
 
 : <<'DOCSTRING'
 `ish_info ...`
@@ -63,16 +83,16 @@ ish_prompt() {
 }
 
 : <<'DOCSTRING'
-`ish_warn ...`
+`ish_warning ...`
 
 Print a warning message.
 
-When `ISHLIB_LOG_OUT` is set, writes `warn<TAB><message>` to that path
+When `ISHLIB_LOG_OUT` is set, writes `warning<TAB><message>` to that path
 instead of stderr.
 DOCSTRING
-ish_warn() {
+ish_warning() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'warn\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+    printf 'warning\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
   elif [ -z "${BASH_VERSION:-}" ]; then
     printf >&2 "[WW] %b%b%b\n" "${ish_ColorWarn}" "$*" "${ish_ColorNC}"
   else
@@ -85,23 +105,6 @@ ish_warn() {
   return 0
 }
 
-: <<'DOCSTRING'
-`ish_fail ...`
-
-Prints the args and then calls `exit 1`
-DOCSTRING
-ish_fail() {
-  if [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
-  else
-    #shellcheck disable=SC3044
-    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
-      "$*" \
-      "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
-      "${ish_ColorNC}"
-  fi
-  exit 1
-}
 
 : <<'DOCSTRING'
 `ish_error ...`
@@ -127,21 +130,22 @@ ish_error() {
 }
 
 : <<'DOCSTRING'
-`ish_fatal ...`
+`ish_critical ...`
 
-Print a fatal error message and exit 1.
+Print a critical error message and exit 1.
 
-When `ISHLIB_LOG_OUT` is set, writes `fatal<TAB><message>` to that path
-instead of stderr, then exits.
+When `ISHLIB_LOG_OUT` is set, writes `critical<TAB><message>` to that path
+instead of stderr, then exits.  The Python-side ScriptLogger treats
+`critical` as a fatal signal that aborts subsequent scripts.
 DOCSTRING
-ish_fatal() {
+ish_critical() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
-    printf 'fatal\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
+    printf 'critical\t%s\n' "$*" >> "${ISHLIB_LOG_OUT}" 2>/dev/null || true
   elif [ -z "${BASH_VERSION:-}" ]; then
-    printf >&2 "[EE] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
+    printf >&2 "[!!] %b%b%b\n" "${ish_ColorFail}" "$*" "${ish_ColorNC}"
   else
     #shellcheck disable=SC3044
-    printf >&2 "[EE] %b%b (at %b)%b\n" "${ish_ColorFail}" \
+    printf >&2 "[!!] %b%b (at %b)%b\n" "${ish_ColorFail}" \
       "$*" \
       "$(caller 0 | awk -F' ' '{print $3 ", line " $1}')" \
       "${ish_ColorNC}"
@@ -156,20 +160,6 @@ Prints the args with the dry_run tag, mainly for internal use.
 DOCSTRING
 ish_say_dry_run() {
   printf >&2 "[**] %bdry run: %b%b\n" "${ish_ColorDryRun}" "$*" "${ish_ColorNC}"
-}
-
-: <<'DOCSTRING'
-`ish_debug ...`
-
-Print a debug message if DEBUG is set to 1.
-
-Globals:
-  DEBUG - does nothing unless DEBUG=1
-DOCSTRING
-ish_debug() {
-  [ -z "${DEBUG:-}" ] || [ "${DEBUG:-}" -ne 1 ] && return 0
-  printf >&2 "[DD] %b%b%b\n" "${ish_ColorDebug}" "$*" "${ish_ColorNC}"
-  return 0
 }
 
 : <<'DOCSTRING'

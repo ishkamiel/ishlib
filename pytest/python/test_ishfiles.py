@@ -838,7 +838,8 @@ class TestAddCommand:
 
             assert ret == 0
             captured = capsys.readouterr()
-            assert "already tracked" in captured.out
+            # Message is now a logging warning (goes to stderr via IshLogFormatter)
+            assert "already tracked" in (captured.out + captured.err).lower()
 
     def test_add_dirty_refuses(self, capsys):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -1167,24 +1168,31 @@ class TestApplyWithInstall:
 
 class TestScanScripts:
     def test_print_skipped_emits_message_for_os_filtered_script(self, capsys):
-        """scan_scripts prints a [skipped] line when print_skipped=True and verbose and a script is excluded by OS rules."""
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            scripts_dir = Path(src) / "ishscripts"
-            scripts_dir.mkdir()
-            _make_file(scripts_dir / "os-only.sh", "#!/bin/sh\necho hello\n")
+        """scan_scripts logs a [skipped] line when print_skipped=True and a script is excluded by OS rules."""
+        import logging
+        from pyishlib.ish_logging import setup_logging
+        # Ensure INFO-level messages appear on stderr for capsys to capture.
+        setup_logging(logging.INFO)
+        try:
+            with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+                scripts_dir = Path(src) / "ishscripts"
+                scripts_dir.mkdir()
+                _make_file(scripts_dir / "os-only.sh", "#!/bin/sh\necho hello\n")
 
-            cfg = load_config(_make_args(source=src, target=tgt, verbose=True))
+                cfg = load_config(_make_args(source=src, target=tgt, verbose=True))
 
-            with patch(
-                "pyishlib.ishfiles.script_runner.should_skip_for_os_from_metadata",
-                return_value=True,
-            ):
-                kept, _ = scan_scripts(cfg, print_skipped=True)
+                with patch(
+                    "pyishlib.ishfiles.script_runner.should_skip_for_os_from_metadata",
+                    return_value=True,
+                ):
+                    kept, _ = scan_scripts(cfg, print_skipped=True)
+        finally:
+            setup_logging(logging.WARNING)
 
         assert kept == []
         captured = capsys.readouterr()
-        assert "[skipped]" in captured.out
-        assert "os-only.sh" in captured.out
+        assert "[skipped]" in captured.err
+        assert "os-only.sh" in captured.err
 
     def test_print_skipped_false_emits_no_message(self, capsys):
         """scan_scripts prints nothing for skipped scripts when print_skipped=False."""
@@ -1234,12 +1242,13 @@ class TestRunscriptsCommand:
             _make_file(scripts_dir / "setup.sh", "#!/bin/sh\necho hello\n")
 
             ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "runscripts"]
+                ["--source", src, "--target", tgt, "--dry-run", "-v", "runscripts"]
             )
 
         assert ret == 0
         captured = capsys.readouterr()
-        assert "setup.sh" in captured.out
+        # Dry-run messages now go through logging (INFO level, shown with -v) to stderr
+        assert "setup.sh" in captured.err
 
     def test_runscripts_executes_script(self):
         """Scripts are actually executed."""

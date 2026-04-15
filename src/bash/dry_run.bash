@@ -37,7 +37,7 @@ do_or_dry() {
     ish_say_dry_run "$cmd" "${args[@]}"
   else
     if ! $cmd "${args[@]}"; then
-      ish_warn "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
+      ish_warning "$t (caller $(caller 0 | awk -F' ' '{ print $3 " line " $1}')) failed to run: $cmd" "${args[@]}"
       return 1
     fi
   fi
@@ -145,7 +145,7 @@ ish_run() {
         break
         ;;
       -*)
-        ish_warn "Invalid option: $1" >&2
+        ish_warning "Invalid option: $1" >&2
         return 1
         ;;
       *)

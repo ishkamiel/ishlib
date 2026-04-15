@@ -3,9 +3,6 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-
-# SPDX-License-Identifier: MIT
-# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Incus container lifecycle for isholate.
 
 Handles launching Incus containers with host user mirroring, bind mounts,
@@ -42,8 +39,12 @@ import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
+import logging
+
 from ..environment import detect_distro
 from .config import FAILED_LOGS_STATE_DIR
+
+log = logging.getLogger(__name__)
 
 # Root of the ishlib checkout — used to mount the ishfiles CLI into containers.
 # Path: container.py -> isholate/ -> pyishlib/ -> src/ -> ishlib/
@@ -57,10 +58,14 @@ _META_SOURCE_HASH = "user.isholate.source_hash"
 _META_UID = "user.isholate.uid"
 
 
-def _say(msg: str, *, quiet: bool = False) -> None:
-    """Print an isholate progress message to stderr unless *quiet*."""
-    if not quiet:
-        print(f"isholate: {msg}", file=sys.stderr, flush=True)
+def _say(msg: str, *, quiet: bool = False) -> None:  # noqa: ARG001
+    """Log an isholate progress message at INFO level.
+
+    The ``quiet`` parameter is accepted for backwards compatibility but is no
+    longer used — level filtering is done by the logging handler configured
+    in :func:`~pyishlib.isholate.cli.main`.
+    """
+    log.info(msg)
 
 
 def _incus_install_hint() -> str:
@@ -256,13 +261,7 @@ def _run_checked(
     try:
         return _run(cmd, **kwargs)
     except subprocess.CalledProcessError as exc:
-        sys.stdout.flush()
-        sys.stderr.flush()
-        print(
-            f"\nisholate: {step} failed (exit {exc.returncode})",
-            file=sys.stderr,
-            flush=True,
-        )
+        log.error("%s failed (exit %d)", step, exc.returncode)
         raise
 
 
@@ -782,6 +781,44 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     )
 
 
+def _pull_container_log(
+    container_name: str,
+    container_log_path: str,
+    host_dest: Path,
+) -> None:
+    """Pull a log file out of the container and save it on the host.
+
+    Failures are logged at DEBUG (the file may not exist if ishfiles
+    exited before creating it) and do not raise.
+
+    Args:
+        container_name:    Incus container name.
+        container_log_path: Absolute path inside the container (e.g.
+                            ``/tmp/ishfiles-pass1.log``).
+        host_dest:          Host file path to write the pulled log to.
+    """
+    host_dest.parent.mkdir(parents=True, exist_ok=True)
+    r = _run(
+        [
+            "incus",
+            "file",
+            "pull",
+            f"{container_name}{container_log_path}",
+            str(host_dest),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if r.returncode == 0:
+        log.info("Container log saved to: %s", host_dest)
+    else:
+        log.debug(
+            "Could not pull container log %s (may not exist yet): %s",
+            container_log_path,
+            r.stderr.decode(errors="replace").strip() if r.stderr else "",
+        )
+
+
 def _apply_host_ishfiles(
     name: str,
     username: str,
@@ -810,6 +847,7 @@ def _apply_host_ishfiles(
     _say("applying host ishfiles (pass 1)...", quiet=quiet)
     container_home = f"/home/{username}"
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
+    container_log = "/tmp/isholate-ishfiles-pass1.log"
 
     _add_ro_device(
         name,
@@ -827,6 +865,8 @@ def _apply_host_ishfiles(
         "python3",
         ishfiles_bin,
         *ishfiles_flags,
+        "--log-file",
+        container_log,
         "--home",
         container_home,
         "-s",
@@ -841,11 +881,15 @@ def _apply_host_ishfiles(
         )
         pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
     pass1_cmd += ["apply", "--isholate", "--yes"]
-    _run_checked(
-        pass1_cmd,
-        "ishfiles apply (pass 1: host dotfiles)",
-        stdin=subprocess.DEVNULL,
-    )
+    try:
+        _run_checked(
+            pass1_cmd,
+            "ishfiles apply (pass 1: host dotfiles)",
+            stdin=subprocess.DEVNULL,
+        )
+    finally:
+        host_log = Path.home() / FAILED_LOGS_STATE_DIR / name / "pass1.log"
+        _pull_container_log(name, container_log, host_log)
 
     _say("finalising ownership of container home...", quiet=quiet)
     _run_checked(
@@ -889,6 +933,7 @@ def _apply_project_overlay(
     _say("applying project overlay (pass 2)...", quiet=quiet)
     container_home = f"/home/{username}"
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
+    container_log = "/tmp/isholate-ishfiles-pass2.log"
 
     _add_ro_device(
         name,
@@ -896,28 +941,34 @@ def _apply_project_overlay(
         project_overlay,
         f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
     )
-    _run_checked(
-        [
-            "incus",
-            "exec",
-            name,
-            "--env",
-            f"HOME={container_home}",
-            "--",
-            "python3",
-            ishfiles_bin,
-            *ishfiles_flags,
-            "--home",
-            container_home,
-            "-s",
-            f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
-            "apply",
-            "--isholate",
-            "--yes",
-        ],
-        "ishfiles apply (pass 2: project overlay)",
-        stdin=subprocess.DEVNULL,
-    )
+    try:
+        _run_checked(
+            [
+                "incus",
+                "exec",
+                name,
+                "--env",
+                f"HOME={container_home}",
+                "--",
+                "python3",
+                ishfiles_bin,
+                *ishfiles_flags,
+                "--log-file",
+                container_log,
+                "--home",
+                container_home,
+                "-s",
+                f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
+                "apply",
+                "--isholate",
+                "--yes",
+            ],
+            "ishfiles apply (pass 2: project overlay)",
+            stdin=subprocess.DEVNULL,
+        )
+    finally:
+        host_log = Path.home() / FAILED_LOGS_STATE_DIR / name / "pass2.log"
+        _pull_container_log(name, container_log, host_log)
 
     _say("finalising ownership of container home...", quiet=quiet)
     _run_checked(

@@ -111,7 +111,7 @@ pytest -k "test_pattern"                          # by name pattern
   ```
 
 - Variable naming: globals use `ish_` prefix (e.g., `ish_VERSION`), locals use `_` prefix (e.g., `_target`), constants are UPPERCASE
-- Output goes to stderr via `ish_say`, `ish_warn`, `ish_fail`
+- Output goes to stderr via `ish_warning`, `ish_error`, `ish_critical`
 - Many functions respect the `DRY_RUN` flag
 - Shebangs: `#!/usr/bin/env sh` for POSIX files, `#!/usr/bin/env bash` for Bash files
 
@@ -150,7 +150,7 @@ def test_example(shell, tmp_path, ishlib):
     out = gen_script_and_check_output(shell, tmp_path, inspect.cleandoc(f"""
     #!/usr/bin/env {shell}
     . "{ishlib}"
-    ish_say "hello"
+    ish_info "hello"
     """))
     assert "hello" in out
 ```
@@ -297,11 +297,11 @@ Backends implement the abstract methods (`is_pkg_installed`, `install_pkgs`, `up
 
 ### Output & Logging Convention
 
-Three distinct channels, picked by purpose:
+See **§Logging** below for the definitive rules. Quick summary of the three channels:
 
-- **`logging`** (via `log = logging.getLogger(__name__)`) — all diagnostic messages, status info (`log.info`), recoverable errors (`log.warning`), and terminal failures (`log.critical`). Honours the CLI `--verbose` / `--quiet` flags.
+- **`logging`** (via `log = logging.getLogger(__name__)`) — all diagnostic messages, status info, warnings, and errors.  Honours the CLI `--verbose` / `--quiet` / `--debug` flags automatically.
 - **`pyishlib.userio`** — every interactive prompt (yes/no/always, string, choice) goes through this module so non-interactive environments and tests have a single seam to patch.
-- **`print()`** — only for deliberate, structured CLI output that is the command's product (`diff`, `log`, metadata dumps, run summaries). Do not use `print` for status chatter that should respect verbosity — use logging instead.
+- **`print()`** — only for deliberate, structured CLI output that is the command's product (`diff`, `log`, metadata dumps). Do not use `print` for status chatter.
 
 ### Environment Detection (`environment.py`)
 
@@ -373,6 +373,80 @@ rm -rf "$TEST_HOME"
 ```
 
 The `--home`, `-s` (source), and `-c` (config) flags redirect all file operations away from `$HOME`. Unit tests in `pytest/` use temp directories and are always safe to run.
+
+## Logging
+
+All diagnostic output — Python and shell — **MUST** flow through the unified
+logging pipeline in `src/pyishlib/ish_logging.py`. Do not introduce new code
+paths that bypass it.
+
+### Python rules
+
+- Every module obtains a logger with `log = logging.getLogger(__name__)`.
+  Never configure handlers inside modules other than `ish_logging.py`.
+- Status chatter (what is happening, why, dry-run previews, skip notices,
+  summaries) goes through `log.debug` / `log.info` / `log.warning` /
+  `log.error` / `log.critical`. **NOT** `print()`, **NOT** `sys.stderr.write`.
+- Do **not** gate log calls behind `if cfg.verbose:` or `if not cfg.quiet:` —
+  let the handler's level filter decide. The handler is configured once in
+  `setup_logging()` based on CLI flags.
+- Reserve `print()` strictly for a command's *product output* — the thing the
+  user asked the tool to produce. Examples: `ishfiles diff` (the diff text),
+  `ishfiles log` (the log table), `ishfiles pd` (the path), `ishfiles init`
+  (the shell snippet), `ishfiles cd` (the `cd <path>` sentinel), `ishfiles git`
+  (passthrough), `ishfiles external list` (the table). Everything else is
+  logging.
+- Interactive prompts go through `pyishlib.userio`, not `print()`.
+
+### Shell rules (ishscripts and ishlib.sh)
+
+Use the canonical function names that mirror Python's `logging` vocabulary:
+
+| Function | Wire level | Meaning |
+|---|---|---|
+| `ish_debug` | `debug` | Internal trace; shown only at `--debug` |
+| `ish_info` | `info` | Normal progress; shown with `-v` |
+| `ish_warning` | `warning` | Recoverable issue; shown by default |
+| `ish_error` | `error` | Failure of a unit of work; shown by default |
+| `ish_critical` | `critical` | Fatal abort; stops subsequent scripts |
+
+Do not `echo` or `printf` directly to stderr for diagnostics; the helpers
+honour `ISHLIB_LOG_OUT` and get captured into the run log. Raw stdout/stderr
+from a script is still captured (tagged as `1>` / `2>`) but loses level
+information — prefer `ish_*` for anything that needs a log level.
+
+### Log levels — shared vocabulary
+
+| Level | Python constant | Meaning |
+|---|---|---|
+| `debug` | `logging.DEBUG` | Internal trace; noisy; off by default |
+| `info` | `logging.INFO` | Normal progress; shown with `-v` |
+| `warning` | `logging.WARNING` | Recoverable issue; shown by default |
+| `error` | `logging.ERROR` | Failure of a unit of work; shown by default |
+| `critical` | `logging.CRITICAL` | Fatal; script-side also aborts remaining scripts |
+
+### The FIFO wire format (shell → Python)
+
+Shell helpers write `level<TAB>message\n` to `$ISHLIB_LOG_OUT`. Valid levels:
+`debug`, `info`, `warning`, `error`, `critical`. Anything else is silently
+dropped by the Python reader.
+
+### Central entry point: `src/pyishlib/ish_logging.py`
+
+```python
+from pyishlib.ish_logging import setup_logging
+setup_logging(logging.INFO, log_file=path, quiet=False)
+```
+
+- Call once at the CLI entry point (`ishfiles/cli.py`, `isholate/cli.py`).
+- `--log-file <path>` attaches a `FileHandler` at `DEBUG` unconditionally;
+  all messages land in the file regardless of terminal verbosity.
+
+### Isholate
+
+Isholate calls `setup_logging` from `ish_logging` (not `ish_comp`). When
+launching ishfiles inside a container it passes `--log-file` and pulls the
+file back to the host after exec so container diagnostics are never lost.
 
 ## Important Warnings
 

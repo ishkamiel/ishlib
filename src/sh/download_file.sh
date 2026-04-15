@@ -15,7 +15,7 @@ ish_SOURCED_download_file_sh=1 # source guard
 `download_file url dst`
 
 Attempts to download file at $url to $dst, creating the containing directory
-if needed. Will first try curl, then wget, and finally ish_fail if neither is
+if needed. Will first try curl, then wget, and exit with an error if neither is
 available.
 
 Arguments:
@@ -30,10 +30,10 @@ Returns:
 
 DOCSTRING
 download_file() {
-  [ -z "$1" ] && ish_warn "downloadFile: bad 1st arg" && return 1
-  [ -z "$2" ] && ish_warn "downloadFile: bad 2nd arg" && return 1
+  [ -z "$1" ] && ish_warning "downloadFile: bad 1st arg" && return 1
+  [ -z "$2" ] && ish_warning "downloadFile: bad 2nd arg" && return 1
 
-  ish_say "downloading ${1} to ${2}"
+  ish_info "downloading ${1} to ${2}"
   mkdir -p "$(dirname "$2")"
 
   if command -v curl >/dev/null 2>&1; then
@@ -53,5 +53,5 @@ download_file() {
       return $?
     fi
   fi
-  ish_warn "downloadFile: Cannot find curl or wget!" && return 2
+  ish_warning "downloadFile: Cannot find curl or wget!" && return 2
 }

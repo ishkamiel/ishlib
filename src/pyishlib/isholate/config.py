@@ -3,9 +3,6 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
 # Distributed under terms of the MIT license.
-
-# SPDX-License-Identifier: MIT
-# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Project-ishfiles and host-ishfiles discovery for isholate.
 
 Project-local state lives under an ``.ishlib/`` umbrella in the project

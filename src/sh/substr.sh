@@ -26,7 +26,7 @@ substr() {
     case "$1" in
     --var)
       if [ -z "$2" ]; then
-        ish_warn "${_t} --var requires a non-empty variable name"
+        ish_warning "${_t} --var requires a non-empty variable name"
         return 1
       fi
       _ishlib_var="$2"
@@ -43,7 +43,7 @@ substr() {
         _ishlib_res=3
         _ishlib_end="$1"
       else
-        ish_warn "${_t} too many arguments!"
+        ish_warning "${_t} too many arguments!"
         return 1
       fi
       shift 1
@@ -52,7 +52,7 @@ substr() {
   done
 
   if [ "${_ishlib_res}" -lt 2 ]; then
-    ish_warn "${_t} too few arguments ${_ishlib_res}!"
+    ish_warning "${_t} too few arguments ${_ishlib_res}!"
     return 1
   fi
 
@@ -76,7 +76,7 @@ substr() {
 `strlen string [--var result_var]`
 DOCSTRING
 strlen() {
-  ish_warn "Just use \${\#var}"
+  ish_warning "Just use \${\#var}"
   _ishlib_str=
   _ishlib_var=
   _ishlib_res=
@@ -85,14 +85,14 @@ strlen() {
     case "$1" in
     --var)
       if [ -z "$2" ]; then
-        ish_warn "strlen: --var requires a non-empty variable name"
+        ish_warning "strlen: --var requires a non-empty variable name"
         return 1
       fi
       _ishlib_var="$2"
       shift 2
       ;;
     *)
-      [ -z "${_ishlib_str}" ] || (ish_warn "bad arguments to strlen" && return 1)
+      [ -z "${_ishlib_str}" ] || (ish_warning "bad arguments to strlen" && return 1)
       _ishlib_str="$1"
       shift
       ;;

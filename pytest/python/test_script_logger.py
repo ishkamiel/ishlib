@@ -33,7 +33,9 @@ def _make_cfg(tmp_dir, quiet=False, verbose=False):
         dry_run=False,
         quiet=quiet,
         verbose=verbose,
-        get_opt=lambda name, default=None: str(tmp_dir) if name == "target" else default,
+        get_opt=lambda name, default=None: (
+            str(tmp_dir) if name == "target" else default
+        ),
     )
 
 
@@ -138,29 +140,29 @@ class TestScriptLoggerMessages(unittest.TestCase):
         counts = self._counts_after_messages([("info", "hello")])
         assert counts["info"] == 1
 
-    def test_warn_increments_count(self):
-        counts = self._counts_after_messages([("warn", "watch out")])
-        assert counts["warn"] == 1
+    def test_warning_increments_count(self):
+        counts = self._counts_after_messages([("warning", "watch out")])
+        assert counts["warning"] == 1
 
     def test_error_increments_count(self):
         counts = self._counts_after_messages([("error", "something broke")])
         assert counts["error"] == 1
 
-    def test_fatal_sets_aborted(self):
+    def test_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_message("fatal", "boom")
+                slog.log_message("critical", "boom")
                 assert slog.aborted
 
     def test_summary_line_nonzero(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_message("warn", "a")
+                slog.log_message("warning", "a")
                 slog.log_message("error", "b")
                 summary = slog.summary_line()
-                assert "warn" in summary
+                assert "warning" in summary
                 assert "error" in summary
 
     def test_invalid_level_ignored(self):
@@ -204,7 +206,8 @@ class TestScriptLoggerMessages(unittest.TestCase):
                 slog.log_message("error", "oh no")
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
-            assert "[ERROR]" in content
+            # Level tag is padded to 8 chars: "[ERROR   ]"
+            assert "ERROR" in content
 
 
 @unittest.skipIf(sys.platform == "win32", "bash not available on Windows")
@@ -235,21 +238,21 @@ class TestScriptLoggerFifo(unittest.TestCase):
             )
             assert slog.counts["info"] == 1
 
-    def test_fifo_warn_message(self):
+    def test_fifo_warning_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "warn\\twatch out\\n" >> "$ISHLIB_LOG_OUT"',
+                'printf "warning\\twatch out\\n" >> "$ISHLIB_LOG_OUT"',
             )
-            assert slog.counts["warn"] == 1
+            assert slog.counts["warning"] == 1
 
-    def test_fifo_fatal_sets_aborted(self):
+    def test_fifo_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_bash_with_logger(
                 cfg,
-                'printf "fatal\\tdead\\n" >> "$ISHLIB_LOG_OUT"',
+                'printf "critical\\tdead\\n" >> "$ISHLIB_LOG_OUT"',
             )
             assert slog.aborted
 
@@ -275,24 +278,91 @@ class TestScriptLoggerFifo(unittest.TestCase):
             assert "test error" in content
 
 
-@unittest.skipIf(sys.platform != "win32", "PowerShell sink tests are Windows-only")
+@unittest.skipIf(sys.platform != "win32", "Polled-file sink tests are Windows-only")
 class TestScriptLoggerWindowsSink(unittest.TestCase):
-    """The polled-file sink works with a real PowerShell subprocess."""
+    """The polled-file sink works when processes write to the plain-file sink."""
+
+    def _write_to_sink(self, cfg, line: str):
+        """Write one structured log line directly to the sink file."""
+        with ScriptLogger(cfg) as slog:
+            sink_path = Path(slog.env()["ISHLIB_LOG_OUT"])
+            with open(sink_path, "ab") as f:
+                f.write(line.encode("utf-8"))
+                f.flush()
+            time.sleep(0.3)
+            return slog
+
+    def test_sink_info_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._write_to_sink(cfg, "info\thello from python\n")
+            assert slog.counts["info"] == 1
+
+    def test_sink_warning_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._write_to_sink(cfg, "warning\twatch out\n")
+            assert slog.counts["warning"] == 1
+
+    def test_sink_critical_sets_aborted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            slog = self._write_to_sink(cfg, "critical\tdead\n")
+            assert slog.aborted
+
+    def test_sink_message_appears_in_log_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                sink_path = Path(slog.env()["ISHLIB_LOG_OUT"])
+                with open(sink_path, "ab") as f:
+                    f.write(b"error\ttest error\n")
+                    f.flush()
+                time.sleep(0.3)
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "test error" in content
+
+
+@unittest.skipIf(
+    sys.platform != "win32",
+    "PowerShell sink tests are Windows-only",
+)
+class TestScriptLoggerPowerShellSink(unittest.TestCase):
+    """The polled-file sink works with PowerShell's Add-Content (requires pwsh)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+
+        if not shutil.which("pwsh"):
+            raise unittest.SkipTest("pwsh not found; skipping PowerShell sink tests")
 
     def _run_ps_with_logger(self, cfg, ps_body):
         import subprocess
 
         with ScriptLogger(cfg) as slog:
             env = {**os.environ, **slog.env()}
-            subprocess.run(
+            result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", ps_body],
                 env=env,
-                check=False,
+                capture_output=True,
+                text=True,
             )
-            time.sleep(0.2)
+            sink_path = Path(env["ISHLIB_LOG_OUT"])
+            sink_bytes = sink_path.read_bytes()
+            assert result.returncode == 0, (
+                f"pwsh exited {result.returncode}\n"
+                f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+            )
+            assert sink_bytes, (
+                f"sink file empty after pwsh (ps_body={ps_body!r})\n"
+                f"pwsh stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+            )
+            time.sleep(0.3)
             return slog
 
-    def test_sink_info_message(self):
+    def test_ps_sink_info_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
@@ -301,25 +371,25 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
             )
             assert slog.counts["info"] == 1
 
-    def test_sink_warn_message(self):
+    def test_ps_sink_warning_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
                 cfg,
-                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warn`twatch out"',
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "warning`twatch out"',
             )
-            assert slog.counts["warn"] == 1
+            assert slog.counts["warning"] == 1
 
-    def test_sink_fatal_sets_aborted(self):
+    def test_ps_sink_critical_sets_aborted(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             slog = self._run_ps_with_logger(
                 cfg,
-                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "fatal`tdead"',
+                'Add-Content -Path $env:ISHLIB_LOG_OUT -Value "critical`tdead"',
             )
             assert slog.aborted
 
-    def test_sink_message_appears_in_log_file(self):
+    def test_ps_sink_message_appears_in_log_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
@@ -327,48 +397,63 @@ class TestScriptLoggerWindowsSink(unittest.TestCase):
 
                 env = {**os.environ, **slog.env()}
                 subprocess.run(
-                    ["pwsh", "-NoProfile", "-Command",
-                     'Add-Content -Path $env:ISHLIB_LOG_OUT -Value ("error`t" + "test error")'],
+                    [
+                        "pwsh",
+                        "-NoProfile",
+                        "-Command",
+                        'Add-Content -Path $env:ISHLIB_LOG_OUT -Value ("error`t" + "test error")',
+                    ],
                     env=env,
                     check=False,
                 )
-                time.sleep(0.2)
+                time.sleep(0.3)
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
             assert "test error" in content
 
 
-class TestScriptLoggerOutput(unittest.TestCase):
-    """log_script_output() writes captured output to the log file."""
+class TestScriptLoggerStream(unittest.TestCase):
+    """log_stream() routes stdout/stderr lines to the log file with 1>/2> prefixes."""
 
-    def test_output_appears_in_log(self):
+    def test_stdout_line_appears_in_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_script_output("test.sh", "line one\nline two\n")
+                slog.set_current_script("test.sh")
+                slog.log_stream("stdout", "test.sh", "hello stdout")
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
-            assert "line one" in content
-            assert "line two" in content
+            assert "hello stdout" in content
+            assert "1>" in content
 
-    def test_output_label_appears(self):
+    def test_stderr_line_appears_in_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_script_output("myscript.sh", "something")
+                slog.set_current_script("test.sh")
+                slog.log_stream("stderr", "test.sh", "oops stderr")
+                log_path = slog.log_path
+            content = log_path.read_text(encoding="utf-8")
+            assert "oops stderr" in content
+            assert "2>" in content
+
+    def test_stdout_labelled_with_script_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _make_cfg(tmp)
+            with ScriptLogger(cfg) as slog:
+                slog.log_stream("stdout", "myscript.sh", "some output")
                 log_path = slog.log_path
             content = log_path.read_text(encoding="utf-8")
             assert "myscript.sh" in content
 
-    def test_empty_output_skipped(self):
+    def test_stderr_labelled_with_script_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = _make_cfg(tmp)
             with ScriptLogger(cfg) as slog:
-                slog.log_script_output("test.sh", "")
+                slog.log_stream("stderr", "myscript.sh", "an error")
                 log_path = slog.log_path
-            # File exists but has no OUTPUT section
             content = log_path.read_text(encoding="utf-8")
-            assert "OUTPUT" not in content
+            assert "myscript.sh" in content
 
 
 class TestPruneLogs(unittest.TestCase):

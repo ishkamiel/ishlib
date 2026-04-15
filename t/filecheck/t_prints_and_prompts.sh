@@ -19,11 +19,11 @@ B() {
 }
 
 C() {
-  ish_fail "failed in function"
+  ish_critical "failed in function"
 }
 
 do_a_warn() {
-  ish_warn "warning"
+  ish_warning "warning"
 }
 
 case $1 in
@@ -31,7 +31,7 @@ case $1 in
 # CHECK: DEBUG=1 | bash | test_fail | Hello World | 1
 # CHECK: DEBUG=1 | zsh | test_fail | Hello World | 1
 test_fail)
-  ish_fail "Hello World"
+  ish_critical "Hello World"
   ;;
 # CHECK: DEBUG=1 | sh | test_fail_abc | failed in function | 1
 # CHECK: DEBUG=1 | bash | test_fail_abc | failed in function | 1
@@ -66,5 +66,5 @@ test_warn)
   do_a_warn
   ;;
 *)
-  ish_fail "Bad test case given!"
+  ish_critical "Bad test case given!"
 esac

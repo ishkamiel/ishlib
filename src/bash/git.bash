@@ -33,7 +33,7 @@ git_clone_or_update() {
   local t="ishlib:git_clone_or_update:"
 
   local bin_git=${bin_git:-git}
-  has_command "${bin_git}" || (ish_warn "$t cannot find ${bin_git}" && return 1)
+  has_command "${bin_git}" || (ish_warning "$t cannot find ${bin_git}" && return 1)
 
   local url=""
   local dir=""
@@ -67,7 +67,7 @@ git_clone_or_update() {
         dir="$1"
         shift
       else
-        ish_warn "$t unknown argument $1"
+        ish_warning "$t unknown argument $1"
         bad_args=$((bad_args + 1))
         shift
       fi
@@ -83,33 +83,33 @@ git_clone_or_update() {
     git_args+=("$url" "$dir")
 
     ish_debug "$t cloning ${url} to ${dir}"
-    do_or_dry mkdir -p "${dir}" || (ish_warn "$t failed to enter $dir" && return 1)
-    do_or_dry "$bin_git" clone "${git_args[@]}" || (ish_warn "$t git clone failed" && return 1)
+    do_or_dry mkdir -p "${dir}" || (ish_warning "$t failed to enter $dir" && return 1)
+    do_or_dry "$bin_git" clone "${git_args[@]}" || (ish_warning "$t git clone failed" && return 1)
 
     if [[ "${update_submodules}" = "1" ]]; then
       ish_debug "$t initializing submodules"
-      do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
-      do_or_dry "$bin_git" submodule update --init --recursive || (ish_warn "$t submodule update failed" && return 1)
-      do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
+      do_or_dry pushd "${dir}" || (ish_warning "$t failed to pushd ${dir}" && return 1)
+      do_or_dry "$bin_git" submodule update --init --recursive || (ish_warning "$t submodule update failed" && return 1)
+      do_or_dry popd || (ish_warning "$t failed to popd" && return 1)
     fi
   else
     ish_debug "$t updating ${dir}"
 
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warning "$t failed to pushd ${dir}" && return 1)
 
     if [[ -n "$branch" ]]; then
-      do_or_dry "$bin_git" checkout "$branch" || (ish_warn "$t checkout $branch failed" && return 1)
+      do_or_dry "$bin_git" checkout "$branch" || (ish_warning "$t checkout $branch failed" && return 1)
     fi
 
-    do_or_dry "$bin_git" pull || (ish_warn "$t failed to git pull ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
+    do_or_dry "$bin_git" pull || (ish_warning "$t failed to git pull ${dir}" && return 1)
+    do_or_dry popd || (ish_warning "$t failed to popd" && return 1)
   fi
 
   if [[ -n "${commit}" ]]; then
     ish_debug "${t} checking out ${commit}"
-    do_or_dry pushd "${dir}" || (ish_warn "$t failed to pushd ${dir}" && return 1)
-    do_or_dry "$bin_git" checkout "${commit}" || (ish_warn "$t failed to checkout ${commit} in ${dir}" && return 1)
-    do_or_dry popd || (ish_warn "$t failed to popd" && return 1)
+    do_or_dry pushd "${dir}" || (ish_warning "$t failed to pushd ${dir}" && return 1)
+    do_or_dry "$bin_git" checkout "${commit}" || (ish_warning "$t failed to checkout ${commit} in ${dir}" && return 1)
+    do_or_dry popd || (ish_warning "$t failed to popd" && return 1)
   fi
 
   return 0

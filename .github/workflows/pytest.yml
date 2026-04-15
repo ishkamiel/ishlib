@@ -50,4 +50,4 @@ jobs:
         python -m pip install -r requirements-test.txt
     - name: Run Python tests
       run: |
-        python -m pytest pytest/python/ -n 0
+        python -m pytest pytest/python/ -n 0 -v --tb=long

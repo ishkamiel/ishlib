@@ -23,7 +23,7 @@ Arguments:
     pos_var - name of a variable for position
 
 Side-effects:
-    ${!pos_var} - set to -1 on ish_fail, otherwise to the position of needle
+    ${!pos_var} - set to -1 on error, otherwise to the position of needle
 
 Returns:
     0 - if needle was found
