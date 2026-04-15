@@ -406,9 +406,9 @@ Use the canonical function names that mirror Python's `logging` vocabulary:
 |---|---|---|
 | `ish_debug` | `debug` | Internal trace; shown only at `--debug` |
 | `ish_info` | `info` | Normal progress; shown with `-v` |
-| `ish_say` | `info` | Alias for `ish_info`; prefer `ish_info` in new code |
+| `ish_say` | `info` | Alias for `ish_info` |
 | `ish_warning` | `warning` | Recoverable issue; shown by default |
-| `ish_warn` | `warning` | Alias for `ish_warning`; prefer `ish_warning` |
+| `ish_warn` | `warning` | Alias for `ish_warning` |
 | `ish_error` | `error` | Failure of a unit of work; shown by default |
 | `ish_critical` | `critical` | Fatal abort; stops subsequent scripts |
 

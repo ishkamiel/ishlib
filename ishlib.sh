@@ -38,7 +38,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-14.2027"
+export ish_VERSION_NUMBER="2026-04-15.0440"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'
@@ -404,7 +404,7 @@ ish_debug() {
 : <<'DOCSTRING'
 `ish_say ...`
 
-Print an info message.  Alias for `ish_info`; prefer `ish_info` in new code.
+Print an info message.  Alias for `ish_info`.
 DOCSTRING
 ish_say() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
@@ -474,7 +474,7 @@ ish_warning() {
 : <<'DOCSTRING'
 `ish_warn ...`
 
-Alias for `ish_warning`.  Kept for compatibility; prefer `ish_warning`.
+Alias for `ish_warning`.
 
 Note: unlike a simple delegation, this function duplicates the terminal-output
 path so that `caller 0` reports the call site of `ish_warn` rather than the

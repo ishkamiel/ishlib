@@ -54,7 +54,7 @@ ish_debug() {
 : <<'DOCSTRING'
 `ish_say ...`
 
-Print an info message.  Alias for `ish_info`; prefer `ish_info` in new code.
+Print an info message.  Alias for `ish_info`.
 DOCSTRING
 ish_say() {
   if [ -n "${ISHLIB_LOG_OUT:-}" ]; then
@@ -124,7 +124,7 @@ ish_warning() {
 : <<'DOCSTRING'
 `ish_warn ...`
 
-Alias for `ish_warning`.  Kept for compatibility; prefer `ish_warning`.
+Alias for `ish_warning`.
 
 Note: unlike a simple delegation, this function duplicates the terminal-output
 path so that `caller 0` reports the call site of `ish_warn` rather than the
