@@ -427,8 +427,14 @@ class TestLaunchAndExec:
         calls, rc = self._run_with_mocks(args)
         cmds = self._cmds(calls)
 
-        # Must create container first (without starting)
-        assert ["incus", "init", _FAKE_IMAGE, "test-container"] in cmds
+        # Must create container first (without starting), with nesting enabled
+        init_cmd = next(
+            (c for c in cmds if c[:4] == ["incus", "init", _FAKE_IMAGE, "test-container"]),
+            None,
+        )
+        assert init_cmd is not None, "incus init not found in commands"
+        assert "--config" in init_cmd, "incus init missing --config flag"
+        assert "security.nesting=true" in init_cmd, "incus init missing security.nesting=true"
 
         # Must start the container
         assert ["incus", "start", "test-container"] in cmds
@@ -777,18 +783,22 @@ class TestProvisioning:
         assert f"{_FAKE_CONTAINER_UID}:{_FAKE_CONTAINER_UID}" in chown_cmd
         assert f"/home/{_FAKE_USER}" in chown_cmd
 
-    def test_installs_python3_and_sudo(self):
+    def test_bootstrap_base_packages(self):
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
         cmds = self._cmds(calls)
 
-        # Two /bin/sh calls: IPv4 force step + apt-get bootstrap
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        assert len(sh_cmds) == 2
-        script = sh_cmds[1][-1]
-        assert "python3" in script
-        assert "sudo" in script
+        # IPv4 force step must be present
+        assert any("ForceIPv4" in c[-1] for c in sh_cmds)
+        # Package install step: python3, sudo, bubblewrap, socat must all be present
+        assert any(
+            all(pkg in c[-1] for pkg in ("python3", "sudo", "bubblewrap", "socat"))
+            for c in sh_cmds
+        )
+        # npm sandbox-runtime installed as a separate step
+        assert any("sandbox-runtime" in c[-1] for c in sh_cmds)
 
     def test_forces_ipv4_before_apt(self):
         args = _make_args()
@@ -1030,7 +1040,7 @@ class TestBaseManagement:
             ):
                 with patch.object(Path, "is_dir", return_value=True):
                     with patch(
-                        "pyishlib.isholate.container._source_fingerprint",
+                        "pyishlib.isholate.container._host_base_fingerprint",
                         return_value="COMPUTED",
                     ):
                         name = ensure_host_base(
@@ -1062,9 +1072,11 @@ class TestBaseManagement:
             fake_src, stored_fp="STALE", container_exists=True
         )
         cmds = calls
-        # Must delete the stale base and create a new one
+        # Must delete the stale base and create a new one with nesting enabled
         assert any(c[:2] == ["incus", "delete"] for c in cmds)
-        assert any(c[:2] == ["incus", "init"] for c in cmds)
+        init_cmd = next((c for c in cmds if c[:2] == ["incus", "init"]), None)
+        assert init_cmd is not None
+        assert "--config" in init_cmd and "security.nesting=true" in init_cmd
 
     def test_creates_base_when_it_does_not_exist(self):
         fake_src = Path("/home/testuser/.local/share/ishfiles")
@@ -1072,7 +1084,9 @@ class TestBaseManagement:
             fake_src, stored_fp=None, container_exists=False
         )
         cmds = calls
-        assert any(c[:2] == ["incus", "init"] for c in cmds)
+        init_cmd = next((c for c in cmds if c[:2] == ["incus", "init"]), None)
+        assert init_cmd is not None
+        assert "--config" in init_cmd and "security.nesting=true" in init_cmd
         assert any(c[:2] == ["incus", "start"] for c in cmds)
 
     def test_rebuild_flag_forces_rebuild(self):
@@ -1085,7 +1099,9 @@ class TestBaseManagement:
         )
         cmds = calls
         assert any(c[:2] == ["incus", "delete"] for c in cmds)
-        assert any(c[:2] == ["incus", "init"] for c in cmds)
+        init_cmd = next((c for c in cmds if c[:2] == ["incus", "init"]), None)
+        assert init_cmd is not None
+        assert "--config" in init_cmd and "security.nesting=true" in init_cmd
 
     def test_base_is_stopped_after_creation(self):
         fake_src = Path("/home/testuser/.local/share/ishfiles")
@@ -1261,7 +1277,7 @@ class TestStaleDeviceHandling:
             ):
                 with patch.object(Path, "is_dir", return_value=True):
                     with patch(
-                        "pyishlib.isholate.container._source_fingerprint",
+                        "pyishlib.isholate.container._host_base_fingerprint",
                         return_value="COMPUTED",
                     ):
                         ensure_host_base(
@@ -1303,7 +1319,7 @@ class TestStaleDeviceHandling:
             ):
                 with patch.object(Path, "is_dir", return_value=True):
                     with patch(
-                        "pyishlib.isholate.container._source_fingerprint",
+                        "pyishlib.isholate.container._host_base_fingerprint",
                         return_value="COMPUTED",
                     ):
                         with pytest.raises(RuntimeError, match="isholate-ishlib"):

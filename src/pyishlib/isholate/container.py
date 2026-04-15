@@ -57,6 +57,10 @@ _ISHOLATE_RUN_DIR = "/run/isholate"
 _META_SOURCE_HASH = "user.isholate.source_hash"
 _META_UID = "user.isholate.uid"
 
+# Pinned version of the sandbox runtime installed globally in base containers.
+# Update this constant when bumping the package so cache-key logic can track it.
+_SANDBOX_RUNTIME_VERSION = "0.0.49"
+
 
 def _say(msg: str, *, quiet: bool = False) -> None:  # noqa: ARG001
     """Log an isholate progress message at INFO level.
@@ -432,6 +436,18 @@ def _source_fingerprint(source: Path) -> str:
                     pass
         raw = h.hexdigest()
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _host_base_fingerprint(source: Path) -> str:
+    """Fingerprint used as the cache key for persistent host-base containers.
+
+    Combines the source-tree fingerprint with :data:`_SANDBOX_RUNTIME_VERSION`
+    so that bumping the pinned npm package version automatically invalidates
+    any cached base that was built without it.
+    """
+    source_fp = _source_fingerprint(source)
+    combined = f"{source_fp}:{_SANDBOX_RUNTIME_VERSION}"
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -831,15 +847,19 @@ def _apply_network_restrictions(
 
 
 def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None:
-    """Bootstrap a freshly-started container: staging dir, ishlib mount, apt.
+    """Bootstrap a freshly-started container: staging dir, ishlib mount, apt, npm.
 
     Sets up the ``/run/isholate`` staging area, mounts the ishlib checkout,
-    probes network connectivity, and installs ``python3`` + ``sudo`` via apt
-    (or dnf on Fedora-family images).  Called once during host-base creation.
+    probes network connectivity, installs ``python3``, ``sudo``,
+    ``bubblewrap``, ``nodejs``, ``npm``, and ``socat`` via apt (or dnf on Fedora-family
+    images), then globally installs
+    ``@anthropic-ai/sandbox-runtime@_SANDBOX_RUNTIME_VERSION`` via npm.
+    Called once during host-base creation so all derived containers inherit
+    the full toolchain.
 
     Args:
         name:    Container name.
-        verbose: 0 = quiet apt; 1 = stream output; 2 = also --debug.
+        verbose: 0 = quiet apt/npm; 1 = stream output; 2 = also --debug.
         quiet:   Suppress isholate's own progress messages.
     """
     # Create the /run/isholate staging directory.
@@ -858,7 +878,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     )
 
     _say(
-        "installing base packages in container (python3, sudo); "
+        "installing base packages in container (python3, sudo, bubblewrap, nodejs, npm, socat); "
         "this can take a minute on first run...",
         quiet=quiet,
     )
@@ -912,9 +932,9 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
 
     apt_update = "apt-get update" if verbose else "apt-get update -qq"
     apt_install = (
-        "apt-get install -y --no-install-recommends python3 sudo"
+        "apt-get install -y --no-install-recommends python3 sudo bubblewrap nodejs npm socat"
         if verbose
-        else "apt-get install -qq -y --no-install-recommends python3 sudo"
+        else "apt-get install -qq -y --no-install-recommends python3 sudo bubblewrap nodejs npm socat"
     )
     _run_checked(
         [
@@ -929,10 +949,31 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
             f"if command -v apt-get >/dev/null 2>&1; then "
             f"{apt_update} && {apt_install}; "
             "elif command -v dnf >/dev/null 2>&1; then "
-            "dnf install -y python3 sudo; "
+            "dnf install -y python3 sudo bubblewrap nodejs npm socat; "
             "fi",
         ],
-        "bootstrap (python3 + sudo install)",
+        "bootstrap (python3 + sudo + bubblewrap + nodejs + npm + socat install)",
+        stdin=subprocess.DEVNULL,
+    )
+    _say("installing @anthropic-ai/sandbox-runtime via npm...", quiet=quiet)
+    npm_flags = "" if verbose else "--loglevel=error "
+    _run_checked(
+        [
+            "incus",
+            "exec",
+            name,
+            "--env",
+            "npm_config_update_notifier=false",
+            "--env",
+            "npm_config_audit=false",
+            "--env",
+            "npm_config_fund=false",
+            "--",
+            "/bin/sh",
+            "-c",
+            f"npm install -g {npm_flags}@anthropic-ai/sandbox-runtime@{_SANDBOX_RUNTIME_VERSION}",
+        ],
+        "bootstrap (@anthropic-ai/sandbox-runtime install)",
         stdin=subprocess.DEVNULL,
     )
 
@@ -1241,7 +1282,7 @@ def ensure_host_base(
         RuntimeError: if the network preflight fails.
     """
     name = _host_base_name(username, image)
-    fingerprint = _source_fingerprint(host_source)
+    fingerprint = _host_base_fingerprint(host_source)
 
     # Check whether an up-to-date base already exists.
     if not rebuild and _container_exists(name):
@@ -1293,7 +1334,9 @@ def ensure_host_base(
         "(may pull the image on first use)...",
         quiet=quiet,
     )
-    _run(["incus", "init", image, name], check=True)
+    _run(
+        ["incus", "init", image, name, "--config", "security.nesting=true"], check=True
+    )
     started = False
 
     try:
@@ -1678,7 +1721,10 @@ def _launch_one_shot(
         "(may pull the image on first use)...",
         quiet=quiet,
     )
-    _run(["incus", "init", args.image, name], check=True)
+    _run(
+        ["incus", "init", args.image, name, "--config", "security.nesting=true"],
+        check=True,
+    )
 
     try:
         _say(f"starting container '{name}'...", quiet=quiet)
