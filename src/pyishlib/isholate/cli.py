@@ -94,6 +94,20 @@ def build_parser() -> argparse.ArgumentParser:
             "is shared with the host."
         ),
     )
+    parser.add_argument(
+        "--no-network",
+        action="store_true",
+        default=False,
+        help=(
+            "Block all network traffic from the ephemeral container (applied "
+            "after provisioning, so apt and ishfiles still run). When combined "
+            "with --claude, an egress allowlist is installed inside the "
+            "container so the Claude CLI can still reach its API endpoints "
+            "(api.anthropic.com, console.anthropic.com, statsig.anthropic.com, "
+            "sentry.io, claude.ai). All restrictions are applied inside the "
+            "container; the host firewall is not touched."
+        ),
+    )
 
     # --- ishfiles provisioning control ---
     parser.add_argument(
