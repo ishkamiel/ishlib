@@ -55,6 +55,13 @@ ISHOLATE_CONFIG_FILE = "config.toml"
 # Full path: <home> / FAILED_LOGS_STATE_DIR / <container-name> / logs/
 FAILED_LOGS_STATE_DIR = Path(".local") / "state" / "isholate" / "failed-logs"
 
+# XDG state directory under $HOME for per-base build locks.  One lock file
+# per persistent base container name serializes concurrent invocations that
+# would otherwise race ``incus init`` / ``incus copy`` / ``incus delete``
+# against each other.  See :mod:`pyishlib.isholate.locks`.
+# Full path: <home> / LOCKS_STATE_DIR / <container-name>.lock
+LOCKS_STATE_DIR = Path(".local") / "state" / "isholate" / "locks"
+
 
 def discover_project_overlay(root: Path) -> Optional[Path]:
     """Check *root* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
