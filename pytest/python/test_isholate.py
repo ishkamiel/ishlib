@@ -2113,8 +2113,8 @@ class TestApplyNetworkRestrictions:
                 cmds.append(list(c.kwargs["cmd"]))
         return cmds
 
-    def test_no_claude_brings_eth0_down(self):
-        """Without --claude we just disable eth0; no iptables involvement."""
+    def test_no_claude_detaches_eth0_device(self):
+        """Without --claude we remove eth0 at the Incus layer; no iptables."""
         with patch("pyishlib.isholate.container._run") as mock_run, patch(
             "pyishlib.isholate.container._run_checked"
         ) as mock_checked:
@@ -2128,25 +2128,21 @@ class TestApplyNetworkRestrictions:
         checked_cmds = self._collect_cmds(mock_checked.call_args_list)
         all_cmds = run_cmds + checked_cmds
 
-        # eth0 gets brought down via _run_checked.
-        eth0_down = [
+        # eth0 is detached via an Incus device-override (not ip link down).
+        detach = [
             cmd
             for cmd in checked_cmds
-            if cmd[:3] == ["incus", "exec", "ctr"]
-            and "ip" in cmd
-            and "down" in cmd
+            if cmd == ["incus", "config", "device", "add", "ctr", "eth0", "none"]
         ]
-        assert len(eth0_down) == 1, (
-            f"expected one eth0-down call, got {checked_cmds}"
+        assert len(detach) == 1, (
+            f"expected one Incus device-override call, got {checked_cmds}"
         )
 
-        # IPv6 gets disabled via _run (best-effort, check=False).
-        ipv6_off = [
-            cmd
-            for cmd in run_cmds
-            if any("disable_ipv6" in token for token in cmd)
-        ]
-        assert len(ipv6_off) == 1
+        # The old in-container approach (ip link / sysctl) must NOT appear.
+        for cmd in all_cmds:
+            joined = " ".join(cmd)
+            assert "ip link" not in joined
+            assert "disable_ipv6" not in joined
 
         # No iptables or apt machinery on the no-claude path.
         for cmd in all_cmds:

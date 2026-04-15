@@ -706,27 +706,17 @@ def _apply_network_restrictions(
     """
     if not allow_claude:
         _say(
-            f"--no-network: bringing eth0 down inside '{name}'...",
+            f"--no-network: detaching eth0 from '{name}' via Incus device override...",
             quiet=quiet,
         )
-        # Disable IPv6 first so lingering link-local chatter stops too.
-        _run(
-            [
-                "incus",
-                "exec",
-                name,
-                "--",
-                "/bin/sh",
-                "-c",
-                "sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true",
-            ],
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
+        # Override the profile-provided eth0 NIC with a 'none' device at the
+        # Incus layer.  This hot-detaches the NIC from the running container so
+        # systemd-networkd / netplan cannot bring it back up — unlike
+        # `ip link set eth0 down`, which is advisory inside the container and
+        # gets immediately undone by the DHCP client.
         _run_checked(
-            ["incus", "exec", name, "--", "ip", "link", "set", "eth0", "down"],
-            "disable eth0 (--no-network)",
-            stdin=subprocess.DEVNULL,
+            ["incus", "config", "device", "add", name, "eth0", "none"],
+            "detach eth0 via Incus device override (--no-network)",
         )
         return
 
