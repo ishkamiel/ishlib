@@ -45,6 +45,7 @@ from pyishlib.isholate.container import (
     _project_base_name,
     _project_hash,
     _remove_isholate_devices,
+    _source_fingerprint,
     ensure_host_base,
     ensure_project_base,
     generate_name,
@@ -154,6 +155,171 @@ class TestGenerateName:
     def test_valid_chars(self):
         name = generate_name("alice")
         assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in name)
+
+
+# ---------------------------------------------------------------------------
+# _source_fingerprint
+# ---------------------------------------------------------------------------
+
+
+class TestSourceFingerprint:
+    """Tests for _source_fingerprint's path-scoped git fingerprinting.
+
+    These tests guard against the regression where an active project's
+    unrelated repo-wide churn (commits or dirty files outside the overlay)
+    invalidated the project-base cache.  The fingerprint must reflect only
+    state of files under the given source path.
+    """
+
+    _FAKE_SOURCE = Path("/work/myproject/.ishlib/ishfiles")
+
+    def _fake_git_runner(self, *, log_stdout="cafebabe", status_stdout=""):
+        """Return (fake_run, calls) where fake_run records git invocations."""
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+            if not cmd or cmd[0] != "git":
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            # Match on the git subcommand following "-C <path>".
+            if "log" in cmd:
+                return SimpleNamespace(
+                    returncode=0, stdout=f"{log_stdout}\n", stderr=""
+                )
+            if "status" in cmd:
+                return SimpleNamespace(
+                    returncode=0, stdout=status_stdout, stderr=""
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        return fake_run, calls
+
+    def test_scopes_git_log_to_path(self):
+        fake_run, calls = self._fake_git_runner()
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
+        ):
+            _source_fingerprint(self._FAKE_SOURCE)
+
+        log_calls = [c for c in calls if "log" in c]
+        assert log_calls, "expected at least one 'git log' call"
+        for c in log_calls:
+            # Must be scoped with '-- .' pathspec so state outside the source
+            # tree does not contribute to the fingerprint.
+            assert "--" in c and c[-1] == ".", (
+                f"git log must be path-scoped, got: {c}"
+            )
+            assert "-C" in c and str(self._FAKE_SOURCE) in c
+
+    def test_scopes_git_status_to_path(self):
+        fake_run, calls = self._fake_git_runner()
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
+        ):
+            _source_fingerprint(self._FAKE_SOURCE)
+
+        status_calls = [c for c in calls if "status" in c]
+        assert status_calls, "expected at least one 'git status' call"
+        for c in status_calls:
+            assert "--porcelain" in c
+            assert "--" in c and c[-1] == ".", (
+                f"git status must be path-scoped, got: {c}"
+            )
+
+    def test_stable_across_unrelated_repo_activity(self):
+        """Same path-scoped state → same fingerprint, regardless of other repo churn."""
+        fake_run_a, _ = self._fake_git_runner(
+            log_stdout="deadbeef", status_stdout=" M foo\n"
+        )
+        fake_run_b, _ = self._fake_git_runner(
+            log_stdout="deadbeef", status_stdout=" M foo\n"
+        )
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a
+        ):
+            fp_a = _source_fingerprint(self._FAKE_SOURCE)
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b
+        ):
+            fp_b = _source_fingerprint(self._FAKE_SOURCE)
+        assert fp_a == fp_b
+
+    def test_changes_when_scoped_history_changes(self):
+        fake_run_a, _ = self._fake_git_runner(log_stdout="aaaaaaaa")
+        fake_run_b, _ = self._fake_git_runner(log_stdout="bbbbbbbb")
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a
+        ):
+            fp_a = _source_fingerprint(self._FAKE_SOURCE)
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b
+        ):
+            fp_b = _source_fingerprint(self._FAKE_SOURCE)
+        assert fp_a != fp_b
+
+    def test_changes_when_scoped_status_changes(self):
+        fake_run_a, _ = self._fake_git_runner(status_stdout="")
+        fake_run_b, _ = self._fake_git_runner(status_stdout="?? newfile\n")
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a
+        ):
+            fp_a = _source_fingerprint(self._FAKE_SOURCE)
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b
+        ):
+            fp_b = _source_fingerprint(self._FAKE_SOURCE)
+        assert fp_a != fp_b
+
+    def test_falls_back_when_no_committed_history(self, tmp_path):
+        """Empty 'git log' output → content-hash fallback engages."""
+        src = tmp_path / "overlay"
+        src.mkdir()
+        (src / "a.txt").write_text("hello")
+
+        fake_run, calls = self._fake_git_runner(log_stdout="")  # empty
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
+        ):
+            fp = _source_fingerprint(src)
+
+        # Status must NOT have been called — we bailed out of the git branch.
+        assert not any("status" in c for c in calls), (
+            "status must not run when git log reports no history"
+        )
+        # Fingerprint is a 16-char hex digest from the content hash fallback.
+        assert len(fp) == 16 and all(ch in "0123456789abcdef" for ch in fp)
+
+    def test_falls_back_when_git_unavailable(self, tmp_path):
+        """FileNotFoundError for git → content-hash fallback engages."""
+        src = tmp_path / "overlay"
+        src.mkdir()
+        (src / "a.txt").write_text("hello")
+
+        def fake_run(cmd, **kwargs):
+            raise FileNotFoundError("git not found")
+
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
+        ):
+            fp = _source_fingerprint(src)
+        assert len(fp) == 16
+
+    def test_falls_back_on_git_error(self, tmp_path):
+        """CalledProcessError from git → content-hash fallback engages."""
+        src = tmp_path / "overlay"
+        src.mkdir()
+        (src / "a.txt").write_text("hello")
+
+        import subprocess as _sp
+
+        def fake_run(cmd, **kwargs):
+            raise _sp.CalledProcessError(128, cmd)
+
+        with patch(
+            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
+        ):
+            fp = _source_fingerprint(src)
+        assert len(fp) == 16
 
 
 # ---------------------------------------------------------------------------
