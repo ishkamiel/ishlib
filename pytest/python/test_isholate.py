@@ -2786,28 +2786,14 @@ class TestEnsureClaudeNetwork:
 class TestClaudeFirewallRulesInPlace:
     """Idempotent check that must not require sudo."""
 
-    def test_returns_true_when_all_checks_pass(self):
-        """ipset + chain + FORWARD jump + on-disk content + unit enabled -> True."""
+    def test_returns_true_when_on_disk_matches_and_unit_enabled(self):
+        """On-disk content matches + systemd unit enabled -> True."""
 
         def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=0,
-                    stdout=f"other-set\n{_CLAUDE_IPSET_NAME}\n",
-                    stderr="",
-                )
-            if cmd[:2] == ["iptables", "-S"]:
-                return SimpleNamespace(
-                    returncode=0, stdout=f"-N {_CLAUDE_IPTABLES_CHAIN}\n", stderr=""
-                )
-            if cmd[:2] == ["iptables", "-C"]:
-                return SimpleNamespace(returncode=0, stdout="", stderr="")
             if cmd[:2] == ["systemctl", "is-enabled"]:
                 return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
             return SimpleNamespace(returncode=1, stdout="", stderr="")
 
-        # Patch the on-disk content check separately (real files are absent
-        # in CI); its own behaviour is covered by TestClaudeFirewallOnDiskMatches.
         with patch(
             "pyishlib.isholate.container._run", side_effect=fake_run
         ), patch(
@@ -2820,16 +2806,6 @@ class TestClaudeFirewallRulesInPlace:
         """Unit installed but disabled -> False (reboot would leave host unprotected)."""
 
         def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=0,
-                    stdout=f"{_CLAUDE_IPSET_NAME}\n",
-                    stderr="",
-                )
-            if cmd[:2] == ["iptables", "-S"]:
-                return SimpleNamespace(returncode=0, stdout="", stderr="")
-            if cmd[:2] == ["iptables", "-C"]:
-                return SimpleNamespace(returncode=0, stdout="", stderr="")
             if cmd[:2] == ["systemctl", "is-enabled"]:
                 return SimpleNamespace(returncode=1, stdout="disabled\n", stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -2843,7 +2819,7 @@ class TestClaudeFirewallRulesInPlace:
             assert _claude_firewall_rules_in_place() is False
 
     def test_returns_false_when_on_disk_content_drifts(self):
-        """In-kernel state current but apply script / unit stale -> False.
+        """Unit enabled but apply script / unit file stale -> False.
 
         An isholate upgrade that changes the embedded apply script content
         must trigger a reinstall, otherwise the stale on-disk script would
@@ -2851,11 +2827,7 @@ class TestClaudeFirewallRulesInPlace:
         """
 
         def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=0, stdout=f"{_CLAUDE_IPSET_NAME}\n", stderr=""
-                )
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
 
         with patch(
             "pyishlib.isholate.container._run", side_effect=fake_run
@@ -2865,97 +2837,48 @@ class TestClaudeFirewallRulesInPlace:
         ):
             assert _claude_firewall_rules_in_place() is False
 
-    def test_returns_false_when_ipset_missing(self):
-        """Missing ipset -> False (installer will create it)."""
+    def test_returns_false_when_systemctl_missing(self):
+        """FileNotFoundError from missing systemctl -> False, not a traceback."""
 
         def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=0, stdout="other-set\n", stderr=""
-                )
+            if cmd[:1] == ["systemctl"]:
+                raise FileNotFoundError(2, "No such file or directory", "systemctl")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
+            return_value=True,
+        ):
             assert _claude_firewall_rules_in_place() is False
 
-    def test_returns_false_when_chain_missing(self):
-        """Missing iptables chain -> False."""
+    def test_does_not_invoke_sudo_or_netfilter_tools(self):
+        """The check must never spawn sudo, ipset, or iptables.
 
-        def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=0, stdout=f"{_CLAUDE_IPSET_NAME}\n", stderr=""
-                )
-            if cmd[:2] == ["iptables", "-S"]:
-                return SimpleNamespace(
-                    returncode=1, stdout="", stderr="No chain"
-                )
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
-            assert _claude_firewall_rules_in_place() is False
-
-    def test_returns_false_when_forward_jump_missing(self):
-        """Chain + set exist but FORWARD has no jump -> False."""
-
-        def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=0, stdout=f"{_CLAUDE_IPSET_NAME}\n", stderr=""
-                )
-            if cmd[:2] == ["iptables", "-S"]:
-                return SimpleNamespace(returncode=0, stdout="", stderr="")
-            if cmd[:2] == ["iptables", "-C"]:
-                return SimpleNamespace(
-                    returncode=1, stdout="", stderr="No such rule"
-                )
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
-            assert _claude_firewall_rules_in_place() is False
-
-    def test_returns_false_when_ipset_binary_missing(self):
-        """ipset not installed (exit 127 or unknown failure) -> False."""
-
-        def fake_run(cmd, **kwargs):
-            if cmd[:2] == ["ipset", "list"]:
-                return SimpleNamespace(
-                    returncode=127, stdout="", stderr="not found"
-                )
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
-            assert _claude_firewall_rules_in_place() is False
-
-    def test_returns_false_when_binary_not_found(self):
-        """FileNotFoundError from a missing binary -> False, not a traceback.
-
-        Regression test for the crash observed when ``ipset`` is not installed
-        on the host: ``subprocess.run`` raises ``FileNotFoundError`` which
-        previously propagated all the way to the user as a Python traceback.
+        Those need root on every modern distro; calling them here would
+        either force a sudo prompt on every run (defeating the purpose of
+        the check) or always return non-zero and always reinstall.
         """
-
-        def fake_run(cmd, **kwargs):
-            if cmd[:1] == ["ipset"]:
-                raise FileNotFoundError(2, "No such file or directory", "ipset")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
-            assert _claude_firewall_rules_in_place() is False
-
-    def test_does_not_invoke_sudo(self):
-        """The check must never spawn sudo - that belongs to the installer."""
         calls = []
 
         def fake_run(cmd, **kwargs):
             calls.append(list(cmd))
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
+            return_value=True,
+        ):
             _claude_firewall_rules_in_place()
 
+        forbidden = {"sudo", "ipset", "iptables"}
         for cmd in calls:
-            assert cmd[0] != "sudo", f"_claude_firewall_rules_in_place ran sudo: {cmd}"
+            assert cmd[0] not in forbidden, (
+                f"_claude_firewall_rules_in_place ran forbidden tool: {cmd}"
+            )
 
 
 class TestClaudeFirewallOnDiskMatches:
