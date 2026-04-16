@@ -34,13 +34,24 @@ from pyishlib.isholate.config import (
     load_project_config,
 )
 from pyishlib.isholate.container import (
-    _CLAUDE_ALLOW_HOSTS,
+    _CLAUDE_ALLOW_DOMAINS,
+    _CLAUDE_DNS_UPSTREAM,
+    _CLAUDE_FIREWALL_APPLY_SCRIPT,
+    _CLAUDE_FIREWALL_SYSTEMD_UNIT,
+    _CLAUDE_IPSET_NAME,
+    _CLAUDE_IPTABLES_CHAIN,
+    _CLAUDE_NETWORK_NAME,
     _META_SOURCE_HASH,
     _apply_network_restrictions,
     _assert_no_isholate_devices,
+    _build_claude_firewall_install_script,
+    _build_claude_raw_dnsmasq,
     _check_incus_available,
+    _claude_firewall_rules_in_place,
+    _ensure_claude_network,
     _host_base_name,
     _image_tag,
+    _install_claude_firewall,
     _list_isholate_devices,
     _project_base_name,
     _project_hash,
@@ -956,8 +967,6 @@ class TestProvisioning:
         cmds = self._cmds(calls)
 
         sh_cmds = [c for c in cmds if "/bin/sh" in c]
-        # IPv4 force step must be present
-        assert any("ForceIPv4" in c[-1] for c in sh_cmds)
         # Package install step: python3, sudo, bubblewrap, socat must all be present
         assert any(
             all(pkg in c[-1] for pkg in ("python3", "sudo", "bubblewrap", "socat"))
@@ -965,6 +974,13 @@ class TestProvisioning:
         )
         # npm sandbox-runtime installed as a separate step
         assert any("sandbox-runtime" in c[-1] for c in sh_cmds)
+        # The legacy in-container firewall packages must no longer appear
+        # in the base bootstrap — restriction is applied via the
+        # isholate-claude bridge at the Incus layer.
+        pkg_install_scripts = " ".join(c[-1] for c in sh_cmds if "apt-get install" in c[-1])
+        assert "iptables" not in pkg_install_scripts
+        assert "ipset" not in pkg_install_scripts
+        assert "dnsmasq" not in pkg_install_scripts
 
     def test_forces_ipv4_before_apt(self):
         args = _make_args()
@@ -2310,6 +2326,18 @@ class TestApplyNetworkRestrictions:
         checked_cmds = self._collect_cmds(mock_checked.call_args_list)
         all_cmds = run_cmds + checked_cmds
 
+        # A best-effort device-remove is attempted first (via _run, not
+        # _run_checked) so the subsequent add succeeds even when eth0 already
+        # exists at the instance level.
+        remove = [
+            cmd
+            for cmd in run_cmds
+            if cmd == ["incus", "config", "device", "remove", "ctr", "eth0"]
+        ]
+        assert len(remove) == 1, (
+            f"expected one best-effort device-remove call, got {run_cmds}"
+        )
+
         # eth0 is detached via an Incus device-override (not ip link down).
         detach = [
             cmd
@@ -2332,9 +2360,25 @@ class TestApplyNetworkRestrictions:
             assert "iptables" not in joined
             assert "apt-get" not in joined
 
-    def test_claude_installs_iptables_and_allowlist(self):
-        """With --claude we install iptables (guarded) and apply the allowlist."""
-        with patch("pyishlib.isholate.container._run") as mock_run, patch(
+    def test_claude_switches_to_isholate_bridge(self):
+        """With --claude we ensure the bridge, ensure host rules, and attach eth0.
+
+        No in-container changes: nothing runs via incus exec inside the
+        ephemeral container.  Host-side rules are installed via
+        ``_install_claude_firewall`` when not already present; the firewall
+        helpers are mocked here and covered by their own suites.
+        """
+        with patch(
+            "pyishlib.isholate.container._ensure_claude_network",
+            return_value=_CLAUDE_NETWORK_NAME,
+        ) as mock_ensure, patch(
+            "pyishlib.isholate.container._claude_firewall_rules_in_place",
+            return_value=True,
+        ) as mock_in_place, patch(
+            "pyishlib.isholate.container._install_claude_firewall"
+        ) as mock_install, patch(
+            "pyishlib.isholate.container._run"
+        ) as mock_run, patch(
             "pyishlib.isholate.container._run_checked"
         ) as mock_checked:
             mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -2343,77 +2387,658 @@ class TestApplyNetworkRestrictions:
             )
             _apply_network_restrictions("ctr", allow_claude=True)
 
-        checked_cmds = self._collect_cmds(mock_checked.call_args_list)
-
-        # The install step must be guarded by `command -v iptables` so
-        # a base with iptables already present skips the apt run.
-        install_shells = [
-            cmd
-            for cmd in checked_cmds
-            if any("command -v iptables" in tok for tok in cmd)
-        ]
-        assert len(install_shells) == 1, (
-            "expected one guarded iptables install step"
-        )
-        install_script = install_shells[0][-1]
-        assert "apt-get install" in install_script
-
-        # There's a single shell script that builds the iptables allowlist.
-        rule_scripts = [
-            cmd
-            for cmd in checked_cmds
-            if cmd[:5] == ["incus", "exec", "ctr", "--", "/bin/sh"]
-            and any("iptables -P OUTPUT DROP" in tok for tok in cmd)
-        ]
-        assert len(rule_scripts) == 1, (
-            f"expected one iptables rule script, got {checked_cmds}"
-        )
-        script = rule_scripts[0][-1]
-
-        # Each Claude allowlist host gets an ACCEPT rule on 443.
-        for host in _CLAUDE_ALLOW_HOSTS:
-            assert (
-                f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
-                in script
-            ), f"missing allow rule for {host}"
-
-        # Loopback, conntrack, and DNS must be allowed.
-        assert "iptables -A INPUT -i lo -j ACCEPT" in script
-        assert "iptables -A OUTPUT -o lo -j ACCEPT" in script
-        assert "ESTABLISHED,RELATED" in script
-
-        # DNS is pinned to /etc/resolv.conf nameservers (not wide-open port
-        # 53) to prevent DNS-based exfiltration.
-        assert "/etc/resolv.conf" in script
-        assert "nameserver" in script
-        assert '-d "$ns" -p udp --dport 53 -j ACCEPT' in script
-        assert '-d "$ns" -p tcp --dport 53 -j ACCEPT' in script
-        # Ensure we did NOT leave an any-destination DNS hole.
-        assert "iptables -A OUTPUT -p udp --dport 53 -j ACCEPT" not in script
-        assert "iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT" not in script
-
-        # DROP policy comes *after* the ACCEPT rules: check textual order.
-        drop_pos = script.index("iptables -P OUTPUT DROP")
-        for host in _CLAUDE_ALLOW_HOSTS:
-            host_pos = script.index(
-                f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
-            )
-            assert host_pos < drop_pos, (
-                f"ACCEPT for {host} must come before DROP policy"
-            )
-
-    def test_claude_disables_ipv6(self):
-        """The claude path also disables IPv6 so one rule-set is enough."""
-        with patch("pyishlib.isholate.container._run") as mock_run, patch(
-            "pyishlib.isholate.container._run_checked"
-        ):
-            mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
-            _apply_network_restrictions("ctr", allow_claude=True)
+        # The bridge is ensured exactly once.
+        assert mock_ensure.call_count == 1
+        # Firewall state is probed; rules are in place so install is skipped.
+        assert mock_in_place.call_count == 1
+        assert mock_install.call_count == 0
 
         run_cmds = self._collect_cmds(mock_run.call_args_list)
-        ipv6_off = [
+        checked_cmds = self._collect_cmds(mock_checked.call_args_list)
+        all_cmds = run_cmds + checked_cmds
+
+        # Best-effort device-remove so the subsequent add cannot collide with
+        # an existing instance-level override.
+        remove = [
             cmd
             for cmd in run_cmds
-            if any("disable_ipv6" in tok for tok in cmd)
+            if cmd == ["incus", "config", "device", "remove", "ctr", "eth0"]
         ]
-        assert len(ipv6_off) == 1
+        assert len(remove) == 1, (
+            f"expected one best-effort device-remove call, got {run_cmds}"
+        )
+
+        # eth0 is attached as a nic device on the isholate-claude bridge.
+        add_nic = [
+            cmd
+            for cmd in checked_cmds
+            if cmd
+            == [
+                "incus",
+                "config",
+                "device",
+                "add",
+                "ctr",
+                "eth0",
+                "nic",
+                f"network={_CLAUDE_NETWORK_NAME}",
+                "name=eth0",
+            ]
+        ]
+        assert len(add_nic) == 1, (
+            f"expected one nic device-add call, got {checked_cmds}"
+        )
+
+        # No in-container changes: no incus exec calls at all.
+        for cmd in all_cmds:
+            assert cmd[:2] != ["incus", "exec"], (
+                f"no in-container changes expected, got {cmd!r}"
+            )
+
+        # The old in-container machinery must NOT appear in _apply_network_*
+        # invocations (sudo/iptables are only in _install_claude_firewall,
+        # which is mocked out here).
+        for cmd in all_cmds:
+            joined = " ".join(cmd)
+            assert "sudo" not in joined
+            assert "iptables" not in joined
+            assert "chattr" not in joined
+            assert "resolv.conf" not in joined
+            assert "disable_ipv6" not in joined
+
+    def test_claude_installs_firewall_when_rules_missing(self):
+        """If _claude_firewall_rules_in_place is False, install is invoked."""
+        with patch(
+            "pyishlib.isholate.container._ensure_claude_network",
+            return_value=_CLAUDE_NETWORK_NAME,
+        ), patch(
+            "pyishlib.isholate.container._claude_firewall_rules_in_place",
+            return_value=False,
+        ), patch(
+            "pyishlib.isholate.container._install_claude_firewall"
+        ) as mock_install, patch(
+            "pyishlib.isholate.container._run"
+        ) as mock_run, patch(
+            "pyishlib.isholate.container._run_checked"
+        ) as mock_checked:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            mock_checked.return_value = SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            )
+            _apply_network_restrictions("ctr", allow_claude=True)
+
+        assert mock_install.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _ensure_claude_network and _build_claude_raw_dnsmasq
+# ---------------------------------------------------------------------------
+
+
+class TestBuildClaudeRawDnsmasq:
+    """The raw.dnsmasq string must encode the allowlist correctly."""
+
+    def test_contains_catch_all(self):
+        """local=/#/ is the NXDOMAIN catch-all for non-allowlisted domains."""
+        assert "local=/#/" in _build_claude_raw_dnsmasq()
+
+    def test_contains_server_line_per_domain(self):
+        """Every allowlisted domain gets a server= forwarding rule."""
+        raw = _build_claude_raw_dnsmasq()
+        for domain in _CLAUDE_ALLOW_DOMAINS:
+            assert f"server=/{domain}/{_CLAUDE_DNS_UPSTREAM}" in raw, (
+                f"missing forward for {domain!r}"
+            )
+
+    def test_contains_ipset_directive(self):
+        """ipset= populates the host ipset so iptables can match on it."""
+        raw = _build_claude_raw_dnsmasq()
+        # ipset= takes a slash-separated domain list followed by the set name.
+        expected_suffix = f"/{_CLAUDE_IPSET_NAME}"
+        ipset_lines = [line for line in raw.split("\n") if line.startswith("ipset=")]
+        assert len(ipset_lines) == 1, (
+            f"expected one ipset= line, got {ipset_lines!r}"
+        )
+        line = ipset_lines[0]
+        assert line.endswith(expected_suffix)
+        for domain in _CLAUDE_ALLOW_DOMAINS:
+            assert f"/{domain}" in line, f"ipset= missing domain {domain!r}"
+
+    def test_is_newline_joined(self):
+        """Value is one directive per line so Incus writes a valid config."""
+        lines = _build_claude_raw_dnsmasq().split("\n")
+        # One catch-all + one server= per domain + one ipset= line.
+        assert len(lines) == 1 + len(_CLAUDE_ALLOW_DOMAINS) + 1
+
+
+class TestEnsureClaudeNetwork:
+    """The isholate-claude managed network is created once and kept current."""
+
+    @staticmethod
+    def _collect_cmds(calls):
+        cmds = []
+        for c in calls:
+            if c.args:
+                cmds.append(list(c.args[0]))
+            elif "cmd" in c.kwargs:
+                cmds.append(list(c.kwargs["cmd"]))
+        return cmds
+
+    def test_creates_network_when_absent(self):
+        """incus network show non-zero -> create with our flags, then set both
+        raw.dnsmasq and ipv4.firewall=false."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:3] == ["incus", "network", "show"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="not found")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ) as mock_run, patch(
+            "pyishlib.isholate.container._run_checked"
+        ) as mock_checked:
+            mock_checked.return_value = SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            )
+            result = _ensure_claude_network()
+
+        assert result == _CLAUDE_NETWORK_NAME
+
+        run_cmds = self._collect_cmds(mock_run.call_args_list)
+        checked_cmds = self._collect_cmds(mock_checked.call_args_list)
+
+        # Existence probe happened.
+        assert [
+            "incus",
+            "network",
+            "show",
+            _CLAUDE_NETWORK_NAME,
+        ] in run_cmds
+
+        # Create call with all expected flags including ipv4.firewall=false
+        # so Incus leaves our FORWARD rules alone.
+        create_cmds = [
+            cmd for cmd in checked_cmds if cmd[:3] == ["incus", "network", "create"]
+        ]
+        assert len(create_cmds) == 1
+        create = create_cmds[0]
+        assert _CLAUDE_NETWORK_NAME in create
+        assert "ipv4.address=auto" in create
+        assert "ipv4.nat=true" in create
+        assert "ipv4.firewall=false" in create
+        assert "ipv6.address=none" in create
+
+        # Three set calls: raw.dnsmasq, ipv4.firewall=false, and ipv4.nat=true
+        # (re-applied even on create so any isholate upgrade that changes them
+        # converges).  Key is cmd[4], value is cmd[5] (separate args).
+        set_cmds = [
+            cmd for cmd in checked_cmds if cmd[:3] == ["incus", "network", "set"]
+        ]
+        assert len(set_cmds) == 3
+        set_keys = {cmd[4] for cmd in set_cmds}
+        assert "raw.dnsmasq" in set_keys
+        assert "ipv4.firewall" in set_keys
+        assert "ipv4.nat" in set_keys
+
+    def test_reuses_existing_network(self):
+        """incus network show returns 0 -> skip create, still set both configs."""
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._run_checked"
+        ) as mock_checked:
+            mock_checked.return_value = SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            )
+            _ensure_claude_network()
+
+        checked_cmds = self._collect_cmds(mock_checked.call_args_list)
+
+        # No create call on reuse.
+        create_cmds = [
+            cmd for cmd in checked_cmds if cmd[:3] == ["incus", "network", "create"]
+        ]
+        assert create_cmds == []
+
+        # All three set calls still happen so config converges on isholate
+        # upgrades.  Key is cmd[4], value is cmd[5] (separate args).
+        set_cmds = [
+            cmd for cmd in checked_cmds if cmd[:3] == ["incus", "network", "set"]
+        ]
+        assert len(set_cmds) == 3
+        set_keys = {cmd[4] for cmd in set_cmds}
+        assert "raw.dnsmasq" in set_keys
+        assert "ipv4.firewall" in set_keys
+        assert "ipv4.nat" in set_keys
+
+    def test_raw_dnsmasq_value_includes_all_domains_and_ipset(self):
+        """The raw.dnsmasq set call carries the full allowlist and ipset= line."""
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._run_checked"
+        ) as mock_checked:
+            mock_checked.return_value = SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            )
+            _ensure_claude_network()
+
+        raw_sets = [
+            cmd
+            for cmd in self._collect_cmds(mock_checked.call_args_list)
+            if cmd[:3] == ["incus", "network", "set"]
+            and cmd[4] == "raw.dnsmasq"
+        ]
+        assert len(raw_sets) == 1
+        value = raw_sets[0][5]  # key=cmd[4], value=cmd[5] (separate args)
+        assert "local=/#/" in value
+        for domain in _CLAUDE_ALLOW_DOMAINS:
+            assert f"server=/{domain}/{_CLAUDE_DNS_UPSTREAM}" in value
+        assert f"/{_CLAUDE_IPSET_NAME}" in value
+
+
+# ---------------------------------------------------------------------------
+# Host firewall: _claude_firewall_rules_in_place / _install_claude_firewall
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeFirewallRulesInPlace:
+    """Idempotent check that must not require sudo."""
+
+    def test_returns_true_when_all_checks_pass(self):
+        """ipset + chain + FORWARD jump + on-disk content + unit enabled -> True."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=f"other-set\n{_CLAUDE_IPSET_NAME}\n",
+                    stderr="",
+                )
+            if cmd[:2] == ["iptables", "-S"]:
+                return SimpleNamespace(
+                    returncode=0, stdout=f"-N {_CLAUDE_IPTABLES_CHAIN}\n", stderr=""
+                )
+            if cmd[:2] == ["iptables", "-C"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if cmd[:2] == ["systemctl", "is-enabled"]:
+                return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+        # Patch the on-disk content check separately (real files are absent
+        # in CI); its own behaviour is covered by TestClaudeFirewallOnDiskMatches.
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
+            return_value=True,
+        ):
+            assert _claude_firewall_rules_in_place() is True
+
+    def test_returns_false_when_systemd_unit_disabled(self):
+        """Unit installed but disabled -> False (reboot would leave host unprotected)."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=f"{_CLAUDE_IPSET_NAME}\n",
+                    stderr="",
+                )
+            if cmd[:2] == ["iptables", "-S"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if cmd[:2] == ["iptables", "-C"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if cmd[:2] == ["systemctl", "is-enabled"]:
+                return SimpleNamespace(returncode=1, stdout="disabled\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
+            return_value=True,
+        ):
+            assert _claude_firewall_rules_in_place() is False
+
+    def test_returns_false_when_on_disk_content_drifts(self):
+        """In-kernel state current but apply script / unit stale -> False.
+
+        An isholate upgrade that changes the embedded apply script content
+        must trigger a reinstall, otherwise the stale on-disk script would
+        restore the old rules on the next reboot.
+        """
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=0, stdout=f"{_CLAUDE_IPSET_NAME}\n", stderr=""
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ), patch(
+            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
+            return_value=False,
+        ):
+            assert _claude_firewall_rules_in_place() is False
+
+    def test_returns_false_when_ipset_missing(self):
+        """Missing ipset -> False (installer will create it)."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=0, stdout="other-set\n", stderr=""
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            assert _claude_firewall_rules_in_place() is False
+
+    def test_returns_false_when_chain_missing(self):
+        """Missing iptables chain -> False."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=0, stdout=f"{_CLAUDE_IPSET_NAME}\n", stderr=""
+                )
+            if cmd[:2] == ["iptables", "-S"]:
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr="No chain"
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            assert _claude_firewall_rules_in_place() is False
+
+    def test_returns_false_when_forward_jump_missing(self):
+        """Chain + set exist but FORWARD has no jump -> False."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=0, stdout=f"{_CLAUDE_IPSET_NAME}\n", stderr=""
+                )
+            if cmd[:2] == ["iptables", "-S"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if cmd[:2] == ["iptables", "-C"]:
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr="No such rule"
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            assert _claude_firewall_rules_in_place() is False
+
+    def test_returns_false_when_ipset_binary_missing(self):
+        """ipset not installed (exit 127 or unknown failure) -> False."""
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["ipset", "list"]:
+                return SimpleNamespace(
+                    returncode=127, stdout="", stderr="not found"
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            assert _claude_firewall_rules_in_place() is False
+
+    def test_does_not_invoke_sudo(self):
+        """The check must never spawn sudo - that belongs to the installer."""
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            _claude_firewall_rules_in_place()
+
+        for cmd in calls:
+            assert cmd[0] != "sudo", f"_claude_firewall_rules_in_place ran sudo: {cmd}"
+
+
+class TestClaudeFirewallOnDiskMatches:
+    """Drift detection: on-disk apply script + systemd unit match embedded."""
+
+    def test_returns_true_when_both_files_match(self, tmp_path):
+        """Both files present and identical to the embedded content -> True."""
+        from pyishlib.isholate import container
+
+        apply_path = tmp_path / "apply.sh"
+        unit_path = tmp_path / "unit.service"
+        apply_path.write_text(container._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
+        unit_path.write_text(container._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
+        with patch.object(
+            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
+        ), patch.object(
+            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
+        ):
+            assert container._claude_firewall_on_disk_matches() is True
+
+    def test_returns_false_when_apply_script_missing(self, tmp_path):
+        """Missing apply script file -> False."""
+        from pyishlib.isholate import container
+
+        unit_path = tmp_path / "unit.service"
+        unit_path.write_text(container._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
+        with patch.object(
+            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(tmp_path / "missing.sh")
+        ), patch.object(
+            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
+        ):
+            assert container._claude_firewall_on_disk_matches() is False
+
+    def test_returns_false_when_unit_missing(self, tmp_path):
+        """Missing systemd unit file -> False."""
+        from pyishlib.isholate import container
+
+        apply_path = tmp_path / "apply.sh"
+        apply_path.write_text(container._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
+        with patch.object(
+            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
+        ), patch.object(
+            container,
+            "_CLAUDE_FIREWALL_SYSTEMD_UNIT",
+            str(tmp_path / "missing.service"),
+        ):
+            assert container._claude_firewall_on_disk_matches() is False
+
+    def test_returns_false_when_apply_script_stale(self, tmp_path):
+        """Apply script content drifted from embedded -> False (triggers reinstall)."""
+        from pyishlib.isholate import container
+
+        apply_path = tmp_path / "apply.sh"
+        unit_path = tmp_path / "unit.service"
+        apply_path.write_text("# stale content from previous isholate version\n")
+        unit_path.write_text(container._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
+        with patch.object(
+            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
+        ), patch.object(
+            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
+        ):
+            assert container._claude_firewall_on_disk_matches() is False
+
+    def test_returns_false_when_unit_stale(self, tmp_path):
+        """Unit content drifted from embedded -> False."""
+        from pyishlib.isholate import container
+
+        apply_path = tmp_path / "apply.sh"
+        unit_path = tmp_path / "unit.service"
+        apply_path.write_text(container._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
+        unit_path.write_text("# stale unit content\n")
+        with patch.object(
+            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
+        ), patch.object(
+            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
+        ):
+            assert container._claude_firewall_on_disk_matches() is False
+
+
+class TestBuildClaudeFirewallInstallScript:
+    """The install script content must encode all the required state."""
+
+    def test_script_writes_apply_script(self):
+        """The install script writes the persistent apply helper."""
+        script = _build_claude_firewall_install_script()
+        assert f"cat > {_CLAUDE_FIREWALL_APPLY_SCRIPT} <<" in script
+        assert f"chmod +x {_CLAUDE_FIREWALL_APPLY_SCRIPT}" in script
+
+    def test_script_writes_systemd_unit(self):
+        """The install script writes the systemd unit file."""
+        script = _build_claude_firewall_install_script()
+        assert f"cat > {_CLAUDE_FIREWALL_SYSTEMD_UNIT} <<" in script
+        assert "systemctl daemon-reload" in script
+        assert "systemctl enable isholate-claude-firewall.service" in script
+
+    def test_script_runs_apply_after_install(self):
+        """Rules come into effect immediately, not only after reboot."""
+        script = _build_claude_firewall_install_script()
+        # The apply script path appears as a standalone command line near the
+        # end of the install script.
+        lines = script.splitlines()
+        assert any(
+            line.strip() == _CLAUDE_FIREWALL_APPLY_SCRIPT for line in lines
+        ), "install script must run the apply helper once"
+
+    def test_apply_script_references_ipset_and_chain(self):
+        """The embedded apply script must actually configure our set + chain."""
+        script = _build_claude_firewall_install_script()
+        # These values live inside the heredoc so only need a substring match.
+        assert _CLAUDE_IPSET_NAME in script
+        assert _CLAUDE_IPTABLES_CHAIN in script
+        assert _CLAUDE_NETWORK_NAME in script
+        # Core rules we expect to be applied.
+        assert "ipset create" in script
+        assert "--match-set" in script
+        assert "--dport 443" in script
+
+
+class TestInstallClaudeFirewall:
+    """_install_claude_firewall runs the script under sudo and surfaces errors."""
+
+    # All host tools (ipset, iptables, systemctl, sudo) must be present
+    # for the sudo invocation to be reached.  ``_all_tools_present`` is
+    # the common fake_which used by the happy-path and sudo-failure tests.
+    @staticmethod
+    def _all_tools_present(tool):
+        return f"/usr/bin/{tool}"
+
+    def test_invokes_sudo_with_install_script(self):
+        """Install must run sudo /bin/sh -c <install script>."""
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which",
+            side_effect=self._all_tools_present,
+        ), patch(
+            "pyishlib.isholate.container._run", side_effect=fake_run
+        ) as mock_run:
+            _install_claude_firewall()
+
+        # One _run call, and it's the sudo invocation.
+        assert mock_run.call_count == 1
+        cmd = mock_run.call_args_list[0].args[0]
+        assert cmd[:3] == ["sudo", "/bin/sh", "-c"]
+        # The script argument carries the heredoc contents.
+        assert _CLAUDE_FIREWALL_APPLY_SCRIPT in cmd[3]
+
+    def test_raises_if_ipset_missing(self):
+        """ipset not on PATH -> targeted RuntimeError mentioning ipset."""
+
+        def fake_which(tool):
+            return None if tool == "ipset" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            with pytest.raises(RuntimeError) as excinfo:
+                _install_claude_firewall()
+        msg = str(excinfo.value)
+        assert "missing host tools" in msg
+        assert "ipset" in msg
+
+    def test_raises_if_iptables_missing(self):
+        """iptables not on PATH -> targeted RuntimeError mentioning iptables."""
+
+        def fake_which(tool):
+            return None if tool == "iptables" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            with pytest.raises(RuntimeError) as excinfo:
+                _install_claude_firewall()
+        msg = str(excinfo.value)
+        assert "missing host tools" in msg
+        assert "iptables" in msg
+
+    def test_raises_if_systemctl_missing(self):
+        """systemctl not on PATH -> targeted RuntimeError mentioning systemd."""
+
+        def fake_which(tool):
+            return None if tool == "systemctl" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            with pytest.raises(RuntimeError) as excinfo:
+                _install_claude_firewall()
+        msg = str(excinfo.value)
+        assert "missing host tools" in msg
+        assert "systemctl" in msg
+
+    def test_raises_if_sudo_missing(self):
+        """No sudo on PATH (but host tools present) -> RuntimeError."""
+
+        def fake_which(tool):
+            return None if tool == "sudo" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            with pytest.raises(RuntimeError, match="sudo not found"):
+                _install_claude_firewall()
+
+    def test_preflight_lists_all_missing_tools(self):
+        """Multiple missing tools are reported in a single error."""
+
+        def fake_which(tool):
+            # Only systemctl is present; ipset and iptables are missing.
+            return "/usr/bin/systemctl" if tool == "systemctl" else None
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            with pytest.raises(RuntimeError) as excinfo:
+                _install_claude_firewall()
+        msg = str(excinfo.value)
+        assert "ipset" in msg
+        assert "iptables" in msg
+
+    def test_raises_if_sudo_fails(self):
+        """sudo exit != 0 -> RuntimeError."""
+
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=1, stdout="", stderr="denied")
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which",
+            side_effect=self._all_tools_present,
+        ), patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with pytest.raises(RuntimeError, match="failed to install"):
+                _install_claude_firewall()
