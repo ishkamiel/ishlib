@@ -27,6 +27,7 @@ from .config import (
 )
 from .container import (
     _check_incus_available,
+    _preflight_claude_host_tools,
     get_host_user_info,
     launch_and_exec,
     purge_containers,
@@ -330,6 +331,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if incus_guidance is not None:
         log.error("%s", incus_guidance)
         return 1
+
+    # Check host tool dependencies for --no-network --claude before creating
+    # any container or Incus network state.  Without this, a missing 'ipset'
+    # or 'iptables' package produces a raw Python traceback mid-run after
+    # the ephemeral container and the isholate-claude bridge already exist.
+    if args.no_network and args.claude:
+        tools_msg = _preflight_claude_host_tools()
+        if tools_msg is not None:
+            log.error("%s", tools_msg)
+            return 1
 
     # --run takes precedence over the positional command form: everything
     # after --run is the command to run inside the container.

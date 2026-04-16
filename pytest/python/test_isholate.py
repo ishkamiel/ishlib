@@ -53,6 +53,7 @@ from pyishlib.isholate.container import (
     _image_tag,
     _install_claude_firewall,
     _list_isholate_devices,
+    _preflight_claude_host_tools,
     _project_base_name,
     _project_hash,
     _remove_isholate_devices,
@@ -2926,6 +2927,22 @@ class TestClaudeFirewallRulesInPlace:
         with patch("pyishlib.isholate.container._run", side_effect=fake_run):
             assert _claude_firewall_rules_in_place() is False
 
+    def test_returns_false_when_binary_not_found(self):
+        """FileNotFoundError from a missing binary -> False, not a traceback.
+
+        Regression test for the crash observed when ``ipset`` is not installed
+        on the host: ``subprocess.run`` raises ``FileNotFoundError`` which
+        previously propagated all the way to the user as a Python traceback.
+        """
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:1] == ["ipset"]:
+                raise FileNotFoundError(2, "No such file or directory", "ipset")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            assert _claude_firewall_rules_in_place() is False
+
     def test_does_not_invoke_sudo(self):
         """The check must never spawn sudo - that belongs to the installer."""
         calls = []
@@ -3173,3 +3190,153 @@ class TestInstallClaudeFirewall:
         ), patch("pyishlib.isholate.container._run", side_effect=fake_run):
             with pytest.raises(RuntimeError, match="failed to install"):
                 _install_claude_firewall()
+
+
+# ---------------------------------------------------------------------------
+# _preflight_claude_host_tools
+# ---------------------------------------------------------------------------
+
+
+class TestPreflightClaudeHostTools:
+    """_preflight_claude_host_tools returns None when all tools present,
+    or a user-facing message listing each missing tool."""
+
+    @staticmethod
+    def _all_present(tool):
+        return f"/usr/bin/{tool}"
+
+    def test_returns_none_when_all_tools_present(self):
+        """All tools on PATH -> None (no error)."""
+        with patch(
+            "pyishlib.isholate.container.shutil.which",
+            side_effect=self._all_present,
+        ):
+            assert _preflight_claude_host_tools() is None
+
+    def test_returns_message_when_ipset_missing(self):
+        """Missing ipset -> message mentioning 'ipset'."""
+
+        def fake_which(tool):
+            return None if tool == "ipset" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            msg = _preflight_claude_host_tools()
+        assert msg is not None
+        assert "ipset" in msg
+
+    def test_returns_message_when_iptables_missing(self):
+        """Missing iptables -> message mentioning 'iptables'."""
+
+        def fake_which(tool):
+            return None if tool == "iptables" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            msg = _preflight_claude_host_tools()
+        assert msg is not None
+        assert "iptables" in msg
+
+    def test_returns_message_when_systemctl_missing(self):
+        """Missing systemctl -> message mentioning 'systemctl'."""
+
+        def fake_which(tool):
+            return None if tool == "systemctl" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            msg = _preflight_claude_host_tools()
+        assert msg is not None
+        assert "systemctl" in msg
+
+    def test_returns_message_when_sudo_missing(self):
+        """All firewall tools present but sudo absent -> message mentioning 'sudo'."""
+
+        def fake_which(tool):
+            return None if tool == "sudo" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            msg = _preflight_claude_host_tools()
+        assert msg is not None
+        assert "sudo" in msg
+
+    def test_lists_multiple_missing_tools(self):
+        """Multiple missing tools appear together in one message."""
+
+        def fake_which(tool):
+            return "/usr/bin/systemctl" if tool == "systemctl" else None
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ):
+            msg = _preflight_claude_host_tools()
+        assert msg is not None
+        assert "ipset" in msg
+        assert "iptables" in msg
+
+
+# ---------------------------------------------------------------------------
+# CLI preflight: --no-network --claude fails fast before any container work
+# ---------------------------------------------------------------------------
+
+
+class TestCliPreflightClaudeHostTools:
+    """cli.main() checks host tools before launching anything when
+    --no-network --claude is requested."""
+
+    def test_returns_error_before_launch_when_tool_missing(self, tmp_path):
+        """Missing ipset -> exit 1 without calling launch_and_exec."""
+
+        def fake_which(tool):
+            return None if tool == "ipset" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ), patch(
+            "pyishlib.isholate.cli.is_linux", return_value=True
+        ), patch(
+            "pyishlib.isholate.cli._check_incus_available", return_value=None
+        ), patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=("testuser", tmp_path, tmp_path),
+        ), patch(
+            "pyishlib.isholate.cli.launch_and_exec"
+        ) as mock_launch:
+            rc = cli_main(["--no-network", "--claude"])
+
+        assert rc == 1
+        mock_launch.assert_not_called()
+
+    def test_proceeds_when_all_tools_present(self, tmp_path):
+        """All tools available -> launch_and_exec is reached."""
+
+        def fake_which(tool):
+            return f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ), patch(
+            "pyishlib.isholate.cli.is_linux", return_value=True
+        ), patch(
+            "pyishlib.isholate.cli._check_incus_available", return_value=None
+        ), patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=("testuser", tmp_path, tmp_path),
+        ), patch(
+            "pyishlib.isholate.cli.discover_host_ishfiles_source", return_value=None
+        ), patch(
+            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
+        ), patch(
+            "pyishlib.isholate.cli.load_project_config", return_value={}
+        ), patch(
+            "pyishlib.isholate.cli.launch_and_exec", return_value=0
+        ) as mock_launch:
+            rc = cli_main(["--no-network", "--claude"])
+
+        assert rc == 0
+        mock_launch.assert_called_once()
