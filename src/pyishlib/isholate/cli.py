@@ -100,17 +100,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help=(
             "Block all network traffic from the ephemeral container (applied "
-            "after provisioning, so apt and ishfiles still run). When combined "
-            "with --claude, dnsmasq is configured as the container's sole "
-            "resolver and an ipset-backed iptables allowlist is installed so "
-            "the Claude CLI can reach its API endpoints (anthropic.com, "
-            "claude.ai, statsig.com, statsigapi.net, sentry.io — including all "
-            "subdomains). CDN IP rotation is handled transparently because "
-            "dnsmasq populates the ipset on every DNS lookup rather than "
-            "pinning IPs at rule-add time. The host firewall is not touched, "
-            "but Incus may modify the container instance's device "
-            "configuration (for example detaching eth0) to enforce the "
-            "restriction."
+            "after provisioning, so apt and ishfiles still run). Without "
+            "--claude, eth0 is detached entirely at the Incus layer. When "
+            "combined with --claude, the container's eth0 is switched to a "
+            "dedicated Incus managed network bridge (isholate-claude); the "
+            "bridge's dnsmasq only resolves Claude API domains (anthropic.com, "
+            "claude.ai, statsig.com, statsigapi.net, sentry.io — including "
+            "all subdomains) and populates a host ipset on every lookup. "
+            "A host iptables chain on the bridge's FORWARD traffic then "
+            "allows TCP/443 only to IPs in that ipset, so a malicious "
+            "process in the container cannot bypass DNS by hard-coding an "
+            "IP. First use prompts once for sudo to install the ipset, "
+            "iptables chain, and a systemd unit that restores them on "
+            "boot; subsequent runs skip sudo entirely."
         ),
     )
 
