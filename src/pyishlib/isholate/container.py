@@ -901,88 +901,46 @@ def _claude_firewall_rules_in_place() -> bool:
     """Return True if the host-side ipset + iptables rules are already set up.
 
     Checked without sudo so the common happy path (rules already installed)
-    never prompts for a password.  Six preconditions must all hold:
+    never prompts for a password.  Two preconditions must hold:
 
-    1. The ipset ``isholate-claude-allowed`` exists.
-    2. The iptables chain ``ISHOLATE-CLAUDE`` exists.
-    3. The FORWARD chain has a jump to ``ISHOLATE-CLAUDE`` for traffic
-       arriving on the ``isholate-claude`` interface.
-    4. The on-disk apply script matches the embedded content — otherwise
-       an isholate upgrade that changed the rules would silently fail to
-       roll out (in-kernel state would stay current for the session, but
-       reboot would restore the stale script's old rules).
-    5. The on-disk systemd unit matches the embedded content — same
-       reasoning as (4).
+    1. The on-disk apply script and systemd unit match the embedded
+       content.  Verified by :func:`_claude_firewall_on_disk_matches`.
+       A mismatch means an isholate upgrade changed the rules and we must
+       reinstall so the on-boot restore uses the current script.
+    2. The systemd unit is enabled via ``systemctl is-enabled``.  An
+       enabled ``Type=oneshot RemainAfterExit=yes`` unit means the apply
+       script has either already run on this boot (loading rules into the
+       kernel) or will run on the next boot.
 
-    6. The systemd unit is enabled (so rules survive reboot).  Checked
-       via ``systemctl is-enabled`` — a non-zero return triggers
-       reinstallation, which re-enables the unit.
+    Probing the kernel-level state directly (``ipset list``, ``iptables
+    -S``) would require root on every modern Linux distro; doing so would
+    force a ``sudo`` prompt on every invocation and defeat the purpose of
+    this check.  Instead we trust isholate-owned host artifacts: the
+    on-disk files are our install receipt, and systemd is responsible for
+    keeping the rules loaded across reboots.
 
-    ``ipset list -n`` and ``iptables -S`` are read-only operations that
-    work for non-root users on most distros via the netfilter netlink
-    permissions; when they do require root the check simply reports
-    "rules not in place" and :func:`_install_claude_firewall` runs, which
-    is harmless because install is itself idempotent.
-
-    If any required binary (``ipset``, ``iptables``, ``systemctl``) is not
-    installed on the host, the check returns ``False`` rather than raising.
-    ``False`` is the correct answer — a missing binary trivially means the
-    rules are not in place.  The subsequent :func:`_install_claude_firewall`
-    call will then surface a targeted, actionable error for each missing tool.
+    Trade-off: if someone manually runs ``iptables -F`` or ``ipset
+    destroy`` after install, the check still returns True until the next
+    reboot (when the systemd unit would restore them).  To recover
+    immediately, run the apply script manually under sudo, or remove
+    ``/etc/systemd/system/isholate-claude-firewall.service`` to force a
+    reinstall.
     """
-
-    def _probe(cmd: List[str]) -> "Optional[subprocess.CompletedProcess]":
-        """Run *cmd*, returning None if the binary is not found."""
-        try:
-            return _run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                stdin=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            return None
-
-    ipset_r = _probe(["ipset", "list", "-n"])
-    if ipset_r is None or ipset_r.returncode != 0:
-        return False
-    if _CLAUDE_IPSET_NAME not in ipset_r.stdout.splitlines():
-        return False
-
-    chain_r = _probe(["iptables", "-S", _CLAUDE_IPTABLES_CHAIN])
-    if chain_r is None or chain_r.returncode != 0:
-        return False
-
-    fwd_r = _probe(
-        [
-            "iptables",
-            "-C",
-            "FORWARD",
-            "-i",
-            _CLAUDE_NETWORK_NAME,
-            "-j",
-            _CLAUDE_IPTABLES_CHAIN,
-        ]
-    )
-    if fwd_r is None or fwd_r.returncode != 0:
-        return False
-
-    # Detect drift between the embedded content and what is actually
-    # installed on disk.  If an isholate upgrade changes the rules, the
-    # in-kernel state still matches the *old* rules (because the current
-    # running chain was installed by the old version), so we cannot rely
-    # on iptables -S alone to spot the drift.  File content comparison is
-    # cheap and catches the issue on the next isholate run.
     if not _claude_firewall_on_disk_matches():
         return False
 
-    # Verify the systemd unit is enabled so rules survive a reboot.
-    # A unit whose files match but which is disabled would leave the host
-    # unprotected after the next boot.
     unit_name = Path(_CLAUDE_FIREWALL_SYSTEMD_UNIT).name
-    enabled_r = _probe(["systemctl", "is-enabled", unit_name])
-    if enabled_r is None or enabled_r.returncode != 0:
+    try:
+        enabled_r = _run(
+            ["systemctl", "is-enabled", unit_name],
+            capture_output=True,
+            text=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return False
+    if enabled_r.returncode != 0:
         return False
 
     return True
