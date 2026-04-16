@@ -923,30 +923,38 @@ def _claude_firewall_rules_in_place() -> bool:
     permissions; when they do require root the check simply reports
     "rules not in place" and :func:`_install_claude_firewall` runs, which
     is harmless because install is itself idempotent.
+
+    If any required binary (``ipset``, ``iptables``, ``systemctl``) is not
+    installed on the host, the check returns ``False`` rather than raising.
+    ``False`` is the correct answer — a missing binary trivially means the
+    rules are not in place.  The subsequent :func:`_install_claude_firewall`
+    call will then surface a targeted, actionable error for each missing tool.
     """
-    ipset_r = _run(
-        ["ipset", "list", "-n"],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    if ipset_r.returncode != 0:
+
+    def _probe(cmd: List[str]) -> "Optional[subprocess.CompletedProcess]":
+        """Run *cmd*, returning None if the binary is not found."""
+        try:
+            return _run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                stdin=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            return None
+
+    ipset_r = _probe(["ipset", "list", "-n"])
+    if ipset_r is None or ipset_r.returncode != 0:
         return False
     if _CLAUDE_IPSET_NAME not in ipset_r.stdout.splitlines():
         return False
 
-    chain_r = _run(
-        ["iptables", "-S", _CLAUDE_IPTABLES_CHAIN],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    if chain_r.returncode != 0:
+    chain_r = _probe(["iptables", "-S", _CLAUDE_IPTABLES_CHAIN])
+    if chain_r is None or chain_r.returncode != 0:
         return False
 
-    fwd_r = _run(
+    fwd_r = _probe(
         [
             "iptables",
             "-C",
@@ -955,13 +963,9 @@ def _claude_firewall_rules_in_place() -> bool:
             _CLAUDE_NETWORK_NAME,
             "-j",
             _CLAUDE_IPTABLES_CHAIN,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
+        ]
     )
-    if fwd_r.returncode != 0:
+    if fwd_r is None or fwd_r.returncode != 0:
         return False
 
     # Detect drift between the embedded content and what is actually
@@ -977,14 +981,8 @@ def _claude_firewall_rules_in_place() -> bool:
     # A unit whose files match but which is disabled would leave the host
     # unprotected after the next boot.
     unit_name = Path(_CLAUDE_FIREWALL_SYSTEMD_UNIT).name
-    enabled_r = _run(
-        ["systemctl", "is-enabled", unit_name],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    if enabled_r.returncode != 0:
+    enabled_r = _probe(["systemctl", "is-enabled", unit_name])
+    if enabled_r is None or enabled_r.returncode != 0:
         return False
 
     return True
@@ -1139,6 +1137,37 @@ _CLAUDE_FIREWALL_REQUIRED_TOOLS: "tuple[tuple[str, str], ...]" = (
 )
 
 
+def _preflight_claude_host_tools() -> Optional[str]:
+    """Return an actionable error message if any required host tool is missing.
+
+    Checks ``ipset``, ``iptables``, and ``systemctl`` (from
+    :data:`_CLAUDE_FIREWALL_REQUIRED_TOOLS`) plus ``sudo``.  Returns ``None``
+    when all tools are found on ``PATH``.
+
+    Intended to be called early — before any Incus container or network state
+    is created — so that a missing dependency on the host fails fast with a
+    clear, targeted hint instead of a traceback mid-run.
+    """
+    missing: "list[str]" = []
+    for tool, hint in _CLAUDE_FIREWALL_REQUIRED_TOOLS:
+        if shutil.which(tool) is None:
+            missing.append(f"  - {tool}: {hint}")
+    if missing:
+        return (
+            "cannot use --no-network --claude — missing host tools:\n"
+            + "\n".join(missing)
+            + "\nInstall the packages above and re-run --no-network --claude."
+        )
+    if shutil.which("sudo") is None:
+        return (
+            "sudo not found on PATH; cannot install host-side firewall rules "
+            "automatically.\n"
+            "Install sudo and re-run, or follow the documented manual firewall "
+            "installation steps as root."
+        )
+    return None
+
+
 def _install_claude_firewall(*, quiet: bool = False) -> None:
     """Install the host-side ipset + iptables rules under ``sudo``.
 
@@ -1165,27 +1194,10 @@ def _install_claude_firewall(*, quiet: bool = False) -> None:
         quiet=quiet,
     )
 
-    # Preflight: targeted errors for each missing dependency.  Cheap (a
-    # handful of PATH lookups) and avoids prompting for sudo when we
-    # already know the subsequent command will fail.
-    missing: "list[str]" = []
-    for tool, hint in _CLAUDE_FIREWALL_REQUIRED_TOOLS:
-        if shutil.which(tool) is None:
-            missing.append(f"  - {tool}: {hint}")
-    if missing:
-        raise RuntimeError(
-            "cannot install host-side firewall rules — missing host tools:\n"
-            + "\n".join(missing)
-            + "\nInstall the packages above and re-run --no-network --claude."
-        )
-
-    if shutil.which("sudo") is None:
-        raise RuntimeError(
-            "sudo not found on PATH; cannot install host-side firewall rules "
-            "automatically.\n"
-            "Install sudo and re-run, or follow the documented manual firewall "
-            "installation steps as root."
-        )
+    # Preflight: targeted errors for each missing dependency.
+    msg = _preflight_claude_host_tools()
+    if msg is not None:
+        raise RuntimeError(msg)
 
     script = _build_claude_firewall_install_script()
     result = _run(
