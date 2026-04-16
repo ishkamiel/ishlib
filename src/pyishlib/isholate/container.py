@@ -707,35 +707,494 @@ def _add_claude_mounts(
 # Network isolation
 # ---------------------------------------------------------------------------
 
-# Hosts the Claude CLI needs to reach when running inside a locked-down
-# container.  iptables resolves each hostname at rule-add time and expands
-# to one rule per A/AAAA record, pinning the IPs for the session.
-_CLAUDE_ALLOW_HOSTS = (
-    "api.anthropic.com",
-    "statsig.anthropic.com",
-    "sentry.io",
-    "claude.ai",
-    "console.anthropic.com",
+# Domain suffixes the Claude CLI needs to reach when running inside a
+# locked-down container.  The bridge's dnsmasq forwards queries for these
+# domains (and all their subdomains) to _CLAUDE_DNS_UPSTREAM; everything
+# else returns NXDOMAIN via the ``local=/#/`` catch-all.
+_CLAUDE_ALLOW_DOMAINS = (
+    "anthropic.com",  # api., console., statsig., auth fronts
+    "claude.ai",  # OAuth redirect target
+    "statsig.com",  # feature flags / analytics
+    "statsigapi.net",  # Statsig events endpoint
+    "sentry.io",  # covers *.ingest.*.sentry.io too
 )
+
+# Incus managed network used when --no-network --claude is in effect.
+# Created on first use and reused across runs.  The bridge owns its own
+# FORWARD policy (ipv4.firewall=false tells Incus not to auto-generate
+# rules for it) — host-side iptables + ipset enforce the allowlist at the
+# packet level so a malicious process inside the container cannot bypass
+# DNS filtering by hard-coding IPs.
+_CLAUDE_NETWORK_NAME = "isholate-claude"
+
+# Upstream DNS server the bridge forwards allowlisted queries to.  A public
+# resolver is used deliberately so the setup does not depend on the host's
+# own resolver configuration.
+_CLAUDE_DNS_UPSTREAM = "1.1.1.1"
+
+# Host-side firewall state names.  The ipset is populated by the bridge's
+# dnsmasq via the ``ipset=`` directive on every DNS lookup of an
+# allowlisted domain; the iptables chain gates FORWARD against it so only
+# IPs dnsmasq has just resolved can receive packets on port 443.
+_CLAUDE_IPSET_NAME = "isholate-claude-allowed"
+_CLAUDE_IPTABLES_CHAIN = "ISHOLATE-CLAUDE"
+
+# Where the persistent apply script and systemd unit are installed.  The
+# systemd unit runs the apply script on boot so rules survive reboots
+# without further sudo prompts.
+_CLAUDE_FIREWALL_APPLY_SCRIPT = "/usr/local/libexec/isholate-claude-firewall"
+_CLAUDE_FIREWALL_SYSTEMD_UNIT = "/etc/systemd/system/isholate-claude-firewall.service"
+
+
+def _build_claude_raw_dnsmasq() -> str:
+    """Build the ``raw.dnsmasq`` value for the isholate-claude bridge.
+
+    The config combines three dnsmasq features to give us DNS-level
+    allowlisting AND live population of a host ipset that iptables can
+    match against:
+
+    - ``local=/#/`` — catch-all: answer non-allowlisted queries locally
+      with NXDOMAIN.
+    - ``server=/<domain>/<upstream>`` — more specific match wins, so
+      allowlisted domains (and subdomains) forward to the upstream.
+    - ``ipset=/<d1>/<d2>/.../<setname>`` — on every successful lookup of
+      an allowlisted domain, dnsmasq adds each resolved IP to the host
+      ipset ``isholate-claude-allowed`` with the set's timeout.  Host
+      iptables matches ``-m set --match-set`` against this set to allow
+      only just-resolved destinations.
+    """
+    lines = ["local=/#/"]
+    for domain in _CLAUDE_ALLOW_DOMAINS:
+        lines.append(f"server=/{domain}/{_CLAUDE_DNS_UPSTREAM}")
+    # ipset= takes a slash-separated domain list followed by the set name:
+    #   ipset=/anthropic.com/claude.ai/.../<setname>
+    ipset_spec = "/".join(_CLAUDE_ALLOW_DOMAINS)
+    lines.append(f"ipset=/{ipset_spec}/{_CLAUDE_IPSET_NAME}")
+    return "\n".join(lines)
+
+
+def _ensure_claude_network(*, quiet: bool = False) -> str:
+    """Ensure the ``isholate-claude`` Incus managed network exists and is current.
+
+    Creates the bridge on first use and always updates ``raw.dnsmasq`` +
+    ``ipv4.firewall`` so the config stays in sync with the current isholate
+    version.  The bridge is a persistent host resource: it outlives
+    individual isholate runs and is shared across all containers launched
+    with ``--no-network --claude``.
+
+    ``ipv4.firewall=false`` tells Incus not to auto-generate FORWARD rules
+    for this bridge — we own them via :func:`_install_claude_firewall`.
+    ``ipv4.nat=true`` is (re-)applied on every run so the container can
+    reach allowlisted IPs via MASQUERADE even if a previous run or manual
+    edit toggled the flag off.
+
+    No ``sudo`` is required here — the Incus daemon (running as root)
+    configures the bridge and dnsmasq.  Host iptables rules are installed
+    separately by :func:`_install_claude_firewall`.
+
+    Returns:
+        The name of the Incus managed network (``isholate-claude``).
+    """
+    show_r = _run(
+        ["incus", "network", "show", _CLAUDE_NETWORK_NAME],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if show_r.returncode != 0:
+        _say(
+            f"creating Incus managed network '{_CLAUDE_NETWORK_NAME}' "
+            "(one-time setup for --no-network --claude)...",
+            quiet=quiet,
+        )
+        _run_checked(
+            [
+                "incus",
+                "network",
+                "create",
+                _CLAUDE_NETWORK_NAME,
+                "ipv4.address=auto",
+                "ipv4.nat=true",
+                "ipv4.firewall=false",
+                "ipv6.address=none",
+            ],
+            f"create isholate-claude bridge '{_CLAUDE_NETWORK_NAME}'",
+            stdin=subprocess.DEVNULL,
+        )
+
+    # Always (re-)apply the dnsmasq allowlist, the ipv4.firewall flag, and
+    # ipv4.nat so upgrades that change the allowlist or toggle flags are
+    # picked up regardless of whether the network already existed.
+    # Use separate key/value arguments to avoid CLI parsing edge cases with
+    # multi-line values or embedded '=' characters.
+    raw_dnsmasq = _build_claude_raw_dnsmasq()
+    _run_checked(
+        [
+            "incus",
+            "network",
+            "set",
+            _CLAUDE_NETWORK_NAME,
+            "raw.dnsmasq",
+            raw_dnsmasq,
+        ],
+        "configure DNS allowlist on isholate-claude bridge",
+        stdin=subprocess.DEVNULL,
+    )
+    _run_checked(
+        [
+            "incus",
+            "network",
+            "set",
+            _CLAUDE_NETWORK_NAME,
+            "ipv4.firewall",
+            "false",
+        ],
+        "disable Incus auto-firewall on isholate-claude bridge",
+        stdin=subprocess.DEVNULL,
+    )
+    _run_checked(
+        [
+            "incus",
+            "network",
+            "set",
+            _CLAUDE_NETWORK_NAME,
+            "ipv4.nat",
+            "true",
+        ],
+        "ensure NAT is enabled on isholate-claude bridge",
+        stdin=subprocess.DEVNULL,
+    )
+    return _CLAUDE_NETWORK_NAME
+
+
+# ---------------------------------------------------------------------------
+# Host firewall (ipset + iptables) for the isholate-claude bridge
+# ---------------------------------------------------------------------------
+
+
+def _claude_firewall_rules_in_place() -> bool:
+    """Return True if the host-side ipset + iptables rules are already set up.
+
+    Checked without sudo so the common happy path (rules already installed)
+    never prompts for a password.  Six preconditions must all hold:
+
+    1. The ipset ``isholate-claude-allowed`` exists.
+    2. The iptables chain ``ISHOLATE-CLAUDE`` exists.
+    3. The FORWARD chain has a jump to ``ISHOLATE-CLAUDE`` for traffic
+       arriving on the ``isholate-claude`` interface.
+    4. The on-disk apply script matches the embedded content — otherwise
+       an isholate upgrade that changed the rules would silently fail to
+       roll out (in-kernel state would stay current for the session, but
+       reboot would restore the stale script's old rules).
+    5. The on-disk systemd unit matches the embedded content — same
+       reasoning as (4).
+
+    6. The systemd unit is enabled (so rules survive reboot).  Checked
+       via ``systemctl is-enabled`` — a non-zero return triggers
+       reinstallation, which re-enables the unit.
+
+    ``ipset list -n`` and ``iptables -S`` are read-only operations that
+    work for non-root users on most distros via the netfilter netlink
+    permissions; when they do require root the check simply reports
+    "rules not in place" and :func:`_install_claude_firewall` runs, which
+    is harmless because install is itself idempotent.
+    """
+    ipset_r = _run(
+        ["ipset", "list", "-n"],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if ipset_r.returncode != 0:
+        return False
+    if _CLAUDE_IPSET_NAME not in ipset_r.stdout.splitlines():
+        return False
+
+    chain_r = _run(
+        ["iptables", "-S", _CLAUDE_IPTABLES_CHAIN],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if chain_r.returncode != 0:
+        return False
+
+    fwd_r = _run(
+        [
+            "iptables",
+            "-C",
+            "FORWARD",
+            "-i",
+            _CLAUDE_NETWORK_NAME,
+            "-j",
+            _CLAUDE_IPTABLES_CHAIN,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if fwd_r.returncode != 0:
+        return False
+
+    # Detect drift between the embedded content and what is actually
+    # installed on disk.  If an isholate upgrade changes the rules, the
+    # in-kernel state still matches the *old* rules (because the current
+    # running chain was installed by the old version), so we cannot rely
+    # on iptables -S alone to spot the drift.  File content comparison is
+    # cheap and catches the issue on the next isholate run.
+    if not _claude_firewall_on_disk_matches():
+        return False
+
+    # Verify the systemd unit is enabled so rules survive a reboot.
+    # A unit whose files match but which is disabled would leave the host
+    # unprotected after the next boot.
+    unit_name = Path(_CLAUDE_FIREWALL_SYSTEMD_UNIT).name
+    enabled_r = _run(
+        ["systemctl", "is-enabled", unit_name],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if enabled_r.returncode != 0:
+        return False
+
+    return True
+
+
+def _claude_firewall_on_disk_matches() -> bool:
+    """Return True if the installed apply script + systemd unit match the
+    embedded content.
+
+    A mismatch (or missing file) means an isholate upgrade changed the
+    embedded content and the on-disk version is stale; we must reinstall
+    so reboots restore the current rules.
+    """
+    for path, expected in (
+        (_CLAUDE_FIREWALL_APPLY_SCRIPT, _CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT),
+        (_CLAUDE_FIREWALL_SYSTEMD_UNIT, _CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT),
+    ):
+        try:
+            with open(path, encoding="utf-8") as f:
+                current = f.read()
+        except OSError:
+            return False
+        if current != expected:
+            return False
+    return True
+
+
+# The shell script that (re-)applies the ipset + iptables rules.  Installed
+# to _CLAUDE_FIREWALL_APPLY_SCRIPT and invoked by the systemd unit on boot.
+# Idempotent: safe to run any number of times.
+_CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT = f"""#!/bin/sh
+# Managed by isholate.  Do not edit by hand — changes are overwritten on
+# the next `isholate --no-network --claude` invocation that needs to
+# reinstall rules.
+set -eu
+
+SET={_CLAUDE_IPSET_NAME}
+CHAIN={_CLAUDE_IPTABLES_CHAIN}
+BRIDGE={_CLAUDE_NETWORK_NAME}
+
+# 1. Ensure the ipset exists.  Dnsmasq on the bridge requires it to be
+#    present before it can add resolved IPs; ``create ... -exist`` is a
+#    no-op if the set already exists (Linux >= ipset 6.x).
+ipset create "$SET" hash:ip family inet timeout 3600 -exist
+
+# 2. Ensure our chain exists and contains exactly our ruleset.
+iptables -N "$CHAIN" 2>/dev/null || true
+iptables -F "$CHAIN"
+
+# Return/related traffic on flows we allowed out.
+iptables -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# DNS: allow only to the bridge's gateway, which runs the restricted
+# dnsmasq.  Any attempt to contact external resolvers (e.g. 8.8.8.8) is
+# dropped by the default policy at the end of this chain.
+BRIDGE_IP=$(ip -4 addr show "$BRIDGE" 2>/dev/null | awk '/inet /{{split($2,a,"/"); print a[1]; exit}}')
+if [ -n "$BRIDGE_IP" ]; then
+    iptables -A "$CHAIN" -d "$BRIDGE_IP" -p udp --dport 53 -j ACCEPT
+    iptables -A "$CHAIN" -d "$BRIDGE_IP" -p tcp --dport 53 -j ACCEPT
+fi
+
+# HTTPS only to IPs in the live ipset (populated by the bridge's dnsmasq
+# on every DNS lookup of an allowlisted domain).
+iptables -A "$CHAIN" -p tcp --dport 443 -m set --match-set "$SET" dst -j ACCEPT
+
+# Default deny for everything else.
+iptables -A "$CHAIN" -j DROP
+
+# 3. FORWARD jump: egress from the bridge goes through our chain.
+#    Remove any duplicates first so the rule appears exactly once.
+while iptables -C FORWARD -i "$BRIDGE" -j "$CHAIN" 2>/dev/null; do
+    iptables -D FORWARD -i "$BRIDGE" -j "$CHAIN"
+done
+iptables -I FORWARD -i "$BRIDGE" -j "$CHAIN"
+
+# 4. Return direction: allow established/related responses back to the
+#    container (belt-and-braces; the default FORWARD policy is ACCEPT on
+#    most distros, but we cannot rely on that).
+while iptables -C FORWARD -o "$BRIDGE" -m conntrack \\
+    --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; do
+    iptables -D FORWARD -o "$BRIDGE" -m conntrack \\
+        --ctstate ESTABLISHED,RELATED -j ACCEPT
+done
+iptables -I FORWARD -o "$BRIDGE" -m conntrack \\
+    --ctstate ESTABLISHED,RELATED -j ACCEPT
+"""
+
+_CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT = f"""# Managed by isholate.
+[Unit]
+Description=isholate-claude bridge firewall rules (ipset + iptables)
+Documentation=https://github.com/ishkamiel/ishlib
+After=network-online.target incus.service
+Wants=network-online.target
+PartOf=incus.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={_CLAUDE_FIREWALL_APPLY_SCRIPT}
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def _build_claude_firewall_install_script() -> str:
+    """Return the bootstrap shell script run under ``sudo``.
+
+    The script writes the persistent apply script and systemd unit to the
+    host, runs the apply script once, and enables the unit so rules come
+    back on boot.  Writing via ``cat <<'EOF'`` avoids quoting pitfalls from
+    subprocess argv interpolation.
+    """
+    # Use a non-clashing heredoc terminator since the apply script itself
+    # contains a bunch of shell syntax.
+    apply_script = _CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT
+    unit = _CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT
+    return (
+        "set -eu\n"
+        f"mkdir -p {os.path.dirname(_CLAUDE_FIREWALL_APPLY_SCRIPT)}\n"
+        # Write the apply script.
+        f"cat > {_CLAUDE_FIREWALL_APPLY_SCRIPT} <<'ISHOLATE_APPLY_EOF'\n"
+        f"{apply_script}"
+        "ISHOLATE_APPLY_EOF\n"
+        f"chmod +x {_CLAUDE_FIREWALL_APPLY_SCRIPT}\n"
+        # Write the systemd unit.
+        f"cat > {_CLAUDE_FIREWALL_SYSTEMD_UNIT} <<'ISHOLATE_UNIT_EOF'\n"
+        f"{unit}"
+        "ISHOLATE_UNIT_EOF\n"
+        # Reload systemd, enable the unit, and apply rules now.
+        "systemctl daemon-reload\n"
+        "systemctl enable isholate-claude-firewall.service >/dev/null\n"
+        f"{_CLAUDE_FIREWALL_APPLY_SCRIPT}\n"
+    )
+
+
+# Host tools the install script invokes.  Checked up-front so missing
+# dependencies produce targeted errors instead of an opaque "sudo exit
+# status N" failure.  Each entry is (tool, distro-neutral install hint).
+_CLAUDE_FIREWALL_REQUIRED_TOOLS: "tuple[tuple[str, str], ...]" = (
+    ("ipset", "install the 'ipset' package (apt/dnf install ipset)"),
+    (
+        "iptables",
+        "install the 'iptables' package "
+        "(apt install iptables / dnf install iptables-nft)",
+    ),
+    (
+        "systemctl",
+        "systemd is required for the boot-time firewall restore unit; "
+        "isholate currently only supports systemd hosts for --no-network --claude",
+    ),
+)
+
+
+def _install_claude_firewall(*, quiet: bool = False) -> None:
+    """Install the host-side ipset + iptables rules under ``sudo``.
+
+    Idempotent: the underlying apply script is safe to run any number of
+    times, and writing the systemd unit overwrites an existing copy with
+    the current content.  Uses an interactive sudo (no ``-n``) so a first
+    invocation on a fresh host prompts the user once for their password;
+    subsequent isholate runs pass :func:`_claude_firewall_rules_in_place`
+    and skip this step entirely.
+
+    A short preflight runs before the sudo prompt so that missing host
+    tools (``ipset``, ``iptables``, ``systemctl``, ``sudo``) produce
+    specific, actionable errors instead of a generic "sudo exit status N"
+    after the password prompt.
+
+    Raises:
+        RuntimeError: if any required tool is missing, or sudo fails
+            (password refused, sudo not installed, install script exits
+            non-zero).
+    """
+    _say(
+        "installing host-side firewall rules for --no-network --claude "
+        "(requires sudo on first run)...",
+        quiet=quiet,
+    )
+
+    # Preflight: targeted errors for each missing dependency.  Cheap (a
+    # handful of PATH lookups) and avoids prompting for sudo when we
+    # already know the subsequent command will fail.
+    missing: "list[str]" = []
+    for tool, hint in _CLAUDE_FIREWALL_REQUIRED_TOOLS:
+        if shutil.which(tool) is None:
+            missing.append(f"  - {tool}: {hint}")
+    if missing:
+        raise RuntimeError(
+            "cannot install host-side firewall rules — missing host tools:\n"
+            + "\n".join(missing)
+            + "\nInstall the packages above and re-run --no-network --claude."
+        )
+
+    if shutil.which("sudo") is None:
+        raise RuntimeError(
+            "sudo not found on PATH; cannot install host-side firewall rules "
+            "automatically.\n"
+            "Install sudo and re-run, or follow the documented manual firewall "
+            "installation steps as root."
+        )
+
+    script = _build_claude_firewall_install_script()
+    result = _run(
+        ["sudo", "/bin/sh", "-c", script],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "failed to install host-side firewall rules "
+            f"(sudo exit status {result.returncode}).  "
+            "Re-run with --no-network --claude after resolving the sudo issue, "
+            "or install the rules manually (see isholate docs)."
+        )
 
 
 def _apply_network_restrictions(
     name: str, *, allow_claude: bool, quiet: bool = False
 ) -> None:
-    """Lock down network egress inside the ephemeral container.
+    """Lock down network egress for the ephemeral container.
 
-    All changes are made inside the container via ``incus exec`` — the host
-    firewall and Incus bridge are never touched.  This runs after
+    Both paths operate at the Incus layer via device overrides on the running
+    container — nothing is configured inside the container.  This runs after
     provisioning, so the provisioning phase (apt, ishfiles) still has full
     network access.
 
     Args:
         name:         Incus container name.
-        allow_claude: If True, keep the NIC up and install an iptables
-                      allowlist so the Claude CLI can reach its API
-                      endpoints (see ``_CLAUDE_ALLOW_HOSTS``); block
-                      everything else.  If False, bring ``eth0`` down
-                      and disable IPv6 — a simpler, package-free cut-off.
+        allow_claude: If True, switch ``eth0`` to the dedicated
+                      ``isholate-claude`` Incus managed network whose dnsmasq
+                      only resolves Claude API domains (see
+                      :data:`_CLAUDE_ALLOW_DOMAINS`).  If False, detach
+                      ``eth0`` entirely at the Incus layer — a simpler,
+                      config-free cut-off.
         quiet:        Suppress isholate progress messages.
     """
     if not allow_claude:
@@ -748,104 +1207,60 @@ def _apply_network_restrictions(
         # systemd-networkd / netplan cannot bring it back up — unlike
         # `ip link set eth0 down`, which is advisory inside the container and
         # gets immediately undone by the DHCP client.
+        #
+        # `device add` fails if eth0 already exists at the instance level (e.g.
+        # from a prior run or an instance-level config override).  Remove any
+        # existing instance-level device first; this is a no-op (returns non-zero)
+        # if eth0 only comes from a profile, which is the common case.
+        _run(
+            ["incus", "config", "device", "remove", name, "eth0"],
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
         _run_checked(
             ["incus", "config", "device", "add", name, "eth0", "none"],
             "detach eth0 via Incus device override (--no-network)",
         )
         return
 
+    # --no-network --claude: attach eth0 to the dedicated isholate-claude
+    # bridge and enforce an IP-level allowlist via host iptables + a
+    # dnsmasq-populated ipset.  Nothing is configured inside the container,
+    # so a malicious process cannot tamper with the rules.
+    network = _ensure_claude_network(quiet=quiet)
+
+    # Install the host firewall if it is not already in place.  The check
+    # runs without sudo; only the install step elevates.  Idempotent: once
+    # the rules are loaded (and the systemd unit is enabled), this branch
+    # is skipped on subsequent runs and across reboots.
+    if not _claude_firewall_rules_in_place():
+        _install_claude_firewall(quiet=quiet)
+
     _say(
-        f"--no-network --claude: installing egress allowlist in '{name}' "
-        "(Claude API hosts only)...",
+        f"--no-network --claude: switching '{name}' to the '{network}' bridge...",
         quiet=quiet,
     )
-
-    # Make sure iptables is available.  Guarded so repeated runs on a
-    # base that already has it don't re-run apt.
-    _run_checked(
-        [
-            "incus",
-            "exec",
-            name,
-            "--env",
-            "DEBIAN_FRONTEND=noninteractive",
-            "--",
-            "/bin/sh",
-            "-c",
-            "if ! command -v iptables >/dev/null 2>&1; then "
-            "  if command -v apt-get >/dev/null 2>&1; then "
-            "    apt-get update -qq && "
-            "    apt-get install -qq -y --no-install-recommends iptables; "
-            "  elif command -v dnf >/dev/null 2>&1; then "
-            "    dnf install -y iptables; "
-            "  else "
-            "    echo 'isholate: no package manager found for iptables' >&2; "
-            "    exit 1; "
-            "  fi; "
-            "fi",
-        ],
-        "install iptables (--no-network --claude)",
-        stdin=subprocess.DEVNULL,
-    )
-
-    # Disable IPv6 so we only have to manage one rule set.
+    # Remove any existing instance-level eth0 so the profile/previous override
+    # cannot conflict with the new NIC device.  Best-effort: exits non-zero
+    # when eth0 comes only from a profile, which is the common case.
     _run(
-        [
-            "incus",
-            "exec",
-            name,
-            "--",
-            "/bin/sh",
-            "-c",
-            "sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true",
-        ],
+        ["incus", "config", "device", "remove", name, "eth0"],
         check=False,
         stdin=subprocess.DEVNULL,
     )
-
-    # Build the rule script.  ACCEPT rules are added *before* the DROP
-    # policy so hostname resolution for -d <host> doesn't get blocked by
-    # our own rules while the script is mid-flight.
-    #
-    # DNS egress is restricted to the resolvers the container is *already*
-    # configured to use (parsed from /etc/resolv.conf — typically the Incus
-    # bridge's dnsmasq).  Allowing port 53 to arbitrary destinations would
-    # let a malicious tool tunnel data over DNS to attacker-controlled
-    # resolvers and bypass the allowlist; pinning to the configured
-    # resolvers closes that channel while still letting the Claude CLI
-    # re-resolve CDN-backed hosts as their IPs rotate.
-    accept_host_cmds = " && ".join(
-        f"iptables -A OUTPUT -d {host} -p tcp --dport 443 -j ACCEPT"
-        for host in _CLAUDE_ALLOW_HOSTS
-    )
-    rule_script = (
-        # Flush any prior state.
-        "iptables -F && iptables -X && "
-        # Loopback.
-        "iptables -A INPUT -i lo -j ACCEPT && "
-        "iptables -A OUTPUT -o lo -j ACCEPT && "
-        # Conntrack — allow replies to our own outbound connections.
-        "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED "
-        "-j ACCEPT && "
-        "iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED "
-        "-j ACCEPT && "
-        # DNS — only to resolvers listed in /etc/resolv.conf.
-        "for ns in $(awk '/^[[:space:]]*nameserver[[:space:]]/ "
-        "{print $2}' /etc/resolv.conf 2>/dev/null); do "
-        'iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT && '
-        'iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT '
-        "|| exit 1; "
-        "done && "
-        # Claude API allowlist (HTTPS only).
-        f"{accept_host_cmds} && "
-        # Default DROP last.
-        "iptables -P OUTPUT DROP && "
-        "iptables -P INPUT DROP"
-    )
     _run_checked(
-        ["incus", "exec", name, "--", "/bin/sh", "-c", rule_script],
-        "apply iptables egress allowlist (--no-network --claude)",
-        stdin=subprocess.DEVNULL,
+        [
+            "incus",
+            "config",
+            "device",
+            "add",
+            name,
+            "eth0",
+            "nic",
+            f"network={network}",
+            "name=eth0",
+        ],
+        f"attach eth0 to '{network}' bridge (--no-network --claude)",
     )
 
 
@@ -858,12 +1273,21 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     """Bootstrap a freshly-started container: staging dir, ishlib mount, apt, npm.
 
     Sets up the ``/run/isholate`` staging area, mounts the ishlib checkout,
-    probes network connectivity, installs ``python3``, ``sudo``,
-    ``bubblewrap``, ``nodejs``, ``npm``, and ``socat`` via apt (or dnf on Fedora-family
-    images), then globally installs
+    probes network connectivity, installs base packages via apt (or dnf on
+    Fedora-family images), then globally installs
     ``@anthropic-ai/sandbox-runtime@_SANDBOX_RUNTIME_VERSION`` via npm.
     Called once during host-base creation so all derived containers inherit
     the full toolchain.
+
+    Base packages installed:
+    - ``python3``, ``sudo`` — required for ishfiles provisioning.
+    - ``bubblewrap``, ``nodejs``, ``npm``, ``socat`` — required for the
+      sandbox runtime.
+
+    Network isolation (``--no-network --claude``) is enforced at the Incus
+    layer by attaching the ephemeral container to the ``isholate-claude``
+    managed network, so no firewalling packages are needed inside the
+    container.
 
     Args:
         name:    Container name.
@@ -886,7 +1310,8 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     )
 
     _say(
-        "installing base packages in container (python3, sudo, bubblewrap, nodejs, npm, socat); "
+        "installing base packages in container "
+        "(python3, sudo, bubblewrap, nodejs, npm, socat); "
         "this can take a minute on first run...",
         quiet=quiet,
     )
@@ -939,10 +1364,11 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
         )
 
     apt_update = "apt-get update" if verbose else "apt-get update -qq"
+    _base_pkgs = "python3 sudo bubblewrap nodejs npm socat"
     apt_install = (
-        "apt-get install -y --no-install-recommends python3 sudo bubblewrap nodejs npm socat"
+        f"apt-get install -y --no-install-recommends {_base_pkgs}"
         if verbose
-        else "apt-get install -qq -y --no-install-recommends python3 sudo bubblewrap nodejs npm socat"
+        else f"apt-get install -qq -y --no-install-recommends {_base_pkgs}"
     )
     _run_checked(
         [
@@ -957,10 +1383,10 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
             f"if command -v apt-get >/dev/null 2>&1; then "
             f"{apt_update} && {apt_install}; "
             "elif command -v dnf >/dev/null 2>&1; then "
-            "dnf install -y python3 sudo bubblewrap nodejs npm socat; "
+            f"dnf install -y {_base_pkgs}; "
             "fi",
         ],
-        "bootstrap (python3 + sudo + bubblewrap + nodejs + npm + socat install)",
+        f"bootstrap ({_base_pkgs} install)",
         stdin=subprocess.DEVNULL,
     )
     _say("installing @anthropic-ai/sandbox-runtime via npm...", quiet=quiet)

@@ -353,6 +353,18 @@ When editing isholate, keep the boundary with `pyishlib` clean: reuse `environme
 
 `_provision` runs a **network pre-flight probe** (`_network_preflight`) before apt. It tests raw IPv4 egress to 1.1.1.1 and then to archive.ubuntu.com. On failure it prints a focused diagnostic (firewall hints, sysctl, incus restart) and raises `RuntimeError`, which is caught in `launch_and_exec` so the container is still stopped cleanly.
 
+Network isolation (`--no-network`) is enforced entirely on the host — nothing is configured inside the container, so a malicious in-container process cannot tamper with the rules.
+
+Without `--claude`, `_apply_network_restrictions` detaches `eth0` via an Incus device override.
+
+With `--claude`, isolation combines three layers, all on the host:
+
+1. **Dedicated Incus bridge** (`isholate-claude`). Created by `_ensure_claude_network` with `ipv4.nat=true`, `ipv6.address=none`, and `ipv4.firewall=false` so Incus does not auto-generate FORWARD rules for it — isholate owns the FORWARD policy for this bridge entirely.
+2. **DNS allowlist via `raw.dnsmasq`**. The bridge's dnsmasq gets `local=/#/` (catch-all NXDOMAIN) plus a `server=/<domain>/<upstream>` line per entry in `_CLAUDE_ALLOW_DOMAINS`, so only Claude API domains (anthropic.com, claude.ai, statsig.com, statsigapi.net, sentry.io, and their subdomains) resolve. An `ipset=/…/<setname>` directive makes dnsmasq add each resolved IP to a host ipset on every successful lookup.
+3. **Host iptables + ipset enforcement**. `_install_claude_firewall` installs a host ipset `isholate-claude-allowed` and a FORWARD chain `ISHOLATE-CLAUDE` that allows ESTABLISHED/RELATED, DNS to the bridge gateway, and TCP/443 only to IPs currently in the ipset; everything else is dropped. A systemd unit (`isholate-claude-firewall.service`) and an apply script at `/usr/local/libexec/isholate-claude-firewall` are installed so the rules come back on boot.
+
+First use prompts once for sudo (to install the ipset, iptables chain, and the systemd unit). Subsequent runs pass `_claude_firewall_rules_in_place` and skip sudo entirely; reboots are handled by the systemd unit.
+
 ## ishfiles Manual Testing Safety
 
 **Never run `ishfiles apply`, `install`, or `runscripts` against the real home directory.** These commands modify files and install packages. Only use `ishfiles diff` for manual testing, and always point to safe temporary directories:
