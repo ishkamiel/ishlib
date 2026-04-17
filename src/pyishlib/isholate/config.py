@@ -15,7 +15,7 @@ via ``--project-root``):
 
 The two subdirectories are independent — either may exist without the other.
 
-Provides three helpers:
+Provides four helpers:
 
 - :func:`discover_project_overlay` — checks a project root directory for
   ``.ishlib/ishfiles/`` (the project-local ishfiles source tree).
@@ -26,6 +26,10 @@ Provides three helpers:
   source tree by reading ``~/.config/ishfiles/config.toml`` (the
   ``source`` key) and falling back to ``~/.local/share/ishfiles``.
   Returns ``None`` when the resolved path does not exist on disk.
+- :func:`resolve_default_shell` — resolves the ``default_shell`` setting
+  from ishfiles configs (project overlay, host user, host repo) so
+  isholate can match the login shell that ``ishfiles apply`` configures
+  inside the container.
 """
 
 from __future__ import annotations
@@ -121,11 +125,97 @@ def discover_host_ishfiles_source(home: Path) -> Optional[Path]:
     config_file = home / ".config" / "ishfiles" / "config.toml"
     data = load_toml_file(config_file, default=None)
     if isinstance(data, dict):
-        raw = data.get("source")
-        if raw:
-            source = Path(raw)
+        # The schema nests source under [ishfiles]; also accept a legacy
+        # top-level key for backwards compatibility.
+        ishfiles_section = data.get("ishfiles")
+        if isinstance(ishfiles_section, dict) and ishfiles_section.get("source"):
+            source = Path(ishfiles_section["source"])
+        elif data.get("source"):
+            source = Path(data["source"])
 
     if source is None:
         source = home / ".local" / "share" / "ishfiles"
 
     return source if source.exists() else None
+
+
+# ---------------------------------------------------------------------------
+# ishfiles default_shell resolution
+# ---------------------------------------------------------------------------
+
+# Subdirectory inside an ishfiles source tree that holds repo-level config.
+_ISHFILES_CONFIG_DIR = "ishconfig"
+_ISHFILES_REPO_CONFIG = "config.toml"
+
+
+def _read_default_shell(toml_path: Path) -> Optional[str]:
+    """Extract ``[ishfiles].default_shell`` from a TOML config file.
+
+    Returns ``None`` if the file is missing, unreadable, or does not
+    contain the key.
+    """
+    data = load_toml_file(toml_path, default=None)
+    if not isinstance(data, dict):
+        return None
+    ishfiles_section = data.get("ishfiles")
+    if not isinstance(ishfiles_section, dict):
+        return None
+    raw = ishfiles_section.get("default_shell")
+    if not raw or not isinstance(raw, str):
+        return None
+    return raw.strip() or None
+
+
+def _normalise_shell_path(shell: str) -> str:
+    """Ensure *shell* is an absolute path suitable for ``incus exec``.
+
+    The ``default_shell`` schema accepts basenames (``"zsh"``) and
+    absolute paths (``"/usr/bin/zsh"``).  Inside an Ubuntu container
+    ``/bin/<name>`` resolves correctly after ``ishfiles apply`` has
+    installed the package, so basenames are prefixed with ``/bin/``.
+    """
+    if shell.startswith("/"):
+        return shell
+    return f"/bin/{shell}"
+
+
+def resolve_default_shell(
+    home: Path,
+    host_source: Optional[Path],
+    overlay_dir: Optional[Path],
+) -> Optional[str]:
+    """Resolve ``default_shell`` from ishfiles configs.
+
+    Lookup order (first match wins):
+
+    1. Project ishfiles overlay repo config
+       (``<overlay>/ishconfig/config.toml``).
+    2. Host user config (``~/.config/ishfiles/config.toml``).
+    3. Host ishfiles repo config
+       (``<host_source>/ishconfig/config.toml``).
+
+    Returns an absolute path (e.g. ``/bin/zsh``) or ``None`` when no
+    config provides a ``default_shell`` value.
+    """
+    # 1. Project overlay repo config
+    if overlay_dir is not None:
+        val = _read_default_shell(
+            overlay_dir / _ISHFILES_CONFIG_DIR / _ISHFILES_REPO_CONFIG
+        )
+        if val:
+            return _normalise_shell_path(val)
+
+    # 2. Host user config
+    val = _read_default_shell(home / ".config" / "ishfiles" / "config.toml")
+    if val:
+        return _normalise_shell_path(val)
+
+    # 3. Host ishfiles repo config
+    if host_source is not None:
+        val = _read_default_shell(
+            host_source / _ISHFILES_CONFIG_DIR / _ISHFILES_REPO_CONFIG
+        )
+        if val:
+            return _normalise_shell_path(val)
+
+    return None

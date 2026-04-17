@@ -24,6 +24,7 @@ from .config import (
     discover_host_ishfiles_source,
     discover_project_overlay,
     load_project_config,
+    resolve_default_shell,
 )
 from .container import (
     _check_incus_available,
@@ -311,6 +312,19 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if project_cfg.get("image"):
         parser.set_defaults(image=project_cfg["image"])
+
+    # Shell default resolution — lowest to highest priority via successive
+    # set_defaults calls (last call wins):
+    #   1. ishfiles default_shell (from project overlay / host user / repo config)
+    #   2. isholate project config shell (.ishlib/isholate/config.toml)
+    #   3. --shell CLI flag (handled by argparse automatically)
+    ishfiles_shell = resolve_default_shell(
+        home,
+        discover_host_ishfiles_source(home),
+        overlay_dir,
+    )
+    if ishfiles_shell:
+        parser.set_defaults(shell=ishfiles_shell)
     if project_cfg.get("shell"):
         parser.set_defaults(shell=project_cfg["shell"])
 
