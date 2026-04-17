@@ -660,35 +660,205 @@ class TestPdCommand:
 # ---------------------------------------------------------------------------
 
 
+try:
+    import shtab  # noqa: F401
+
+    HAS_SHTAB = True
+except ImportError:
+    HAS_SHTAB = False
+
+
 class TestInitCommand:
     def _check_snippet(self, out: str) -> None:
         assert "ishfiles()" in out
         assert "command ishfiles pd" in out
 
-    def test_init_default(self, capsys):
-        """`ishfiles init` with no flag prints the POSIX shell snippet."""
+    def _run_init(self, capsys, *flags: str) -> str:
+        # Read capsys before the tempdir context exits so that any Windows
+        # tempdir-cleanup raising does not swallow the captured output.
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "init"])
+            ret = cli_main(["--source", src, "--target", tgt, "init", *flags])
+            out = capsys.readouterr().out
         assert ret == 0
-        self._check_snippet(capsys.readouterr().out)
+        return out
+
+    def test_init_default(self, capsys):
+        """`ishfiles init` with no flag prints the POSIX shell snippet only."""
+        out = self._run_init(capsys)
+        self._check_snippet(out)
+        # No completion code in the default / POSIX output.
+        assert "shtab" not in out
+        assert "compdef" not in out
 
     def test_init_sh(self, capsys):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "init", "--sh"])
-        assert ret == 0
-        self._check_snippet(capsys.readouterr().out)
+        out = self._run_init(capsys, "--sh")
+        self._check_snippet(out)
+        assert "shtab" not in out
+        assert "compdef" not in out
 
-    def test_init_bash(self, capsys):
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "init", "--bash"])
-        assert ret == 0
-        self._check_snippet(capsys.readouterr().out)
+    @pytest.mark.skipif(not HAS_SHTAB, reason="shtab not installed")
+    def test_init_bash_with_shtab(self, capsys):
+        """With shtab installed, --bash emits completion for both tools."""
+        out = self._run_init(capsys, "--bash")
+        self._check_snippet(out)
+        # shtab-generated bash completions carry these markers.
+        assert "_shtab_ishfiles" in out
+        assert "_shtab_isholate" in out
 
-    def test_init_zsh(self, capsys):
+    @pytest.mark.skipif(not HAS_SHTAB, reason="shtab not installed")
+    def test_init_zsh_with_shtab(self, capsys):
+        out = self._run_init(capsys, "--zsh")
+        self._check_snippet(out)
+        assert "compdef ishfiles" in out
+        assert "compdef isholate" in out
+
+    def test_init_bash_without_shtab(self, capsys, caplog, monkeypatch):
+        """Without shtab, --bash emits only the wrapper and logs a hint."""
+        from pyishlib import completions
+
+        monkeypatch.setattr(completions, "HAS_SHTAB", False)
+        with caplog.at_level("WARNING", logger="pyishlib.ishfiles.commands.init"):
+            out = self._run_init(capsys, "--bash")
+        self._check_snippet(out)
+        assert "_shtab_" not in out
+        assert "compdef" not in out
+        assert any("shtab" in rec.getMessage() for rec in caplog.records)
+        assert any("ishfiles doctor" in rec.getMessage() for rec in caplog.records)
+
+    def test_init_zsh_without_shtab(self, capsys, caplog, monkeypatch):
+        from pyishlib import completions
+
+        monkeypatch.setattr(completions, "HAS_SHTAB", False)
+        with caplog.at_level("WARNING", logger="pyishlib.ishfiles.commands.init"):
+            out = self._run_init(capsys, "--zsh")
+        self._check_snippet(out)
+        assert "_shtab_" not in out
+        assert "compdef" not in out
+        assert any("shtab" in rec.getMessage() for rec in caplog.records)
+
+    @pytest.mark.skipif(
+        not HAS_SHTAB
+        or shutil.which("bash") is None
+        or sys.platform == "win32",
+        reason="needs shtab and a POSIX bash (Git-Bash on Windows is flaky for -n)",
+    )
+    def test_init_bash_syntax_valid(self, capsys):
+        import subprocess
+
+        out = self._run_init(capsys, "--bash")
+        subprocess.run(
+            ["bash", "-n"], input=out, text=True, check=True, capture_output=True
+        )
+
+    @pytest.mark.skipif(
+        not HAS_SHTAB
+        or shutil.which("zsh") is None
+        or sys.platform == "win32",
+        reason="needs shtab and zsh (not expected on Windows runners)",
+    )
+    def test_init_zsh_syntax_valid(self, capsys):
+        import subprocess
+
+        out = self._run_init(capsys, "--zsh")
+        subprocess.run(
+            ["zsh", "-n"], input=out, text=True, check=True, capture_output=True
+        )
+
+    @pytest.mark.skipif(
+        shutil.which("dash") is None or sys.platform == "win32",
+        reason="dash not available (not expected on Windows runners)",
+    )
+    def test_init_sh_dash_syntax_valid(self, capsys):
+        import subprocess
+
+        out = self._run_init(capsys)
+        subprocess.run(
+            ["dash", "-n"], input=out, text=True, check=True, capture_output=True
+        )
+
+
+# ---------------------------------------------------------------------------
+# doctor subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestDoctorCommand:
+    def _run_doctor(self, capsys) -> tuple:
+        # Read capsys before the tempdir context exits so that any Windows
+        # tempdir-cleanup raising does not swallow the captured output.
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "init", "--zsh"])
+            ret = cli_main(["--source", src, "--target", tgt, "doctor"])
+            out = capsys.readouterr().out
+        return ret, out
+
+    def test_doctor_lists_optional_packages(self, capsys):
+        """`ishfiles doctor` prints a status line for every optional package."""
+        from pyishlib.ishfiles.commands.doctor import OPTIONAL_DEPS
+
+        ret, out = self._run_doctor(capsys)
+        # Exit code is 0 iff every optional dep is installed; it's fine for
+        # either branch to trigger on a given dev machine, but the output
+        # must always enumerate the full list.
+        assert ret in (0, 1)
+        for dep in OPTIONAL_DEPS:
+            assert dep.distribution in out
+            assert dep.feature in out
+        # Must mention shtab specifically so users can find the completion
+        # toggle.
+        assert "shtab" in out
+
+    def test_doctor_reports_installed_shtab(self, capsys):
+        """If shtab is importable it shows up as ok, otherwise as missing."""
+        _, out = self._run_doctor(capsys)
+        shtab_line = next(ln for ln in out.splitlines() if " shtab " in ln)
+        if HAS_SHTAB:
+            assert "ok" in shtab_line
+        else:
+            assert "missing" in shtab_line
+
+    def test_doctor_exit_status_reflects_missing(self, capsys, monkeypatch):
+        """Exit status is 1 when at least one optional package is missing."""
+        import pyishlib.ishfiles.commands.doctor as doc
+
+        # Force every probe to report missing so we don't depend on the
+        # dev environment's installed packages.
+        monkeypatch.setattr(
+            doc,
+            "_probe",
+            lambda dep: doc._ProbeResult(
+                "missing", f"install with: pip install {dep.distribution}"
+            ),
+        )
+        ret, out = self._run_doctor(capsys)
+        assert ret == 1
+        assert "missing" in out
+
+    def test_doctor_exit_status_zero_when_all_present(self, capsys, monkeypatch):
+        import pyishlib.ishfiles.commands.doctor as doc
+
+        monkeypatch.setattr(
+            doc, "_probe", lambda dep: doc._ProbeResult("ok", "version 1.2.3")
+        )
+        ret, out = self._run_doctor(capsys)
         assert ret == 0
-        self._check_snippet(capsys.readouterr().out)
+        assert "All optional packages installed" in out
+
+    def test_doctor_reports_broken_imports_as_error(self, capsys, monkeypatch):
+        """A package that raises on import is reported as 'error', not a crash."""
+        import pyishlib.ishfiles.commands.doctor as doc
+
+        def fake_find_spec(name):
+            raise RuntimeError(f"boom: {name}")
+
+        monkeypatch.setattr(doc.importlib.util, "find_spec", fake_find_spec)
+        ret, out = self._run_doctor(capsys)
+        assert ret == 1
+        # Every row should render the error tag and the failure message.
+        assert "error" in out
+        assert "boom:" in out
+        # The report must still enumerate every optional dep despite errors.
+        for dep in doc.OPTIONAL_DEPS:
+            assert dep.distribution in out
 
 
 # ---------------------------------------------------------------------------

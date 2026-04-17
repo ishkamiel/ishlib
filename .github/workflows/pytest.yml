@@ -29,6 +29,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest pytest-xdist
         pip install -r requirements.txt
+        pip install -r requirements-extra.txt
     - name: Run all pytests
       run: |
         pytest
@@ -48,6 +49,11 @@ jobs:
         python -m pip install pytest pytest-xdist
         grep -v -E '^(griffe|mkdocs)' requirements.txt > requirements-test.txt
         python -m pip install -r requirements-test.txt
+        # Install optional packages so the shtab-backed completion tests
+        # and other optional-dep paths are exercised on Windows too
+        # (matches the Linux jobs, and removes "optional dep missing"
+        # as a cross-platform divergence in test coverage).
+        python -m pip install -r requirements-extra.txt
     - name: Run Python tests
       run: |
         python -m pytest pytest/python/ -n 0 -v --tb=long
