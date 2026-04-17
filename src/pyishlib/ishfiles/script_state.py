@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """Persistent state for ``run_once`` / ``run_onchange`` script gating.
 
 Stores a ``{script_name: sha256_hex}`` mapping in a JSON file under

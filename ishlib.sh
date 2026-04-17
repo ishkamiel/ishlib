@@ -1,9 +1,6 @@
 #! /usr/bin/env bash
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2021-2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 #
 [ -n "${ish_SOURCED:-}" ] && return 0
 ish_SOURCED=1 # source guard
@@ -38,7 +35,7 @@ DRY_RUN=${DRY_RUN:-0}
 ISHLIB_DEBUG=${DEBUG:-0}
 
 export ish_VERSION_NAME="ishlib"
-export ish_VERSION_NUMBER="2026-04-15.1049"
+export ish_VERSION_NUMBER="2026-04-17.1933"
 export ish_VERSION_VARIANT="POSIX"
 
 export TERM_COLOR_NC='\e[0m'

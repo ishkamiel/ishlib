@@ -1,9 +1,6 @@
 #! /usr/bin/env sh
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2021-2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 #
 [ -n "${ish_SOURCED_download_file_sh:-}" ] && return 0
 ish_SOURCED_download_file_sh=1 # source guard
