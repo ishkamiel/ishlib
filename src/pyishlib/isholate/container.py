@@ -1112,9 +1112,10 @@ def _preflight_claude_host_tools() -> Optional[str]:
             missing.append(f"  - {tool}: {hint}")
     if missing:
         return (
-            "cannot use --no-network --claude — missing host tools:\n"
+            "cannot enable Claude network isolation — missing host tools:\n"
             + "\n".join(missing)
-            + "\nInstall the packages above and re-run --no-network --claude."
+            + "\nInstall the packages above and re-run with"
+            " --no-network --claude or --no-network --claude-base."
         )
     if shutil.which("sudo") is None:
         return (
