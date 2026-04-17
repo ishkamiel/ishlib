@@ -32,6 +32,7 @@ from pyishlib.isholate.config import (
     discover_host_ishfiles_source,
     discover_project_overlay,
     load_project_config,
+    resolve_default_shell,
 )
 from pyishlib.isholate.container import (
     _CLAUDE_ALLOW_DOMAINS,
@@ -2170,6 +2171,32 @@ class TestDiscoverHostIshfilesSource:
         result = discover_host_ishfiles_source(tmp_path)
         assert result == src
 
+    def test_reads_source_from_ishfiles_section(self, tmp_path):
+        """Schema-compliant config nests source under [ishfiles]."""
+        src = tmp_path / "mysource"
+        src.mkdir()
+        config_dir = tmp_path / ".config" / "ishfiles"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.toml").write_text(
+            f'[ishfiles]\nsource = "{src}"\n'
+        )
+        result = discover_host_ishfiles_source(tmp_path)
+        assert result == src
+
+    def test_ishfiles_section_beats_top_level(self, tmp_path):
+        """[ishfiles].source takes precedence over a top-level source key."""
+        nested_src = tmp_path / "nested"
+        nested_src.mkdir()
+        top_src = tmp_path / "top"
+        top_src.mkdir()
+        config_dir = tmp_path / ".config" / "ishfiles"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.toml").write_text(
+            f'source = "{top_src}"\n[ishfiles]\nsource = "{nested_src}"\n'
+        )
+        result = discover_host_ishfiles_source(tmp_path)
+        assert result == nested_src
+
     def test_falls_back_to_default_path(self, tmp_path):
         default_src = tmp_path / ".local" / "share" / "ishfiles"
         default_src.mkdir(parents=True)
@@ -2183,6 +2210,89 @@ class TestDiscoverHostIshfilesSource:
             'source = "/nonexistent/path"\n'
         )
         result = discover_host_ishfiles_source(tmp_path)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# resolve_default_shell — ishfiles default_shell resolution
+# ---------------------------------------------------------------------------
+
+
+class TestResolveDefaultShell:
+    """Tests for resolve_default_shell()."""
+
+    def _write_ishfiles_config(self, path, default_shell):
+        """Write a minimal ishfiles config.toml with default_shell."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'[ishfiles]\ndefault_shell = "{default_shell}"\n')
+
+    def test_returns_none_when_nothing_configured(self, tmp_path):
+        result = resolve_default_shell(tmp_path, None, None)
+        assert result is None
+
+    def test_reads_from_host_user_config(self, tmp_path):
+        self._write_ishfiles_config(
+            tmp_path / ".config" / "ishfiles" / "config.toml", "/bin/zsh"
+        )
+        result = resolve_default_shell(tmp_path, None, None)
+        assert result == "/bin/zsh"
+
+    def test_reads_from_host_repo_config(self, tmp_path):
+        host_src = tmp_path / "ishfiles-src"
+        self._write_ishfiles_config(
+            host_src / "ishconfig" / "config.toml", "/bin/fish"
+        )
+        result = resolve_default_shell(tmp_path, host_src, None)
+        assert result == "/bin/fish"
+
+    def test_host_user_config_beats_host_repo_config(self, tmp_path):
+        self._write_ishfiles_config(
+            tmp_path / ".config" / "ishfiles" / "config.toml", "/bin/zsh"
+        )
+        host_src = tmp_path / "ishfiles-src"
+        self._write_ishfiles_config(
+            host_src / "ishconfig" / "config.toml", "/bin/fish"
+        )
+        result = resolve_default_shell(tmp_path, host_src, None)
+        assert result == "/bin/zsh"
+
+    def test_project_overlay_beats_host_user_config(self, tmp_path):
+        self._write_ishfiles_config(
+            tmp_path / ".config" / "ishfiles" / "config.toml", "/bin/zsh"
+        )
+        overlay = tmp_path / "project" / ".ishlib" / "ishfiles"
+        self._write_ishfiles_config(
+            overlay / "ishconfig" / "config.toml", "/bin/fish"
+        )
+        result = resolve_default_shell(tmp_path, None, overlay)
+        assert result == "/bin/fish"
+
+    def test_basename_normalised_to_absolute(self, tmp_path):
+        self._write_ishfiles_config(
+            tmp_path / ".config" / "ishfiles" / "config.toml", "zsh"
+        )
+        result = resolve_default_shell(tmp_path, None, None)
+        assert result == "/bin/zsh"
+
+    def test_absolute_path_passed_through(self, tmp_path):
+        self._write_ishfiles_config(
+            tmp_path / ".config" / "ishfiles" / "config.toml", "/usr/bin/zsh"
+        )
+        result = resolve_default_shell(tmp_path, None, None)
+        assert result == "/usr/bin/zsh"
+
+    def test_empty_value_returns_none(self, tmp_path):
+        cfg = tmp_path / ".config" / "ishfiles" / "config.toml"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text('[ishfiles]\ndefault_shell = ""\n')
+        result = resolve_default_shell(tmp_path, None, None)
+        assert result is None
+
+    def test_missing_ishfiles_section_returns_none(self, tmp_path):
+        cfg = tmp_path / ".config" / "ishfiles" / "config.toml"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text('source = "/some/path"\n')
+        result = resolve_default_shell(tmp_path, None, None)
         assert result is None
 
 
