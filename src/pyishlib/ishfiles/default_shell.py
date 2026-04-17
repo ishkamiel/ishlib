@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """Phase 6 of ``ishfiles apply`` -- set the user's login shell.
 
 Applies the ``[ishfiles] default_shell`` option from the main config by

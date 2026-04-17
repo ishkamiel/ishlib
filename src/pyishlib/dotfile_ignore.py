@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """Ignore-list handling for dotfile management.
 
 Provides the :class:`DotfileIgnore` class that encapsulates the full

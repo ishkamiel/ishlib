@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """User I/O utilities: prompting, boolean parsing, and interactive choices.
 
 All interactive prompting — string input, yes/no questions, and multi-choice

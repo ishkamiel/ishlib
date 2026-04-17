@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """The ``pd`` subcommand -- print the dotfiles source directory.
 
 Intended for scripting and as the backend used by the shell wrapper

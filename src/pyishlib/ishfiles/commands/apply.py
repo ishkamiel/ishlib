@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """The ``apply`` subcommand -- install dotfiles into the target directory."""
 
 from __future__ import annotations

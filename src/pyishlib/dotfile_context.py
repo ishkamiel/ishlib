@@ -1,8 +1,5 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
 """Dotfile context for preprocessing variable tracking and expression evaluation.
 
 Provides the :class:`DotfileContext` object that is exposed as ``ish`` inside
