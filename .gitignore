@@ -1,4 +1,5 @@
 .vscode
+.venv/
 README.html
 **/__pycache__
 docs/
