@@ -187,6 +187,31 @@ def get_host_user_info() -> "tuple[str, Path, Path]":
     return username, home, cwd
 
 
+# Shells known to accept ``-l``/``--login`` to start as a login shell.
+# Other shells (``dash``, ``/bin/sh``, …) are invoked without the flag so
+# they don't bail out on an unknown option; the shell is still interactive
+# when stdin is a TTY, which is the case under ``incus exec``.
+_LOGIN_FLAG_SHELLS = frozenset({"bash", "zsh", "fish", "ksh", "mksh", "tcsh", "csh"})
+
+
+def _login_shell_argv(shell: str) -> List[str]:
+    """Return the argv to invoke *shell* as a login shell.
+
+    A login shell is needed so profile files (``.bash_profile`` / ``.profile``
+    / ``.zprofile`` / ``.zlogin`` / fish's config) are sourced on container
+    entry — otherwise the user has to re-exec the shell by hand to pick up
+    their dotfiles.  The shell will also be interactive when ``incus exec``
+    is attached to a TTY (the default for terminal sessions).
+
+    For shells known to accept ``-l`` the flag is appended; for others the
+    shell is invoked bare to avoid breaking exec when the flag is unsupported.
+    """
+    base = os.path.basename(shell)
+    if base in _LOGIN_FLAG_SHELLS:
+        return [shell, "-l"]
+    return [shell]
+
+
 def _sanitize_for_name(username: str) -> str:
     """Sanitize a username for use in an Incus instance name.
 
@@ -2075,8 +2100,8 @@ def _launch_ephemeral_from_base(
             exec_cmd.extend(command)
             _say(f"running command in '{name}'...", quiet=quiet)
         else:
-            exec_cmd.append(args.shell)
-            _say(f"launching {args.shell} in '{name}'...", quiet=quiet)
+            exec_cmd.extend(_login_shell_argv(args.shell))
+            _say(f"launching {args.shell} as login shell in '{name}'...", quiet=quiet)
 
         result = _run(exec_cmd, check=False)
         return result.returncode
@@ -2227,8 +2252,8 @@ def _launch_one_shot(
             exec_cmd.extend(command)
             _say(f"running command in '{name}'...", quiet=quiet)
         else:
-            exec_cmd.append(args.shell)
-            _say(f"launching {args.shell} in '{name}'...", quiet=quiet)
+            exec_cmd.extend(_login_shell_argv(args.shell))
+            _say(f"launching {args.shell} as login shell in '{name}'...", quiet=quiet)
 
         result = _run(exec_cmd, check=False)
         return result.returncode
