@@ -3263,3 +3263,26 @@ class TestCliPreflightClaudeHostTools:
 
         assert rc == 0
         mock_launch.assert_called_once()
+
+    def test_claude_base_also_triggers_preflight(self, tmp_path):
+        """--no-network --claude-base gets the same preflight as --claude."""
+
+        def fake_which(tool):
+            return None if tool == "ipset" else f"/usr/bin/{tool}"
+
+        with patch(
+            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
+        ), patch(
+            "pyishlib.isholate.cli.is_linux", return_value=True
+        ), patch(
+            "pyishlib.isholate.cli._check_incus_available", return_value=None
+        ), patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=("testuser", tmp_path, tmp_path),
+        ), patch(
+            "pyishlib.isholate.cli.launch_and_exec"
+        ) as mock_launch:
+            rc = cli_main(["--no-network", "--claude-base"])
+
+        assert rc == 1
+        mock_launch.assert_not_called()

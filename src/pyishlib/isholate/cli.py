@@ -336,7 +336,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # any container or Incus network state.  Without this, a missing 'ipset'
     # or 'iptables' package produces a raw Python traceback mid-run after
     # the ephemeral container and the isholate-claude bridge already exist.
-    if args.no_network and args.claude:
+    if args.no_network and (args.claude or args.claude_base):
         tools_msg = _preflight_claude_host_tools()
         if tools_msg is not None:
             log.error("%s", tools_msg)
