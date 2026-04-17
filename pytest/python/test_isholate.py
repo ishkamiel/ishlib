@@ -642,7 +642,21 @@ class TestLaunchAndExec:
         cmds = self._cmds(calls)
 
         exec_cmd = next(c for c in cmds if "exec" in c and "--user" in c)
-        assert exec_cmd[-1] == _FAKE_SHELL
+        # _FAKE_SHELL is /bin/bash which is in the login-flag allowlist,
+        # so it should be invoked as a login shell (``-l``) so profile
+        # files are sourced on container entry.
+        assert exec_cmd[-2:] == [_FAKE_SHELL, "-l"]
+
+    def test_exec_unknown_shell_no_login_flag(self):
+        """Shells not in the login-flag allowlist are invoked bare so they
+        don't bail out on an unsupported ``-l`` flag."""
+        args = _make_args(command=[], shell="/bin/dash")
+        calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        exec_cmd = next(c for c in cmds if "exec" in c and "--user" in c)
+        assert exec_cmd[-1] == "/bin/dash"
+        assert "-l" not in exec_cmd
 
     def test_exec_custom_command(self):
         args = _make_args(command=["ls", "-la"])
