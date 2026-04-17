@@ -1958,7 +1958,7 @@ def ensure_project_base(
                 )
             else:
                 _say(
-                    f"project base '{name}' is stale (overlay changed) — rebuilding...",
+                    f"project base '{name}' is stale (host base or overlay changed) — rebuilding...",
                     quiet=quiet,
                 )
             _run(["incus", "delete", name, "--force"], check=False)
