@@ -466,6 +466,40 @@ With `--claude`, isolation combines three layers, all on the host:
 
 First use prompts once for sudo (to install the ipset, iptables chain, and the systemd unit). Subsequent runs pass `_claude_firewall_rules_in_place` and skip sudo entirely; reboots are handled by the systemd unit. The "rules in place" check is deliberately file-based — on-disk content match plus `systemctl is-enabled` — since `ipset list` and `iptables -S` require root on every modern distro and would force a sudo prompt on every run. A manual `iptables -F` after install is re-repaired by the systemd unit on next boot; to recover immediately, re-run the apply script under sudo.
 
+## Entry scripts
+
+`bin/ishfiles` and `bin/isholate` are thin bash stubs (~20 lines each) that
+source `bin/_ishlib_launch.sh` and call `ishlib_launch`. All interpreter
+selection logic lives in the shared helper.
+
+### Interpreter precedence (first match wins)
+
+1. `$ISHLIB_PYTHON` if set and executable — escape hatch that applies to every
+   ishlib Python CLI. Set once in your shell rc and all tools agree.
+2. `$(pyenv root)/versions/$(pyenv global)/bin/python3` if pyenv is on PATH,
+   the global version is not `system`, and the resolved path is executable.
+3. `/usr/bin/python3` if executable.
+4. `command -v python3` (last resort).
+
+### Optional deps
+
+`shtab`, `cerberus`, `PyYAML`, `tomli_w`, and `jsonschema` (see
+`requirements-extra.txt`) must be installed into whichever interpreter wins
+precedence — typically the pyenv-global interpreter for deployed use. Run
+`ishfiles doctor` to see what is available against the active interpreter.
+
+### Container invocations
+
+`isholate`'s `incus exec` commands inject `ISHLIB_PYTHON=/usr/bin/python3`
+via `--env`, so rule 1 fires first and the system python inside the container
+is used rather than anything from the host.
+
+### Adding a future ishlib Python CLI
+
+Copy either 20-line stub, swap in the tool name and `-m` module, and add an
+entry to `_SELF_LINK_NAMES` in `src/pyishlib/ishfiles/commands/apply.py` if
+it should be linked onto the user's PATH.
+
 ## ishfiles Manual Testing Safety
 
 **Never run `ishfiles apply`, `install`, or `runscripts` against the real home directory.** These commands modify files and install packages. Only use `ishfiles diff` for manual testing, and always point to safe temporary directories:

@@ -1,19 +1,23 @@
-#!/usr/bin/env python3
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 #
-# Distributed under terms of the MIT license.
-"""ishfiles -- dotfile manager built on pyishlib."""
+# ishfiles -- dotfile manager entry point.
+# Interpreter selection lives in _ishlib_launch.sh; see CLAUDE.md §Entry scripts.
 
-import sys
-from pathlib import Path
+set -eu
 
-# Allow running from a source checkout without installation.
-_repo_root = Path(__file__).resolve().parent.parent
-if (_repo_root / "src" / "pyishlib").is_dir():
-    sys.path.insert(0, str(_repo_root / "src"))
+# Resolve $0 through symlinks so we can find the sibling launcher file.
+_self="$0"
+while [ -L "$_self" ]; do
+    _link=$(readlink -- "$_self")
+    case "$_link" in
+        /*) _self="$_link" ;;
+        *)  _self="$(dirname -- "$_self")/$_link" ;;
+    esac
+done
+_bin_dir=$(cd -P "$(dirname -- "$_self")" && pwd)
 
-from pyishlib.ishfiles.cli import main  # noqa: E402
-
-raise SystemExit(main())
+# shellcheck source=./_ishlib_launch.sh
+. "$_bin_dir/_ishlib_launch.sh"
+ishlib_launch ishfiles pyishlib.ishfiles "$_bin_dir" "$@"
