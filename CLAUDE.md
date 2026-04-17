@@ -215,6 +215,79 @@ The `pyishlib` installer framework supports loading package configuration from *
 
 Markdownlint (mdl) excludes rules: MD013 (line length), MD024 (duplicate headers), MD026 (trailing punctuation in headers). Generated docs (`docs/ishlib_shell.md`, `docs/pyishlib/`) are excluded from linting.
 
+## Python CLI Tools
+
+Every Python CLI in ishlib (`ishfiles`, `isholate`, and any future tool) uses
+**argparse subcommands** — never a flag-based dispatch layer (e.g. `--purge`,
+`--run`). The subcommand shape is the public contract of the tool.
+
+### Required structure
+
+- Build the parser in a `build_parser()` function that returns the
+  `argparse.ArgumentParser`. Keep argparse wiring out of `main()` so tests can
+  call `build_parser()` directly.
+- Use `parser.add_subparsers(dest="subcommand", required=True, metavar="COMMAND")`.
+  A missing subcommand must be an argparse error, not a silent default.
+- Put each subcommand in its own module and register it via a common pattern.
+  **ishfiles**: `ishfiles/commands/<name>.py` with `register(subparsers)`
+  and `run(cfg)` functions; register the module in `ishfiles/cli.py`.
+  **isholate**: subcommand definitions live in `isholate/cli.py`'s
+  `build_parser()`, and each subcommand dispatches to a named function
+  (e.g. `_run_subcommand`, `purge_containers`, `list_containers`,
+  `stop_containers`) in `isholate/container.py`.
+- Always add a short, one-sentence `help=...` and a multi-sentence
+  `description=...` on every subparser — both show up in `--help`.
+
+### Common flags live on subparsers, NOT the top-level parser
+
+`-v/-q` (and any other flag that should apply to every subcommand) **MUST**
+be attached to each subparser individually. Do not attach them to the
+top-level parser, because argparse's subparser namespace defaults will
+silently overwrite values set by the top-level parse. Example of the bug
+this rule prevents:
+
+```python
+# WRONG — args.verbose is 0, not 1
+parser.add_argument("-v", action="count", default=0)
+sub = parser.add_subparsers(dest="cmd", required=True)
+p_run = sub.add_parser("run")
+p_run.add_argument("-v", action="count", default=0)
+parser.parse_args(["-v", "run"])  # subparser default=0 clobbers top-level -v
+```
+
+The accepted workaround is to attach the flags only to the subparsers (so
+every subcommand accepts `-v`/`-q` after its own name) and to leave the
+top-level parser empty apart from its subparsers. Factor the flag
+definitions into a helper (e.g. `_add_common_args(parser)`) so every
+subparser gets them consistently. The `parents=[common]` pattern suffers
+from the same overwrite bug and must not be used for these flags.
+
+### Adding or updating a subcommand
+
+A new subcommand is always four things — don't skip any:
+
+1. **Module** under the tool's `commands/` dir (or a clearly named function
+   for isholate-style CLIs) that knows how to do the work. Input comes from
+   `cfg` / `args`; output follows the logging convention (product output
+   via `print()`, everything else via `log.*`).
+2. **Parser wiring** in the tool's `cli.py`: add a subparser, attach common
+   flags via the shared helper, declare subcommand-specific flags.
+3. **Dispatch** in `cli.py`'s `main()`: match `args.subcommand` and call
+   the implementation with the right kwargs. Don't reach for globals; pass
+   what the implementation needs explicitly.
+4. **Tests** in `pytest/python/`: parser defaults, flag parsing, mutually
+   exclusive combinations (if any), and a dispatch test that asserts the
+   implementation is called with the right kwargs.
+
+A change to an existing subcommand follows the same four-way update; keep
+them in sync so the CLI never drifts from its tests or docstrings.
+
+### Breaking CLI changes
+
+No silent compat shims. When a subcommand's shape changes, migrate the
+tests in the same commit and update README / `src/docs/` references if
+they exist. Document the breaking change in the commit message.
+
 ## ishfiles CLI Architecture
 
 The `ishfiles` CLI tool (`src/pyishlib/ishfiles/`) manages dotfiles, packages, and scripts. Key design rules:
@@ -365,9 +438,17 @@ ignore_on = ["fedora"]
 
 Key modules:
 
-- `cli.py` — argparse front-end, subcommands (`run`, `purge`, …). Discovers project-local config under an `.ishlib/` umbrella in cwd (no parent search) before parsing args so image/shell overrides take effect. The umbrella has two independent subdirectories: `.ishlib/ishfiles/` is the project-local ishfiles source tree (mounted in pass 2), and `.ishlib/isholate/config.toml` holds isholate's own project config (`image`, `shell`). Either may exist without the other.
+- `cli.py` — argparse front-end. Subcommands: `run` (launch + exec),
+  `purge` (delete user's containers), `list` (table of containers), `stop`
+  (stop running containers). The `run` subcommand discovers project-local
+  config under an `.ishlib/` umbrella in cwd (no parent search) so
+  image/shell overrides take effect. The umbrella has two independent
+  subdirectories: `.ishlib/ishfiles/` is the project-local ishfiles source
+  tree (mounted in pass 2), and `.ishlib/isholate/config.toml` holds
+  isholate's own project config (`image`, `shell`). Either may exist
+  without the other.
 - `config.py` — TOML config loading, host-ishfiles-source discovery, and project overlay resolution.
-- `container.py` — container lifecycle: create/launch/exec, host user/group mirroring, bind-mount handling, purge.
+- `container.py` — container lifecycle: create/launch/exec, host user/group mirroring, bind-mount handling, and the lifecycle helpers shared by the subcommands: `_find_isholate_containers` (the single `incus list` code path), `purge_containers`, `list_containers`, `stop_containers`.
 
 When editing isholate, keep the boundary with `pyishlib` clean: reuse `environment.py` for platform checks and `command_runner.py` for subprocess execution rather than re-implementing them.
 
