@@ -1,8 +1,6 @@
-#
-# Author: Hans Liljestrand <hans@liljestrand.dev>
+# SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# Distributed under terms of the MIT license.
+
 """Incus container lifecycle for isholate.
 
 Handles launching Incus containers with host user mirroring, bind mounts,
@@ -1515,8 +1513,9 @@ def _apply_host_ishfiles(
         name,
         "--env",
         f"HOME={container_home}",
+        "--env",
+        "ISHLIB_PYTHON=/usr/bin/python3",
         "--",
-        "python3",
         ishfiles_bin,
         *ishfiles_flags,
         "--log-file",
@@ -1605,8 +1604,9 @@ def _apply_project_overlay(
                 name,
                 "--env",
                 f"HOME={container_home}",
+                "--env",
+                "ISHLIB_PYTHON=/usr/bin/python3",
                 "--",
-                "python3",
                 ishfiles_bin,
                 *ishfiles_flags,
                 "--log-file",
