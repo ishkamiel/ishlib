@@ -92,6 +92,7 @@ def _make_args(**overrides):
         "rw_cwd": False,
         "ro_cwd": False,
         "claude": False,
+        "claude_base": False,
         "no_network": False,
         "no_host_ishfiles": False,
         "no_project_ishfiles": False,
@@ -713,6 +714,37 @@ class TestLaunchAndExec:
 
         with patch.object(Path, "is_dir", lambda self: False):
             with patch.object(Path, "is_file", lambda self: False):
+                calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        assert device_cmds == []
+
+    def test_claude_base_adds_credentials_mount_when_present(self):
+        """--claude-base mounts only ~/.claude/credentials.json."""
+        args = _make_args(claude_base=True)
+        cred_path = _FAKE_HOME / ".claude" / "credentials.json"
+
+        with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
+            with patch.object(Path, "is_dir", lambda self: False):
+                calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        assert len(device_cmds) == 1
+        cmd = device_cmds[0]
+        assert cmd[5] == "isholate-claude-cred"
+        assert f"source={cred_path}" in cmd
+        assert f"path=/home/{_FAKE_USER}/.claude/credentials.json" in cmd
+        assert "shift=true" in cmd
+        assert "readonly=true" not in cmd
+
+    def test_claude_base_is_noop_when_credentials_absent(self):
+        """--claude-base is a no-op when ~/.claude/credentials.json does not exist."""
+        args = _make_args(claude_base=True)
+
+        with patch.object(Path, "is_file", lambda self: False):
+            with patch.object(Path, "is_dir", lambda self: False):
                 calls, _ = self._run_with_mocks(args)
         cmds = self._cmds(calls)
 
@@ -2277,8 +2309,39 @@ class TestCliIncusPreflight:
 # ---------------------------------------------------------------------------
 
 
+class TestClaudeCliFlags:
+    """--claude and --claude-base flags parse correctly and are mutually exclusive."""
+
+    def test_claude_defaults_false(self):
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.claude is False
+
+    def test_claude_base_defaults_false(self):
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.claude_base is False
+
+    def test_claude_sets_true(self):
+        parser = build_parser()
+        args = parser.parse_args(["--claude"])
+        assert args.claude is True
+        assert args.claude_base is False
+
+    def test_claude_base_sets_true(self):
+        parser = build_parser()
+        args = parser.parse_args(["--claude-base"])
+        assert args.claude_base is True
+        assert args.claude is False
+
+    def test_claude_and_claude_base_are_mutually_exclusive(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--claude", "--claude-base"])
+
+
 class TestNoNetworkCliFlag:
-    """The --no-network flag parses and stacks with --claude."""
+    """The --no-network flag parses and stacks with --claude / --claude-base."""
 
     def test_flag_defaults_false(self):
         parser = build_parser()
@@ -2295,6 +2358,74 @@ class TestNoNetworkCliFlag:
         args = parser.parse_args(["--no-network", "--claude"])
         assert args.no_network is True
         assert args.claude is True
+
+    def test_flag_stacks_with_claude_base(self):
+        parser = build_parser()
+        args = parser.parse_args(["--no-network", "--claude-base"])
+        assert args.no_network is True
+        assert args.claude_base is True
+
+
+class TestClaudeBaseMountsInLaunch:
+    """--claude-base wires the credentials mount and the allow_claude bridge."""
+
+    def _run_with_mocks(self, args):
+        default = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        def fake_run(cmd, **kwargs):
+            return default
+
+        with patch(
+            "pyishlib.isholate.container.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.container._run", side_effect=fake_run
+            ) as mock_run:
+                with patch(
+                    "pyishlib.isholate.container.subprocess.run",
+                    side_effect=_fake_subprocess_run,
+                ):
+                    rc = launch_and_exec(args)
+                    return mock_run.call_args_list, rc
+
+    @staticmethod
+    def _cmds(calls):
+        return [c.args[0] for c in calls]
+
+    def test_claude_base_adds_credentials_mount_on_launch(self):
+        """--claude-base passes the credentials mount through launch_and_exec."""
+        args = _make_args(claude_base=True)
+        cred_path = _FAKE_HOME / ".claude" / "credentials.json"
+
+        with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
+            with patch.object(Path, "is_dir", lambda self: False):
+                calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        assert len(device_cmds) == 1
+        cmd = device_cmds[0]
+        assert cmd[5] == "isholate-claude-cred"
+        assert f"source={cred_path}" in cmd
+        assert "shift=true" in cmd
+        assert "readonly=true" not in cmd
+
+    def test_no_network_with_claude_base_uses_allow_claude_bridge(self):
+        """--claude-base --no-network passes allow_claude=True to network restrictions."""
+        args = _make_args(claude_base=True, no_network=True)
+        cred_path = _FAKE_HOME / ".claude" / "credentials.json"
+
+        with patch(
+            "pyishlib.isholate.container._apply_network_restrictions"
+        ) as mock_net:
+            with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
+                with patch.object(Path, "is_dir", lambda self: False):
+                    self._run_with_mocks(args)
+
+        assert mock_net.called
+        _, kwargs = mock_net.call_args
+        assert kwargs.get("allow_claude") is True
 
 
 class TestApplyNetworkRestrictions:

@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mpyp *)",
+      "Bash(.venv/bin/mypy *)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(mypy *)",
       "Bash(make verify *)",
       "Bash(make verify * | grep *)",
       "Bash(make verify * | head *)",
@@ -10,7 +13,7 @@
       "Bash(mdl *)",
       "Bash(pre-commit run *)",
       "Bash(pytest *)",
-      "Bash(python -m mpyp *)",
+      "Bash(python -m mypy *)",
       "Bash(python -m pytest *)",
       "Bash(python -m pytest * | grep *)",
       "Bash(python -m pytest * | head *)",
