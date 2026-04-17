@@ -21,6 +21,7 @@ from .commands import (
     apply,
     cd,
     diff,
+    doctor,
     external,
     git,
     init,
@@ -119,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.register(subparsers)
     cd.register(subparsers)
     diff.register(subparsers)
+    doctor.register(subparsers)
     external.register(subparsers)
     git.register(subparsers)
     init.register(subparsers)
