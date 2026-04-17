@@ -82,16 +82,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mount the current working directory read-only into the container",
     )
 
-    parser.add_argument(
+    _claude_group = parser.add_mutually_exclusive_group()
+    _claude_group.add_argument(
         "--claude",
         action="store_true",
         default=False,
         help=(
-            "Expose the host's Claude configuration and credentials "
-            "(~/.claude/ and ~/.claude.json) to the container so that the "
-            "Claude CLI can be run inside the container with the host user's "
-            "session.  Mounts are read-write so live state (sessions, projects) "
-            "is shared with the host."
+            "Expose the host's Claude session (~/.claude/ and ~/.claude.json) "
+            "read-write so the in-container Claude CLI shares live state "
+            "(sessions, projects) with the host. For credentials-only access "
+            "use --claude-base."
+        ),
+    )
+    _claude_group.add_argument(
+        "--claude-base",
+        action="store_true",
+        default=False,
+        help=(
+            "Expose only ~/.claude/credentials.json so the container can "
+            "authenticate to the Claude API without sharing the host's full "
+            "session state. Mutually exclusive with --claude."
         ),
     )
     parser.add_argument(
@@ -101,18 +111,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Block all network traffic from the ephemeral container (applied "
             "after provisioning, so apt and ishfiles still run). Without "
-            "--claude, eth0 is detached entirely at the Incus layer. When "
-            "combined with --claude, the container's eth0 is switched to a "
-            "dedicated Incus managed network bridge (isholate-claude); the "
-            "bridge's dnsmasq only resolves Claude API domains (anthropic.com, "
-            "claude.ai, statsig.com, statsigapi.net, sentry.io — including "
-            "all subdomains) and populates a host ipset on every lookup. "
-            "A host iptables chain on the bridge's FORWARD traffic then "
-            "allows TCP/443 only to IPs in that ipset, so a malicious "
-            "process in the container cannot bypass DNS by hard-coding an "
-            "IP. First use prompts once for sudo to install the ipset, "
-            "iptables chain, and a systemd unit that restores them on "
-            "boot; subsequent runs skip sudo entirely."
+            "--claude or --claude-base, eth0 is detached entirely at the Incus "
+            "layer. When combined with --claude or --claude-base, the "
+            "container's eth0 is switched to a dedicated Incus managed network "
+            "bridge (isholate-claude); the bridge's dnsmasq only resolves "
+            "Claude API domains (anthropic.com, claude.ai, statsig.com, "
+            "statsigapi.net, sentry.io — including all subdomains) and "
+            "populates a host ipset on every lookup. A host iptables chain on "
+            "the bridge's FORWARD traffic then allows TCP/443 only to IPs in "
+            "that ipset, so a malicious process in the container cannot bypass "
+            "DNS by hard-coding an IP. First use prompts once for sudo to "
+            "install the ipset, iptables chain, and a systemd unit that "
+            "restores them on boot; subsequent runs skip sudo entirely."
         ),
     )
 

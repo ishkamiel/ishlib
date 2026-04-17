@@ -616,25 +616,55 @@ def _get_incus_bridge_ip() -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def _add_ro_device(
-    name: str, device_name: str, source: Path, container_path: str
+def _add_mount(
+    name: str,
+    device_name: str,
+    src: Path,
+    dst: str,
+    *,
+    readonly: bool = False,
+    shift: bool = False,
 ) -> None:
-    """Add a read-only disk device to a running container."""
-    _run(
-        [
-            "incus",
-            "config",
-            "device",
-            "add",
-            name,
-            device_name,
-            "disk",
-            f"source={source}",
-            f"path={container_path}",
-            "readonly=true",
-        ],
-        check=True,
-    )
+    """Attach a disk device mapping host *src* → in-container *dst*."""
+    cmd = [
+        "incus",
+        "config",
+        "device",
+        "add",
+        name,
+        device_name,
+        "disk",
+        f"source={src}",
+        f"path={dst}",
+    ]
+    if readonly:
+        cmd.append("readonly=true")
+    if shift:
+        cmd.append("shift=true")
+    _run(cmd, check=True)
+
+
+def _add_home_mount(
+    name: str,
+    device_name: str,
+    host_home: Path,
+    rel: str,
+    container_username: str,
+    *,
+    readonly: bool = False,
+    shift: bool = True,
+) -> bool:
+    """Mirror ``<host_home>/<rel>`` into ``/home/<container_username>/<rel>``.
+
+    Returns False if the source path does not exist; the source may be a file
+    or a directory.
+    """
+    src = host_home / rel
+    if not src.is_dir() and not src.is_file():
+        return False
+    dst = f"/home/{container_username}/{rel}"
+    _add_mount(name, device_name, src, dst, readonly=readonly, shift=shift)
+    return True
 
 
 def _add_claude_mounts(
@@ -652,46 +682,17 @@ def _add_claude_mounts(
         username: Container username (used to derive the in-container path).
         quiet:    Suppress isholate's own progress messages.
     """
-    container_home = f"/home/{username}"
-    claude_dir = home / ".claude"
-    claude_json = home / ".claude.json"
     mounted: List[str] = []
 
-    if claude_dir.is_dir():
-        _run(
-            [
-                "incus",
-                "config",
-                "device",
-                "add",
-                name,
-                "isholate-claude",
-                "disk",
-                f"source={claude_dir}",
-                f"path={container_home}/.claude",
-                "shift=true",
-            ],
-            check=True,
-        )
-        mounted.append("~/.claude")
+    if (home / ".claude").is_dir() and _add_home_mount(
+        name, "isholate-claude", home, ".claude", username, shift=True
+    ):
+        mounted.append(str(home / ".claude"))
 
-    if claude_json.is_file():
-        _run(
-            [
-                "incus",
-                "config",
-                "device",
-                "add",
-                name,
-                "isholate-claude-json",
-                "disk",
-                f"source={claude_json}",
-                f"path={container_home}/.claude.json",
-                "shift=true",
-            ],
-            check=True,
-        )
-        mounted.append("~/.claude.json")
+    if (home / ".claude.json").is_file() and _add_home_mount(
+        name, "isholate-claude-json", home, ".claude.json", username, shift=True
+    ):
+        mounted.append(str(home / ".claude.json"))
 
     if mounted:
         _say(f"exposing host Claude config: {', '.join(mounted)}", quiet=quiet)
@@ -699,6 +700,29 @@ def _add_claude_mounts(
         _say(
             "warning: --claude requested but no host Claude config found "
             "(~/.claude or ~/.claude.json)",
+            quiet=quiet,
+        )
+
+
+def _add_claude_base_mounts(
+    name: str, home: Path, username: str, *, quiet: bool = False
+) -> None:
+    """Mount only ``~/.claude/credentials.json`` read-write with shift=true.
+
+    Args:
+        name:     Incus container name.
+        home:     Host user's home directory.
+        username: Container username (used to derive the in-container path).
+        quiet:    Suppress isholate's own progress messages.
+    """
+    rel = ".claude/credentials.json"
+    if (home / rel).is_file() and _add_home_mount(
+        name, "isholate-claude-cred", home, rel, username, shift=True
+    ):
+        _say(f"exposing host Claude credentials: {home / rel}", quiet=quiet)
+    else:
+        _say(
+            "warning: --claude-base requested but ~/.claude/credentials.json not found",
             quiet=quiet,
         )
 
@@ -1302,11 +1326,12 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     )
 
     # Mount ishlib checkout so ishfiles CLI is reachable without pip.
-    _add_ro_device(
+    _add_mount(
         name,
         "isholate-ishlib",
         _ISHLIB_ROOT,
         f"{_ISHOLATE_RUN_DIR}/ishlib",
+        readonly=True,
     )
 
     _say(
@@ -1480,11 +1505,12 @@ def _apply_host_ishfiles(
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_log = "/tmp/isholate-ishfiles-pass1.log"
 
-    _add_ro_device(
+    _add_mount(
         name,
         "isholate-ishsrc",
         host_source,
         f"{_ISHOLATE_RUN_DIR}/ishsrc",
+        readonly=True,
     )
     pass1_cmd = [
         "incus",
@@ -1504,11 +1530,12 @@ def _apply_host_ishfiles(
         f"{_ISHOLATE_RUN_DIR}/ishsrc",
     ]
     if host_config_dir is not None and host_config_dir.is_dir():
-        _add_ro_device(
+        _add_mount(
             name,
             "isholate-ishconf",
             host_config_dir,
             f"{_ISHOLATE_RUN_DIR}/ishconf",
+            readonly=True,
         )
         pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
     pass1_cmd += ["apply", "--isholate", "--yes"]
@@ -1566,11 +1593,12 @@ def _apply_project_overlay(
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_log = "/tmp/isholate-ishfiles-pass2.log"
 
-    _add_ro_device(
+    _add_mount(
         name,
         "isholate-overlay",
         project_overlay,
         f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
+        readonly=True,
     )
     try:
         _run_checked(
@@ -1926,11 +1954,12 @@ def ensure_project_base(
         )
 
         # Re-mount the ishlib so the ishfiles CLI is available.
-        _add_ro_device(
+        _add_mount(
             name,
             "isholate-ishlib",
             _ISHLIB_ROOT,
             f"{_ISHOLATE_RUN_DIR}/ishlib",
+            readonly=True,
         )
 
         # Apply the project overlay.
@@ -2032,46 +2061,21 @@ def _launch_ephemeral_from_base(
 
         # Bind-mount cwd if requested.
         if args.rw_cwd:
-            _run(
-                [
-                    "incus",
-                    "config",
-                    "device",
-                    "add",
-                    name,
-                    "hostcwd",
-                    "disk",
-                    f"source={cwd}",
-                    f"path={cwd}",
-                    "shift=true",
-                ],
-                check=True,
-            )
+            _add_mount(name, "hostcwd", cwd, str(cwd), shift=True)
         elif args.ro_cwd:
-            _run(
-                [
-                    "incus",
-                    "config",
-                    "device",
-                    "add",
-                    name,
-                    "hostcwd",
-                    "disk",
-                    f"source={cwd}",
-                    f"path={cwd}",
-                    "readonly=true",
-                    "shift=true",
-                ],
-                check=True,
-            )
+            _add_mount(name, "hostcwd", cwd, str(cwd), readonly=True, shift=True)
 
-        if getattr(args, "claude", False):
+        _claude_on = getattr(args, "claude", False)
+        _claude_base_on = getattr(args, "claude_base", False)
+        if _claude_on:
             _add_claude_mounts(name, home, username, quiet=quiet)
+        elif _claude_base_on:
+            _add_claude_base_mounts(name, home, username, quiet=quiet)
 
         if getattr(args, "no_network", False):
             _apply_network_restrictions(
                 name,
-                allow_claude=getattr(args, "claude", False),
+                allow_claude=_claude_on or _claude_base_on,
                 quiet=quiet,
             )
 
@@ -2209,46 +2213,21 @@ def _launch_one_shot(
             )
 
         if args.rw_cwd:
-            _run(
-                [
-                    "incus",
-                    "config",
-                    "device",
-                    "add",
-                    name,
-                    "hostcwd",
-                    "disk",
-                    f"source={cwd}",
-                    f"path={cwd}",
-                    "shift=true",
-                ],
-                check=True,
-            )
+            _add_mount(name, "hostcwd", cwd, str(cwd), shift=True)
         elif args.ro_cwd:
-            _run(
-                [
-                    "incus",
-                    "config",
-                    "device",
-                    "add",
-                    name,
-                    "hostcwd",
-                    "disk",
-                    f"source={cwd}",
-                    f"path={cwd}",
-                    "readonly=true",
-                    "shift=true",
-                ],
-                check=True,
-            )
+            _add_mount(name, "hostcwd", cwd, str(cwd), readonly=True, shift=True)
 
-        if getattr(args, "claude", False):
+        _claude_on = getattr(args, "claude", False)
+        _claude_base_on = getattr(args, "claude_base", False)
+        if _claude_on:
             _add_claude_mounts(name, home, username, quiet=quiet)
+        elif _claude_base_on:
+            _add_claude_base_mounts(name, home, username, quiet=quiet)
 
         if getattr(args, "no_network", False):
             _apply_network_restrictions(
                 name,
-                allow_claude=getattr(args, "claude", False),
+                allow_claude=_claude_on or _claude_base_on,
                 quiet=quiet,
             )
 
