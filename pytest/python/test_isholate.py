@@ -721,9 +721,9 @@ class TestLaunchAndExec:
         assert device_cmds == []
 
     def test_claude_base_adds_credentials_mount_when_present(self):
-        """--claude-base mounts only ~/.claude/credentials.json."""
+        """--claude-base mounts only ~/.claude/.credentials.json."""
         args = _make_args(claude_base=True)
-        cred_path = _FAKE_HOME / ".claude" / "credentials.json"
+        cred_path = _FAKE_HOME / ".claude" / ".credentials.json"
 
         with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
             with patch.object(Path, "is_dir", lambda self: False):
@@ -735,12 +735,12 @@ class TestLaunchAndExec:
         cmd = device_cmds[0]
         assert cmd[5] == "isholate-claude-cred"
         assert f"source={cred_path}" in cmd
-        assert f"path=/home/{_FAKE_USER}/.claude/credentials.json" in cmd
+        assert f"path=/home/{_FAKE_USER}/.claude/.credentials.json" in cmd
         assert "shift=true" in cmd
         assert "readonly=true" not in cmd
 
     def test_claude_base_is_noop_when_credentials_absent(self):
-        """--claude-base is a no-op when ~/.claude/credentials.json does not exist."""
+        """--claude-base is a no-op when ~/.claude/.credentials.json does not exist."""
         args = _make_args(claude_base=True)
 
         with patch.object(Path, "is_file", lambda self: False):
@@ -2396,7 +2396,7 @@ class TestClaudeBaseMountsInLaunch:
     def test_claude_base_adds_credentials_mount_on_launch(self):
         """--claude-base passes the credentials mount through launch_and_exec."""
         args = _make_args(claude_base=True)
-        cred_path = _FAKE_HOME / ".claude" / "credentials.json"
+        cred_path = _FAKE_HOME / ".claude" / ".credentials.json"
 
         with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
             with patch.object(Path, "is_dir", lambda self: False):
@@ -2414,7 +2414,7 @@ class TestClaudeBaseMountsInLaunch:
     def test_no_network_with_claude_base_uses_allow_claude_bridge(self):
         """--claude-base --no-network passes allow_claude=True to network restrictions."""
         args = _make_args(claude_base=True, no_network=True)
-        cred_path = _FAKE_HOME / ".claude" / "credentials.json"
+        cred_path = _FAKE_HOME / ".claude" / ".credentials.json"
 
         with patch(
             "pyishlib.isholate.container._apply_network_restrictions"

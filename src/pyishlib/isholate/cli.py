@@ -99,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "Expose only ~/.claude/credentials.json so the container can "
+            "Expose only ~/.claude/.credentials.json so the container can "
             "authenticate to the Claude API without sharing the host's full "
             "session state. Mutually exclusive with --claude."
         ),

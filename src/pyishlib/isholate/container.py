@@ -707,7 +707,7 @@ def _add_claude_mounts(
 def _add_claude_base_mounts(
     name: str, home: Path, username: str, *, quiet: bool = False
 ) -> None:
-    """Mount only ``~/.claude/credentials.json`` read-write with shift=true.
+    """Mount only ``~/.claude/.credentials.json`` read-write with shift=true.
 
     Args:
         name:     Incus container name.
@@ -715,14 +715,14 @@ def _add_claude_base_mounts(
         username: Container username (used to derive the in-container path).
         quiet:    Suppress isholate's own progress messages.
     """
-    rel = ".claude/credentials.json"
+    rel = ".claude/.credentials.json"
     if (home / rel).is_file() and _add_home_mount(
         name, "isholate-claude-cred", home, rel, username, shift=True
     ):
         _say(f"exposing host Claude credentials: {home / rel}", quiet=quiet)
     else:
         _say(
-            "warning: --claude-base requested but ~/.claude/credentials.json not found",
+            "warning: --claude-base requested but ~/.claude/.credentials.json not found",
             quiet=quiet,
         )
 
