@@ -35,17 +35,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .._compat import load_toml_file
+from ..ishlib_folder import IshlibFolder
 
-# Umbrella project-local config directory.
-PROJECT_DIR_NAME = ".ishlib"
-
-# Subdirectory under .ishlib/ that acts as a project-local ishfiles source
-# tree. Mirrors the layout of a normal ishfiles source (with its own
-# ``ishconfig/``, ``ishscripts/``, etc.).
-OVERLAY_SUBDIR = "ishfiles"
-
-# Subdirectory under .ishlib/ that holds isholate-specific project config.
-ISHOLATE_SUBDIR = "isholate"
+# Filename of isholate's per-project config inside ``.ishlib/isholate/``.
 ISHOLATE_CONFIG_FILE = "config.toml"
 
 # XDG state directory under $HOME where logs from failed containers are saved.
@@ -63,9 +55,8 @@ LOCKS_STATE_DIR = Path(".local") / "state" / "isholate" / "locks"
 def discover_project_overlay(root: Path) -> Optional[Path]:
     """Check *root* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
 
-    Only the directory itself is checked — parent directories are not
-    searched.  Pass the explicit project root (from ``--project-root``) or
-    ``Path.cwd()`` as the root.
+    Thin wrapper around :meth:`IshlibFolder.discover_ishfiles` kept under
+    its historical name for the isholate call sites.
 
     Args:
         root: Directory to check.
@@ -73,8 +64,7 @@ def discover_project_overlay(root: Path) -> Optional[Path]:
     Returns:
         Absolute path to the ``.ishlib/ishfiles/`` directory, or ``None``.
     """
-    candidate = root.resolve() / PROJECT_DIR_NAME / OVERLAY_SUBDIR
-    return candidate if candidate.is_dir() else None
+    return IshlibFolder(root).discover_ishfiles()
 
 
 def load_project_config(root: Path) -> Dict[str, Any]:
@@ -98,9 +88,7 @@ def load_project_config(root: Path) -> Dict[str, Any]:
     Returns:
         Parsed config dict, possibly empty.
     """
-    config_file = (
-        root.resolve() / PROJECT_DIR_NAME / ISHOLATE_SUBDIR / ISHOLATE_CONFIG_FILE
-    )
+    config_file = IshlibFolder(root).isholate_dir / ISHOLATE_CONFIG_FILE
     result = load_toml_file(config_file, default={})
     return result if isinstance(result, dict) else {}
 
