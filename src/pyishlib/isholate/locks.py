@@ -28,7 +28,6 @@ dependency on ``fcntl`` is safe.
 
 from __future__ import annotations
 
-import fcntl
 import logging
 import os
 import time
@@ -81,6 +80,11 @@ def base_build_lock(name: str) -> Iterator[None]:
     Yields:
         Nothing.  The lock is released when the ``with`` block exits.
     """
+    # Imported here, not at module top-level, so the surrounding module can
+    # still be imported on non-POSIX platforms (e.g. Windows CI collectors).
+    # isholate.cli bails on non-Linux, so this path is never reached there.
+    import fcntl  # noqa: PLC0415
+
     path = _lock_path(name)
     # O_CLOEXEC so the lock fd cannot leak into ``incus exec`` children.
     fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
