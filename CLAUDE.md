@@ -48,6 +48,26 @@ Key root files:
 - `docs/pyishlib/` - **Generated files**. Auto-generated from docstrings via `scripts/build_pydocs.py`
 - `Makefile` - Build orchestration
 
+## Python Environment
+
+This project uses a `.venv` managed by direnv (`.envrc` + `layout pyenv`). Always invoke Python and Python-based tools (`pytest`, `ruff`, `mypy`, `mkdocs`, …) via the `.venv`:
+
+```bash
+.venv/bin/python   # Python interpreter
+.venv/bin/pytest   # test runner
+.venv/bin/ruff     # linter/formatter
+.venv/bin/mypy     # type checker
+```
+
+If `.venv` is missing or a tool is not found inside it, ask the user to set it up or update it before proceeding:
+
+```bash
+# From the ishlib directory:
+direnv allow    # activates the layout and creates/updates .venv
+# or manually:
+python -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+```
+
 ## Build and Test Commands
 
 ```bash

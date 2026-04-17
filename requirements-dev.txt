@@ -4,9 +4,10 @@ cerberus
 jsonschema
 
 # Testing
+mypy
 pytest
 pytest-xdist
-mypy
+ruff
 
 # Documentation
 griffe
