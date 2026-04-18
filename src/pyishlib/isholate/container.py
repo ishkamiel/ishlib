@@ -38,9 +38,9 @@ from typing import Any, List, Optional
 
 from ..container import incus as _incus
 from .claude import (
-    _add_claude_base_mounts,
     _add_claude_mounts,
     _apply_network_restrictions,
+    _install_claude_base_auth,
 )
 from .config import FAILED_LOGS_STATE_DIR
 from .locks import base_build_lock
@@ -1395,7 +1395,7 @@ def _launch_ephemeral_from_base(
         if _claude_on:
             _add_claude_mounts(name, home, username, quiet=quiet)
         elif _claude_base_on:
-            _add_claude_base_mounts(name, home, username, quiet=quiet)
+            _install_claude_base_auth(name, home, username, container_uid, quiet=quiet)
 
         if getattr(args, "no_network", False):
             _apply_network_restrictions(
@@ -1547,7 +1547,7 @@ def _launch_one_shot(
         if _claude_on:
             _add_claude_mounts(name, home, username, quiet=quiet)
         elif _claude_base_on:
-            _add_claude_base_mounts(name, home, username, quiet=quiet)
+            _install_claude_base_auth(name, home, username, container_uid, quiet=quiet)
 
         if getattr(args, "no_network", False):
             _apply_network_restrictions(

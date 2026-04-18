@@ -340,6 +340,26 @@ class IncusContainer(Container):
         r = _run(cmd, capture_output=True, check=False)
         return r.returncode == 0
 
+    def push_file(
+        self,
+        host_src: Path,
+        container_path: str,
+        *,
+        uid: Optional[int] = None,
+        gid: Optional[int] = None,
+        mode: Optional[int] = None,
+    ) -> bool:
+        cmd: List[str] = ["incus", "file", "push"]
+        if uid is not None:
+            cmd.extend(["--uid", str(uid)])
+        if gid is not None:
+            cmd.extend(["--gid", str(gid)])
+        if mode is not None:
+            cmd.extend(["--mode", format(mode, "o")])
+        cmd.extend([str(host_src), f"{self.name}{container_path}"])
+        r = _run(cmd, capture_output=True, check=False)
+        return r.returncode == 0
+
     # ------------------------------------------------------------------
     # Device primitives
     # ------------------------------------------------------------------
