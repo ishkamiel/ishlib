@@ -22,6 +22,12 @@ class InstallerApt(InstallerBase):
     def _pkg_key(self) -> str:
         return "apt"
 
+    def _install_flags(self) -> Sequence[str]:
+        return ["install", "-y"]
+
+    def _needs_sudo_for_install(self) -> bool:
+        return True
+
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if an apt package is installed.
 
@@ -30,8 +36,7 @@ class InstallerApt(InstallerBase):
         ``apt-cache showpkg`` to find providing packages (e.g.
         ``gnome-extensions-app`` → ``gnome-shell-extension-prefs``).
         """
-        if not self.can_install() or not self.can_install(pkg):
-            log.debug("apt not available for %s", pkg.get("name"))
+        if not self._guard_can_install(pkg):
             return False
 
         apt_name = pkg["apt"]
@@ -104,18 +109,6 @@ class InstallerApt(InstallerBase):
         except Exception:
             return []
 
-    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
-        """Install a list of apt packages"""
-        self._validate_pkgs(pkgs)
-
-        pkg_list: Sequence[str] = [pkg["apt"] for pkg in pkgs]
-
-        log.info("Installing with apt: %s", " ".join(pkg_list))
-        res = self._run_cmd(
-            ["apt", "install", "-y", *pkg_list], sudo=True, action="installing"
-        )
-        return res.returncode == 0
-
     def update_pkgs(self) -> bool:
         """Update all installed apt packages"""
         self._require_available()
@@ -124,11 +117,6 @@ class InstallerApt(InstallerBase):
         self._run_cmd(["apt", "update"], sudo=True, action="updating")
         self._run_cmd(["apt", "upgrade", "-y"], sudo=True, action="updating")
         return True
-
-    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
-        """Update apt packages, then install new apt pkgs"""
-        self.update_pkgs()
-        self.install_pkgs(pkgs)
 
 
 # ---------------------------------------------------------------------------
