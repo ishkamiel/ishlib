@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 from typing import List, Optional
 
@@ -445,6 +446,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     parser = build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        argv = ["run"]
     args = parser.parse_args(argv)
 
     _configure_logging_from_args(args)

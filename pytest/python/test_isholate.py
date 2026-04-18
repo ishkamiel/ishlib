@@ -2314,6 +2314,20 @@ class TestParser:
         with pytest.raises(SystemExit):
             parser.parse_args([])
 
+    def test_bare_isholate_dispatches_to_run(self):
+        """Running `isholate` with no arguments should open a shell via `run`."""
+        with patch(
+            "pyishlib.isholate.cli.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch(
+                "pyishlib.isholate.cli._run_subcommand", return_value=0
+            ) as mock_run:
+                assert cli_main([]) == 0
+        args = mock_run.call_args.args[0]
+        assert args.subcommand == "run"
+        assert args.command == []
+
     def test_run_defaults(self):
         from pyishlib.isholate.cli import DEFAULT_IMAGE, DEFAULT_SHELL
 
