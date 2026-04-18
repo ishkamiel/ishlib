@@ -121,9 +121,11 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         default=False,
         help=(
             "Expose ~/.claude/.credentials.json and inject a synthetic "
-            "~/.claude.json (oauthAccount only) so Claude Code inside the "
-            "container recognises the host credentials without sharing the "
-            "host's full session state. Mutually exclusive with --claude."
+            "~/.claude.json carrying the host's oauthAccount (and userID / "
+            "firstStartTime when present), plus a hard-coded "
+            "hasCompletedOnboarding, so Claude Code inside the container "
+            "recognises the host credentials without sharing the host's full "
+            "session state. Mutually exclusive with --claude."
         ),
     )
     parser.add_argument(
