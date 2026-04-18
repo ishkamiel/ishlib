@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from abc import ABC, abstractmethod
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Any, Iterable, Optional, Sequence
@@ -138,6 +139,80 @@ class InstallerBase(ABC):
             )
             raise
 
+    def _guard_can_install(self, pkg: dict) -> bool:
+        """Log + return False if this backend cannot handle *pkg*.
+
+        Replaces the 5-line preamble that every ``is_pkg_installed``
+        implementation used to carry.
+        """
+        if not self.can_install() or not self.can_install(pkg):
+            log.debug("%s not available for %s", self.INSTALLER_NAME, pkg.get("name"))
+            return False
+        return True
+
+    def _check_pkg_installed_by_output(
+        self,
+        pkg: dict,
+        probe_cmd: Sequence[str],
+        *,
+        match: Optional[str] = None,
+        check: bool = True,
+    ) -> bool:
+        """Run *probe_cmd* and return True iff *match* appears in stdout.
+
+        Covers the common "run tool, grep output" pattern used by brew,
+        cargo, pip, winget.  *match* defaults to ``pkg[self._pkg_key()]``.
+        Set ``check=False`` when the probe command may legitimately exit
+        non-zero without raising.
+        """
+        if not self._guard_can_install(pkg):
+            return False
+        try:
+            result = self.runner.run(
+                list(probe_cmd),
+                check=check,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except CalledProcessError as e:
+            log.debug(
+                "%s error checking %s: %s",
+                self.INSTALLER_NAME,
+                pkg.get("name"),
+                e,
+            )
+            return False
+        if result.returncode != 0:
+            return False
+        text = result.stdout
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", errors="replace")
+        needle = match if match is not None else pkg[self._pkg_key()]
+        return needle in text
+
+    # -- install-command assembly hooks ----------------------------------------
+
+    def _install_flags(self) -> Sequence[str]:
+        """Backend-specific flags for the install command (e.g. ``["install", "-y"]``).
+
+        Default is ``[]`` — subclasses override to customise the argv
+        shape produced by :meth:`_build_install_cmd`.
+        """
+        return []
+
+    def _needs_sudo_for_install(self) -> bool:
+        """Return True if this backend requires sudo for install (apt/dnf)."""
+        return False
+
+    def _build_install_cmd(self, pkg_names: Sequence[str]) -> Sequence[str]:
+        """Assemble the argv for ``install_pkgs``.
+
+        Default: ``[_tool_cmd(), *_install_flags(), *pkg_names]``.
+        Backends whose tool invocation is a list (pip's
+        ``python -m pip``) override this directly.
+        """
+        return [self._tool_cmd(), *self._install_flags(), *pkg_names]
+
     def install_pkg(self, pkg: dict) -> bool:
         """Install a single package (delegates to :meth:`install_pkgs`)."""
         return self.install_pkgs([pkg])
@@ -148,6 +223,36 @@ class InstallerBase(ABC):
             return self.install_pkg(pkg)
         return True
 
+    # -- default implementations -----------------------------------------------
+
+    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
+        """Install all packages in *pkgs*.
+
+        Default template: validate, build argv via :meth:`_build_install_cmd`,
+        run with :meth:`_needs_sudo_for_install`.  Backends with a
+        per-package invocation shape (winget) override this directly.
+        """
+        self._validate_pkgs(pkgs)
+        pkg_names: Sequence[str] = [pkg[self._pkg_key()] for pkg in pkgs]
+        log.info(
+            "Installing with %s: %s", self.INSTALLER_NAME, " ".join(pkg_names)
+        )
+        res = self._run_cmd(
+            self._build_install_cmd(pkg_names),
+            sudo=self._needs_sudo_for_install(),
+            action="installing",
+        )
+        return res.returncode == 0
+
+    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
+        """Update the backend, then install *pkgs*.
+
+        Default covers 5/6 built-in backends.  Cargo overrides to inject
+        its ``update_or_install_rust()`` step.
+        """
+        self.update_pkgs()
+        self.install_pkgs(pkgs)
+
     # -- abstract ---------------------------------------------------------------
 
     @abstractmethod
@@ -155,13 +260,5 @@ class InstallerBase(ABC):
         """Return True if *pkg* is already installed."""
 
     @abstractmethod
-    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
-        """Install all packages in *pkgs*.  Returns True on success."""
-
-    @abstractmethod
     def update_pkgs(self) -> bool:
         """Update all packages managed by this backend."""
-
-    @abstractmethod
-    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
-        """Update the backend and install any new packages in *pkgs*."""

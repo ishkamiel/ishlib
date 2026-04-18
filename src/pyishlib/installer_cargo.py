@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 import re
-import subprocess
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Sequence
 
@@ -25,42 +24,21 @@ class InstallerCargo(InstallerBase):
         "cargo": "cargo-update",
     }
 
-    # The --locked flags forces cargo to use the pkg-specific versions of deps
-    CARGO_INSTALL_CMD: list[str] = ["cargo", "install", "--locked"]
-
     def _tool_cmd(self) -> str:
         return "cargo"
 
     def _pkg_key(self) -> str:
         return "cargo"
 
+    # The --locked flag forces cargo to use the pkg-specific versions of deps.
+    def _install_flags(self) -> Sequence[str]:
+        return ["install", "--locked"]
+
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a cargo package is installed"""
-        if not self.can_install() or not self.can_install(pkg):
-            log.debug("Cargo not available for %s", pkg.get("name"))
-            return False
-
-        try:
-            result: subprocess.CompletedProcess = self.runner.run(
-                ["cargo", "install", "--list"],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            return pkg["cargo"] in result.stdout.decode("utf-8")
-        except CalledProcessError as e:
-            log.debug("Cargo error checking %s: %s", pkg["name"], e)
-            return False
-
-    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
-        """Install a list of cargo packages"""
-        self._validate_pkgs(pkgs)
-
-        pkg_list: Sequence[str] = [pkg["cargo"] for pkg in pkgs]
-
-        log.info("Installing with cargo: %s", " ".join(pkg_list))
-        res = self._run_cmd([*self.CARGO_INSTALL_CMD, *pkg_list], action="installing")
-        return res.returncode == 0
+        return self._check_pkg_installed_by_output(
+            pkg, ["cargo", "install", "--list"]
+        )
 
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""

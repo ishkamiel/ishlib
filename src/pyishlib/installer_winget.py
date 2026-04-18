@@ -3,8 +3,6 @@
 """Helper library for package installing tasks"""
 
 import logging
-import subprocess
-from subprocess import CalledProcessError
 from typing import Sequence
 
 from .installer_base import InstallerBase
@@ -25,27 +23,14 @@ class InstallerWinget(InstallerBase):
 
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a winget package is installed"""
-        if not self.can_install() or not self.can_install(pkg):
-            log.debug("winget not available for %s", pkg.get("name"))
-            return False
-
-        try:
-            result: subprocess.CompletedProcess = self.runner.run(
-                ["winget", "list", "--id", pkg["winget"], "--exact"],
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            output = result.stdout
-            if isinstance(output, bytes):
-                output = output.decode("utf-8", errors="replace")
-            return pkg["winget"] in output
-        except CalledProcessError as e:
-            log.debug("winget error checking %s: %s", pkg["name"], e)
-            return False
+        return self._check_pkg_installed_by_output(
+            pkg,
+            ["winget", "list", "--id", pkg["winget"], "--exact"],
+            check=False,
+        )
 
     def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
-        """Install a list of winget packages"""
+        """Install a list of winget packages, one at a time."""
         self._validate_pkgs(pkgs)
 
         for pkg in pkgs:
@@ -82,10 +67,3 @@ class InstallerWinget(InstallerBase):
             action="updating",
         )
         return True
-
-    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
-        """Update winget packages, then install new winget pkgs"""
-        self._require_available()
-
-        self.update_pkgs()
-        self.install_pkgs(pkgs)

@@ -5,9 +5,7 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
-from subprocess import CalledProcessError
 from typing import Sequence
 
 from .command_runner import CommandRunner
@@ -78,33 +76,15 @@ class InstallerPip(InstallerBase):
         """Alias for :attr:`available`."""
         return self.available
 
+    def _build_install_cmd(self, pkg_names: Sequence[str]) -> Sequence[str]:
+        """Pip's install invocation is ``[*pip_cmd, "install", "--user", ...]``."""
+        return [*self.pip_install_cmd, *pkg_names]
+
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a pip package is installed"""
-        if not self.can_install() or not self.can_install(pkg):
-            log.debug("Pip not available for %s", pkg.get("name"))
-            return False
-
-        try:
-            result: subprocess.CompletedProcess = self.runner.run(
-                list(self._pip_cmd) + ["list"],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            return pkg["pip"] in result.stdout.decode("utf-8")
-        except CalledProcessError as e:
-            log.debug("Pip error checking %s: %s", pkg["name"], e)
-            return False
-
-    def install_pkgs(self, pkgs: Sequence[dict]) -> bool:
-        """Install a list of pip packages"""
-        self._validate_pkgs(pkgs)
-
-        pkg_list: Sequence[str] = [pkg["pip"] for pkg in pkgs]
-
-        log.info("Installing with pip: %s", " ".join(pkg_list))
-        res = self._run_cmd([*self.pip_install_cmd, *pkg_list], action="installing")
-        return res.returncode == 0
+        return self._check_pkg_installed_by_output(
+            pkg, [*self._pip_cmd, "list"]
+        )
 
     def update_pkgs(self) -> bool:
         """Update all installed pip packages"""
@@ -116,10 +96,3 @@ class InstallerPip(InstallerBase):
         )
         log.warning("pip update not implemented (only updates pip itself)")
         return True
-
-    def update_and_install_all(self, pkgs: Sequence[dict]) -> None:
-        """Update python, pip and pip packages, then install new pip pkgs"""
-        self._require_available()
-
-        self.update_pkgs()
-        self.install_pkgs(pkgs)
