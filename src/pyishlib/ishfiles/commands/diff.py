@@ -9,68 +9,12 @@ import json
 import tempfile
 from pathlib import Path
 
+from ...cli_command import CliCommand
 from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
 from ...ish_config import IshConfig
 from ...json_merge import canonical_json
 from ..applier import make_applier, make_finder
-
-
-def register(subparsers: argparse._SubParsersAction) -> None:
-    """Register the ``diff`` subcommand."""
-    parser = subparsers.add_parser(
-        "diff",
-        help="Show a unified diff of what would change",
-    )
-    parser.add_argument(
-        "files",
-        nargs="*",
-        default=None,
-        help="Restrict to specific files (source or target paths)",
-    )
-    parser.add_argument(
-        "--name-only",
-        action="store_true",
-        default=False,
-        help="Show only the names of changed files, not the diff",
-    )
-    parser.set_defaults(func=run)
-
-
-def run(cfg: IshConfig) -> int:
-    """Execute the diff command.
-
-    Returns:
-        0 when there are no changes, 1 when there are differences.
-    """
-    finder = make_finder(cfg)
-    applier = make_applier(cfg, finder=finder)
-
-    files = cfg.get_opt("files") or None
-    rel_files = finder.get_rel_paths(files) if files else None
-
-    dotfiles = applier.discover(files=rel_files)
-    if not dotfiles:
-        if not cfg.quiet:
-            print("No dotfiles found.")
-        return 0
-
-    dotfiles = applier.prepare(dotfiles)
-    changes = applier.get_changes(dotfiles)
-
-    if not changes:
-        if not cfg.quiet:
-            print("Everything is up to date.")
-        return 0
-
-    name_only = cfg.get_opt("name_only", default=False)
-    for dotfile in changes:
-        if name_only:
-            print(dotfile.target)
-        else:
-            _show_diff(dotfile)
-
-    return 1
 
 
 def _show_diff(dotfile: DotFile) -> None:
@@ -86,7 +30,6 @@ def _show_diff(dotfile: DotFile) -> None:
         print_new_file(dotfile.effective_source, str(dotfile.target))
         return
 
-    # MODIFIED
     try:
         dotfile.target.read_bytes().decode("utf-8")
         dotfile.effective_source.read_bytes().decode("utf-8")
@@ -94,8 +37,6 @@ def _show_diff(dotfile: DotFile) -> None:
         print_binary_diff(str(dotfile.target), str(dotfile.effective_source))
         return
 
-    # For mergejson files, normalise the target to canonical JSON form
-    # so key reordering does not show up as diff noise.
     if dotfile.mergejson:
         try:
             target_data = json.loads(dotfile.target.read_text(encoding="utf-8"))
@@ -111,9 +52,6 @@ def _show_diff(dotfile: DotFile) -> None:
                 tmp.write(canonical_json(target_data))
                 tmp_path = Path(tmp.name)
             try:
-                # force_python so the caller-supplied labels survive
-                # — the git backend would otherwise show the temp-file
-                # path in diff headers.
                 print_diff(
                     tmp_path,
                     dotfile.effective_source,
@@ -131,3 +69,55 @@ def _show_diff(dotfile: DotFile) -> None:
         old_label=str(dotfile.target),
         new_label=str(dotfile.effective_source),
     )
+
+
+class DiffCommand(CliCommand):
+    """Show a unified diff of what would change."""
+
+    NAME = "diff"
+    HELP = "Show a unified diff of what would change"
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "files",
+            nargs="*",
+            default=None,
+            help="Restrict to specific files (source or target paths)",
+        )
+        parser.add_argument(
+            "--name-only",
+            action="store_true",
+            default=False,
+            help="Show only the names of changed files, not the diff",
+        )
+
+    def run(self, cfg: IshConfig) -> int:
+        finder = make_finder(cfg)
+        applier = make_applier(cfg, finder=finder)
+
+        files = cfg.get_opt("files") or None
+        rel_files = finder.get_rel_paths(files) if files else None
+
+        dotfiles = applier.discover(files=rel_files)
+        if not dotfiles:
+            if not cfg.quiet:
+                print("No dotfiles found.")
+            return 0
+
+        dotfiles = applier.prepare(dotfiles)
+        changes = applier.get_changes(dotfiles)
+
+        if not changes:
+            if not cfg.quiet:
+                print("Everything is up to date.")
+            return 0
+
+        name_only = cfg.get_opt("name_only", default=False)
+        for dotfile in changes:
+            if name_only:
+                print(dotfile.target)
+            else:
+                _show_diff(dotfile)
+
+        return 1

@@ -300,7 +300,7 @@ class TestCli:
     def test_apply_dry_run(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+            ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
         assert ret == 0
         assert not (Path(tgt) / ".bashrc").exists()
 
@@ -349,13 +349,13 @@ class TestCli:
                 f'[ishfiles]\nsource = "{src_escaped}"\ntarget = "{tgt_escaped}"\n'
             )
 
-            ret = cli_main(["--config", str(cfg_path), "--dry-run", "apply"])
+            ret = cli_main(["--config", str(cfg_path), "apply", "--dry-run"])
 
         assert ret == 0
 
     def test_cli_verbose(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "--verbose", "diff"])
+            ret = cli_main(["--source", src, "--target", tgt, "diff", "--verbose"])
         assert ret == 0
 
     def test_ignores_ishconfig_and_ishscripts(self):
@@ -598,7 +598,7 @@ class TestCdCommand:
     def test_cd_dry_run(self, capsys):
         """`ishfiles cd` in dry-run mode prints what it would do and returns 0."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "cd"])
+            ret = cli_main(["--source", src, "--target", tgt, "cd", "--dry-run"])
         assert ret == 0
         captured = capsys.readouterr()
         assert "exec" in captured.err
@@ -969,8 +969,8 @@ class TestDataTemplateIsholate:
                 str(src),
                 "--target",
                 str(tgt),
-                "--dry-run",
                 "apply",
+                "--dry-run",
                 "--isholate",
             ]
         )
@@ -1051,8 +1051,8 @@ class TestAddCommand:
                     src,
                     "--target",
                     tgt,
-                    "--dry-run",
                     "add",
+                    "--dry-run",
                     str(Path(tgt) / ".bashrc"),
                 ]
             )
@@ -1198,7 +1198,7 @@ class TestInstallCommand:
                 '{"nonexistent-test-pkg": {"apt": "nonexistent-test-pkg", "cmd": "nonexistent_test_cmd_12345"}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
+            ret = cli_main(["--source", src, "--target", tgt, "install", "--dry-run"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1213,7 +1213,7 @@ class TestInstallCommand:
                 '[nonexistent-toml-pkg]\napt = "nonexistent-toml-pkg"\ncmd = "nonexistent_toml_cmd_12345"\n'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
+            ret = cli_main(["--source", src, "--target", tgt, "install", "--dry-run"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1230,7 +1230,7 @@ class TestInstallCommand:
             )
 
             ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "install", "pkg-a"]
+                ["--source", src, "--target", tgt, "install", "--dry-run", "pkg-a"]
             )
 
         assert ret == 0
@@ -1253,8 +1253,8 @@ class TestInstallCommand:
                     src,
                     "--target",
                     tgt,
-                    "--dry-run",
                     "install",
+                    "--dry-run",
                     "no-such-pkg",
                 ]
             )
@@ -1272,7 +1272,7 @@ class TestInstallCommand:
                 f'{{"python": {{"cmd": "{exe}"}}}}'
             )
 
-            ret = cli_main(["--verbose", "--source", src, "--target", tgt, "install"])
+            ret = cli_main(["--source", src, "--target", tgt, "install", "--verbose"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1290,7 +1290,7 @@ class TestInstallCommand:
                 '{"json-only-pkg": {"cmd": "nonexistent_json_only_12345"}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "install"])
+            ret = cli_main(["--source", src, "--target", tgt, "install", "--dry-run"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1314,7 +1314,7 @@ class TestApplyWithInstall:
                 '{"nonexistent-apply-pkg": {"apt": "nonexistent-apply-pkg", "cmd": "nonexistent_apply_cmd_12345"}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+            ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1324,7 +1324,7 @@ class TestApplyWithInstall:
         """apply works normally when no package config exists."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+            ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
         assert ret == 0
 
 
@@ -1409,7 +1409,7 @@ class TestRunscriptsCommand:
             _make_file(scripts_dir / "setup.sh", "#!/bin/sh\necho hello\n")
 
             ret = cli_main(
-                ["--source", src, "--target", tgt, "--dry-run", "-v", "runscripts"]
+                ["--source", src, "--target", tgt, "runscripts", "--dry-run", "-v"]
             )
 
         assert ret == 0
@@ -1578,7 +1578,7 @@ class TestApplyWithRunscripts:
                 f"#!/bin/sh\necho oops > {marker}\n",
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+            ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
 
             assert ret == 0
             assert not marker.exists()
@@ -1587,7 +1587,7 @@ class TestApplyWithRunscripts:
         """apply works normally when no ishscripts dir exists."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            ret = cli_main(["--source", src, "--target", tgt, "--dry-run", "apply"])
+            ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
         assert ret == 0
 
 
