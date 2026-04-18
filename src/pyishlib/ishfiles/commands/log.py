@@ -8,40 +8,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from ...cli_command import CliCommand
 from ...ish_config import IshConfig
 
 _LOG_DIR_SUFFIX = ".local/state/ishfiles/logs"
-
-
-def register(subparsers: argparse._SubParsersAction) -> None:
-    """Register the ``log`` subcommand."""
-    parser = subparsers.add_parser(
-        "log",
-        help="View recent ishfiles run logs",
-    )
-    parser.add_argument(
-        "-n",
-        metavar="N",
-        type=int,
-        default=1,
-        dest="log_n",
-        help="Show the Nth most recent log (default: 1 = most recent)",
-    )
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        default=False,
-        dest="log_list",
-        help="List available log files",
-    )
-    parser.add_argument(
-        "--path",
-        action="store_true",
-        default=False,
-        dest="log_path",
-        help="Print the path to the most recent log",
-    )
-    parser.set_defaults(func=run)
 
 
 def _log_dir(cfg: IshConfig) -> Path:
@@ -61,38 +31,64 @@ def _get_logs(cfg: IshConfig):
     )
 
 
-def run(cfg: IshConfig) -> int:
-    """Execute the log command.
+class LogCommand(CliCommand):
+    """View recent ishfiles run logs."""
 
-    Returns:
-        0 on success, 1 on error.
-    """
-    logs = _get_logs(cfg)
+    NAME = "log"
+    HELP = "View recent ishfiles run logs"
 
-    list_mode = cfg.get_opt("log_list") or False
-    path_mode = cfg.get_opt("log_path") or False
-    n = cfg.get_opt("log_n") or 1
-
-    if not logs:
-        print("No run logs found.")
-        return 0
-
-    if list_mode:
-        for i, lp in enumerate(logs, 1):
-            print(f"  {i:2d}. {lp.name}")
-        return 0
-
-    if path_mode:
-        print(logs[0])
-        return 0
-
-    idx = int(n) - 1
-    if idx < 0 or idx >= len(logs):
-        print(
-            f"Only {len(logs)} log(s) available (requested #{n}).",
-            file=sys.stderr,
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--index",
+            metavar="N",
+            type=int,
+            default=1,
+            dest="log_n",
+            help="Show the Nth most recent log (default: 1 = most recent)",
         )
-        return 1
+        parser.add_argument(
+            "--list",
+            action="store_true",
+            default=False,
+            dest="log_list",
+            help="List available log files",
+        )
+        parser.add_argument(
+            "--path",
+            action="store_true",
+            default=False,
+            dest="log_path",
+            help="Print the path to the most recent log",
+        )
 
-    print(logs[idx].read_text(encoding="utf-8", errors="replace"), end="")
-    return 0
+    def run(self, cfg: IshConfig) -> int:
+        logs = _get_logs(cfg)
+
+        list_mode = cfg.get_opt("log_list") or False
+        path_mode = cfg.get_opt("log_path") or False
+        n = cfg.get_opt("log_n") or 1
+
+        if not logs:
+            print("No run logs found.")
+            return 0
+
+        if list_mode:
+            for i, lp in enumerate(logs, 1):
+                print(f"  {i:2d}. {lp.name}")
+            return 0
+
+        if path_mode:
+            print(logs[0])
+            return 0
+
+        idx = int(n) - 1
+        if idx < 0 or idx >= len(logs):
+            print(
+                f"Only {len(logs)} log(s) available (requested #{n}).",
+                file=sys.stderr,
+            )
+            return 1
+
+        print(logs[idx].read_text(encoding="utf-8", errors="replace"), end="")
+        return 0

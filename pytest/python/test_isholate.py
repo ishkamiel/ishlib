@@ -104,7 +104,8 @@ def _make_args(**overrides):
         "no_cache": False,
         "rebuild_base": False,
         "rebuild_project_base": False,
-        "verbose": 0,
+        "verbose": False,
+        "debug": False,
         "quiet": False,
         "command": [],
     }
@@ -1424,7 +1425,7 @@ class TestProvisioning:
         assert bootstrap_call.kwargs.get("stdin") is _sp.DEVNULL
 
     def test_verbose_drops_apt_qq_and_adds_ishfiles_verbose(self):
-        args = _make_args(verbose=1)
+        args = _make_args(verbose=True)
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
         cmds = self._cmds(calls)
@@ -1436,8 +1437,8 @@ class TestProvisioning:
         apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
         assert any("-v" in c for c in apply_cmds)
 
-    def test_vv_passes_debug_to_ishfiles(self):
-        args = _make_args(verbose=2)
+    def test_debug_passes_debug_to_ishfiles(self):
+        args = _make_args(debug=True)
         fake_src = Path("/home/testuser/.local/share/ishfiles")
         calls, _ = self._run_with_mocks(args, host_source=fake_src)
         cmds = self._cmds(calls)
@@ -2380,11 +2381,11 @@ class TestParser:
     def test_bare_isholate_dispatches_to_run(self):
         """Running `isholate` with no arguments should open a shell via `run`."""
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.run.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli._run_subcommand", return_value=0
+                "pyishlib.isholate.commands.run._run_subcommand", return_value=0
             ) as mock_run:
                 assert cli_main([]) == 0
         args = mock_run.call_args.args[0]
@@ -2527,17 +2528,17 @@ class TestParser:
 
     def test_no_ishfiles_suppresses_provisioning(self):
         """--no-ishfiles must pass None for both sources to launch_and_exec."""
-        with patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None):
+        with patch("pyishlib.isholate.commands.run.discover_project_overlay", return_value=None):
             with patch(
-                "pyishlib.isholate.cli.get_host_user_info",
+                "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=_fake_user_info(),
             ):
                 with patch(
-                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    "pyishlib.isholate.commands.run.discover_host_ishfiles_source",
                     return_value=Path("/some/ishfiles"),
                 ):
                     with patch(
-                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                        "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
                     ) as mock_launch:
                         cli_main(["run", "--no-ishfiles"])
                         _, kwargs = mock_launch.call_args
@@ -2554,16 +2555,18 @@ class TestParser:
         args = parser.parse_args(["run", "--", "ls", "-la"])
         assert args.command == ["--", "ls", "-la"]
 
-    def test_verbose_flag_counts(self):
+    def test_verbose_flag(self):
         parser = build_parser()
-        assert parser.parse_args(["run"]).verbose == 0
-        assert parser.parse_args(["run", "-v"]).verbose == 1
-        assert parser.parse_args(["run", "-vv"]).verbose == 2
-        assert parser.parse_args(["run", "--verbose"]).verbose == 1
-        # -v/-q are available on every subcommand.
-        assert parser.parse_args(["purge", "-v"]).verbose == 1
-        assert parser.parse_args(["list", "-v"]).verbose == 1
-        assert parser.parse_args(["stop", "-v"]).verbose == 1
+        assert parser.parse_args(["run"]).verbose is False
+        assert parser.parse_args(["run"]).debug is False
+        assert parser.parse_args(["run", "-v"]).verbose is True
+        assert parser.parse_args(["run", "--verbose"]).verbose is True
+        assert parser.parse_args(["run", "--debug"]).debug is True
+        # -v/--debug/-q are available on every subcommand.
+        assert parser.parse_args(["purge", "-v"]).verbose is True
+        assert parser.parse_args(["list", "-v"]).verbose is True
+        assert parser.parse_args(["stop", "-v"]).verbose is True
+        assert parser.parse_args(["purge", "--debug"]).debug is True
 
     def test_quiet_flag(self):
         parser = build_parser()
@@ -2582,11 +2585,11 @@ class TestParser:
     def test_purge_bases_calls_purge_with_include_bases(self):
         """`purge --bases` must call purge_containers with include_bases=True."""
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.purge.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.purge_containers", return_value=0
+                "pyishlib.isholate.commands.purge.purge_containers", return_value=0
             ) as mock_purge:
                 cli_main(["purge", "--bases"])
                 _, kwargs = mock_purge.call_args
@@ -2595,11 +2598,11 @@ class TestParser:
     def test_purge_all_calls_purge_with_include_bases(self):
         """`purge --all` must also call purge_containers with include_bases=True."""
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.purge.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.purge_containers", return_value=0
+                "pyishlib.isholate.commands.purge.purge_containers", return_value=0
             ) as mock_purge:
                 cli_main(["purge", "--all"])
                 _, kwargs = mock_purge.call_args
@@ -2608,11 +2611,11 @@ class TestParser:
     def test_purge_does_not_include_bases(self):
         """Plain `purge` must NOT pass include_bases=True."""
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.purge.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.purge_containers", return_value=0
+                "pyishlib.isholate.commands.purge.purge_containers", return_value=0
             ) as mock_purge:
                 cli_main(["purge"])
                 _, kwargs = mock_purge.call_args
@@ -2621,11 +2624,11 @@ class TestParser:
     def test_list_dispatch(self):
         """`list` subcommand dispatches to list_containers with the right kwargs."""
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.list.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.list_containers", return_value=0
+                "pyishlib.isholate.commands.list.list_containers", return_value=0
             ) as mock_list:
                 cli_main(["list"])
                 _, kwargs = mock_list.call_args
@@ -2637,11 +2640,11 @@ class TestParser:
 
     def test_list_dispatch_flags(self):
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.list.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.list_containers", return_value=0
+                "pyishlib.isholate.commands.list.list_containers", return_value=0
             ) as mock_list:
                 cli_main(["list", "--running", "--all-users", "--no-bases"])
                 _, kwargs = mock_list.call_args
@@ -2653,11 +2656,11 @@ class TestParser:
 
     def test_stop_dispatch_no_names(self):
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.stop.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.stop_containers", return_value=0
+                "pyishlib.isholate.commands.stop.stop_containers", return_value=0
             ) as mock_stop:
                 cli_main(["stop"])
                 _, kwargs = mock_stop.call_args
@@ -2665,11 +2668,11 @@ class TestParser:
 
     def test_stop_dispatch_with_names(self):
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.stop.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.stop_containers", return_value=0
+                "pyishlib.isholate.commands.stop.stop_containers", return_value=0
             ) as mock_stop:
                 cli_main(["stop", "a", "b"])
                 _, kwargs = mock_stop.call_args
@@ -2677,11 +2680,11 @@ class TestParser:
 
     def test_stop_dispatch_all(self):
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.stop.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.cli.stop_containers", return_value=0
+                "pyishlib.isholate.commands.stop.stop_containers", return_value=0
             ) as mock_stop:
                 cli_main(["stop", "--all"])
                 _, kwargs = mock_stop.call_args
@@ -2689,12 +2692,12 @@ class TestParser:
 
     def test_list_does_not_call_launch_and_exec(self):
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.list.get_host_user_info",
             return_value=_fake_user_info(),
         ):
-            with patch("pyishlib.isholate.cli.list_containers", return_value=0):
+            with patch("pyishlib.isholate.commands.list.list_containers", return_value=0):
                 with patch(
-                    "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
                 ) as mock_launch:
                     cli_main(["list"])
                     mock_launch.assert_not_called()
@@ -2707,22 +2710,22 @@ class TestParser:
             'image = "images:debian/12"\n'
         )
         with patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=overlay
+            "pyishlib.isholate.commands.run.discover_project_overlay", return_value=overlay
         ):
             with patch(
-                "pyishlib.isholate.cli.load_project_config",
+                "pyishlib.isholate.commands.run.load_project_config",
                 return_value={"image": "images:debian/12"},
             ):
                 with patch(
-                    "pyishlib.isholate.cli.get_host_user_info",
+                    "pyishlib.isholate.commands.run.get_host_user_info",
                     return_value=_fake_user_info(),
                 ):
                     with patch(
-                        "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                        "pyishlib.isholate.commands.run.discover_host_ishfiles_source",
                         return_value=None,
                     ):
                         with patch(
-                            "pyishlib.isholate.cli.launch_and_exec",
+                            "pyishlib.isholate.commands.run.launch_and_exec",
                             return_value=0,
                         ) as mock_launch:
                             cli_main(["run"])
@@ -2731,17 +2734,17 @@ class TestParser:
 
     def test_cli_image_flag_overrides_project_config(self, tmp_path):
         """--image CLI flag takes priority over .ishlib/isholate/config.toml."""
-        with patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None):
+        with patch("pyishlib.isholate.commands.run.discover_project_overlay", return_value=None):
             with patch(
-                "pyishlib.isholate.cli.get_host_user_info",
+                "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=_fake_user_info(),
             ):
                 with patch(
-                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    "pyishlib.isholate.commands.run.discover_host_ishfiles_source",
                     return_value=None,
                 ):
                     with patch(
-                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                        "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
                     ) as mock_launch:
                         cli_main(["run", "--image", "images:ubuntu/22.04"])
                         called_args = mock_launch.call_args[0][0]
@@ -2749,17 +2752,17 @@ class TestParser:
 
     def test_rebuild_wires_flags_to_launch_and_exec(self):
         """--rebuild must set rebuild_base=True and rebuild_project_base=True on args."""
-        with patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None):
+        with patch("pyishlib.isholate.commands.run.discover_project_overlay", return_value=None):
             with patch(
-                "pyishlib.isholate.cli.get_host_user_info",
+                "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=_fake_user_info(),
             ):
                 with patch(
-                    "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                    "pyishlib.isholate.commands.run.discover_host_ishfiles_source",
                     return_value=None,
                 ):
                     with patch(
-                        "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                        "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
                     ) as mock_launch:
                         cli_main(["run", "--rebuild"])
                         called_args = mock_launch.call_args[0][0]
@@ -2776,15 +2779,15 @@ class TestParser:
         # cwd has no overlay; only the explicit project root does.
         _, home, _ = _fake_user_info()
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.run.get_host_user_info",
             return_value=("testuser", home, other_cwd),
         ):
             with patch(
-                "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                "pyishlib.isholate.commands.run.discover_host_ishfiles_source",
                 return_value=None,
             ):
                 with patch(
-                    "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
                 ) as mock_launch:
                     result = cli_main(["run", "--project-root", str(tmp_path)])
                     assert result == 0
@@ -2803,15 +2806,15 @@ class TestParser:
 
         _, home, _ = _fake_user_info()
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.run.get_host_user_info",
             return_value=("testuser", home, other_cwd),
         ):
             with patch(
-                "pyishlib.isholate.cli.discover_host_ishfiles_source",
+                "pyishlib.isholate.commands.run.discover_host_ishfiles_source",
                 return_value=None,
             ):
                 with patch(
-                    "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                    "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
                 ) as mock_launch:
                     result = cli_main(["run", "--project-root", str(tmp_path)])
                     assert result == 0
@@ -2822,7 +2825,7 @@ class TestParser:
         """--project-root with a non-existent path must exit with code 2."""
         nonexistent = tmp_path / "does-not-exist"
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.run.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             result = cli_main(["run", "--project-root", str(nonexistent)])
@@ -2833,7 +2836,7 @@ class TestParser:
         a_file = tmp_path / "somefile"
         a_file.write_text("hi")
         with patch(
-            "pyishlib.isholate.cli.get_host_user_info",
+            "pyishlib.isholate.commands.run.get_host_user_info",
             return_value=_fake_user_info(),
         ):
             result = cli_main(["run", "--project-root", str(a_file)])
@@ -4024,10 +4027,10 @@ class TestCliPreflightClaudeHostTools:
             patch("pyishlib.isholate.cli.is_linux", return_value=True), \
             patch("pyishlib.isholate.cli.check_incus_available", return_value=None), \
             patch(
-                "pyishlib.isholate.cli.get_host_user_info",
+                "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
             ), \
-            patch("pyishlib.isholate.cli.launch_and_exec") as mock_launch:
+            patch("pyishlib.isholate.commands.run.launch_and_exec") as mock_launch:
             rc = cli_main(["run", "--no-network", "--claude"])
 
         assert rc == 1
@@ -4043,17 +4046,17 @@ class TestCliPreflightClaudeHostTools:
             patch("pyishlib.isholate.cli.is_linux", return_value=True), \
             patch("pyishlib.isholate.cli.check_incus_available", return_value=None), \
             patch(
-                "pyishlib.isholate.cli.get_host_user_info",
+                "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
             ), \
             patch(
-                "pyishlib.isholate.cli.discover_host_ishfiles_source", return_value=None
+                "pyishlib.isholate.commands.run.discover_host_ishfiles_source", return_value=None
             ), \
-            patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None), \
-            patch("pyishlib.isholate.cli.load_project_config", return_value={}), \
-            patch("pyishlib.isholate.cli.resolve_default_shell", return_value=None), \
+            patch("pyishlib.isholate.commands.run.discover_project_overlay", return_value=None), \
+            patch("pyishlib.isholate.commands.run.load_project_config", return_value={}), \
+            patch("pyishlib.isholate.commands.run.resolve_default_shell", return_value=None), \
             patch(
-                "pyishlib.isholate.cli.launch_and_exec", return_value=0
+                "pyishlib.isholate.commands.run.launch_and_exec", return_value=0
             ) as mock_launch:
             rc = cli_main(["run", "--no-network", "--claude"])
 
@@ -4070,10 +4073,10 @@ class TestCliPreflightClaudeHostTools:
             patch("pyishlib.isholate.cli.is_linux", return_value=True), \
             patch("pyishlib.isholate.cli.check_incus_available", return_value=None), \
             patch(
-                "pyishlib.isholate.cli.get_host_user_info",
+                "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
             ), \
-            patch("pyishlib.isholate.cli.launch_and_exec") as mock_launch:
+            patch("pyishlib.isholate.commands.run.launch_and_exec") as mock_launch:
             rc = cli_main(["run", "--no-network", "--claude-base"])
 
         assert rc == 1

@@ -2030,7 +2030,15 @@ def launch_and_exec(
     """
     username, home, cwd = get_host_user_info()
 
-    verbose: int = int(getattr(args, "verbose", 0) or 0)
+    # Map unified flag shape (--verbose store_true + --debug store_true) onto
+    # the integer verbosity level the container helpers use internally:
+    # 0 = default, 1 = info (-v), 2 = debug (--debug).
+    if bool(getattr(args, "debug", False)):
+        verbose: int = 2
+    elif bool(getattr(args, "verbose", False)):
+        verbose = 1
+    else:
+        verbose = 0
     quiet: bool = bool(getattr(args, "quiet", False))
     no_cache: bool = bool(getattr(args, "no_cache", False))
     rebuild_base: bool = bool(getattr(args, "rebuild_base", False))

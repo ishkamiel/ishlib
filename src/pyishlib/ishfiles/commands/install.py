@@ -6,30 +6,26 @@ from __future__ import annotations
 
 import argparse
 
+from ...cli_command import CliCommand
 from ...ish_config import IshConfig
 from ..installer_helper import run_install
 
 
-def register(subparsers: argparse._SubParsersAction) -> None:
-    """Register the ``install`` subcommand."""
-    parser = subparsers.add_parser(
-        "install",
-        help="Install packages defined in the ishfiles package config",
-    )
-    parser.add_argument(
-        "packages",
-        nargs="*",
-        default=None,
-        help="Restrict to specific package names (default: all)",
-    )
-    parser.set_defaults(func=run)
+class InstallCommand(CliCommand):
+    """Install packages defined in the ishfiles package config."""
 
+    NAME = "install"
+    HELP = "Install packages defined in the ishfiles package config"
 
-def run(cfg: IshConfig) -> int:
-    """Execute the install command.
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "packages",
+            nargs="*",
+            default=None,
+            help="Restrict to specific package names (default: all)",
+        )
 
-    Returns:
-        0 on success, 1 on error.
-    """
-    packages = cfg.get_opt("packages") or None
-    return run_install(cfg, packages=packages)
+    def run(self, cfg: IshConfig) -> int:
+        packages = cfg.get_opt("packages") or None
+        return run_install(cfg, packages=packages)

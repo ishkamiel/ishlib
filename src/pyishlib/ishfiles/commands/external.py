@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """The ``external`` subcommand -- manage external git-repo dotfiles.
 
-Subcommands:
+Sub-subcommands:
 
 - ``external apply [paths...] [--force]`` -- fetch (if stale) and copy
   externals into the target home directory.
@@ -10,9 +10,8 @@ Subcommands:
   remote repositories for newer tagged releases and prompt to update pins.
 - ``external list`` -- show pinned revisions and cache status.
 
-The ``apply_externals_stage`` helper is shared with
-:func:`~pyishlib.ishfiles.commands.apply.run` which calls it as Phase 4b
-of the main apply pipeline.
+The :func:`apply_externals_stage` helper is shared with the
+:class:`~pyishlib.ishfiles.commands.apply.ApplyCommand` Phase 4b.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Optional, Sequence
 
+from ...cli_command import CliCommand
 from ...command_runner import CommandRunner
 from ...ish_config import IshConfig
 from ...userio import prompt_yes_no_always
@@ -34,95 +34,17 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
-
-
-def register(subparsers: argparse._SubParsersAction) -> None:
-    """Register the ``external`` subcommand with nested sub-subcommands."""
-    p = subparsers.add_parser(
-        "external",
-        help="Manage external git-repo dotfiles",
-    )
-    sub = p.add_subparsers(dest="external_cmd", required=True)
-
-    # -- apply -----------------------------------------------------------------
-    pa = sub.add_parser(
-        "apply",
-        help="Fetch (if stale) and copy externals into the target home directory",
-    )
-    pa.add_argument(
-        "paths",
-        nargs="*",
-        metavar="PATH",
-        help="Restrict to specific externals (relative target paths, e.g. .fzf)",
-    )
-    pa.add_argument(
-        "--force",
-        action="store_true",
-        default=False,
-        help="Re-fetch from the remote even if the cached revision is still fresh",
-    )
-    pa.set_defaults(func=run_apply)
-
-    # -- update ----------------------------------------------------------------
-    pu = sub.add_parser(
-        "update",
-        help="Check remote repositories for newer tagged releases",
-    )
-    pu.add_argument(
-        "paths",
-        nargs="*",
-        metavar="PATH",
-        help="Restrict to specific externals",
-    )
-    pu.add_argument(
-        "-y",
-        "--yes",
-        action="store_true",
-        default=False,
-        dest="update_yes",
-        help="Accept all updates without prompting",
-    )
-    pu.add_argument(
-        "--include-prereleases",
-        action="store_true",
-        default=False,
-        dest="include_prereleases",
-        help="Consider pre-release tags (rc, alpha, beta …) when checking for updates",
-    )
-    pu.set_defaults(func=run_update)
-
-    # -- list ------------------------------------------------------------------
-    pl = sub.add_parser(
-        "list",
-        help="Show pinned revisions and cache status",
-    )
-    pl.set_defaults(func=run_list)
-
-    p.set_defaults(func=_dispatch)
-
-
-def _dispatch(cfg: IshConfig) -> int:
-    """Fallback: log a usage warning when no sub-subcommand is given."""
-    log.warning("Usage: ishfiles external <apply|update|list>")
-    return 2
-
-
-# ---------------------------------------------------------------------------
-# Subcommand handlers
+# Sub-subcommand implementations
 # ---------------------------------------------------------------------------
 
 
 def run_apply(cfg: IshConfig) -> int:
-    """Execute ``external apply``."""
     paths = cfg.get_opt("paths") or []
     force = cfg.get_opt("force") or False
     return apply_externals_stage(cfg, paths=paths or None, force=force)
 
 
 def run_update(cfg: IshConfig) -> int:
-    """Execute ``external update``."""
     paths = cfg.get_opt("paths") or []
     auto_yes = cfg.get_opt("update_yes") or False
     include_pre = cfg.get_opt("include_prereleases") or False
@@ -168,7 +90,6 @@ def run_update(cfg: IshConfig) -> int:
 
         if do_update:
             engine.rewrite_revision(spec, candidate.latest_tag, config_path)
-            # Re-fetch at the new revision.
             spec.revision = candidate.latest_tag
             try:
                 engine.fetch(spec, force=True)
@@ -188,7 +109,6 @@ def run_update(cfg: IshConfig) -> int:
 
 
 def run_list(cfg: IshConfig) -> int:
-    """Execute ``external list``."""
     specs = load_externals(cfg)
     if not specs:
         log.info("No externals configured.")
@@ -212,6 +132,73 @@ def run_list(cfg: IshConfig) -> int:
     return 0
 
 
+class ExternalCommand(CliCommand):
+    """Manage external git-repo dotfiles (nested: apply/update/list)."""
+
+    NAME = "external"
+    HELP = "Manage external git-repo dotfiles"
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        sub = parser.add_subparsers(dest="external_cmd", required=True)
+
+        pa = sub.add_parser(
+            "apply",
+            help="Fetch (if stale) and copy externals into the target home directory",
+        )
+        pa.add_argument(
+            "paths",
+            nargs="*",
+            metavar="PATH",
+            help="Restrict to specific externals (relative target paths, e.g. .fzf)",
+        )
+        pa.add_argument(
+            "--force",
+            action="store_true",
+            default=False,
+            help="Re-fetch from the remote even if the cached revision is still fresh",
+        )
+        pa.set_defaults(func=lambda cfg: run_apply(cfg))
+
+        pu = sub.add_parser(
+            "update",
+            help="Check remote repositories for newer tagged releases",
+        )
+        pu.add_argument(
+            "paths",
+            nargs="*",
+            metavar="PATH",
+            help="Restrict to specific externals",
+        )
+        pu.add_argument(
+            "-y",
+            "--yes",
+            action="store_true",
+            default=False,
+            dest="update_yes",
+            help="Accept all updates without prompting",
+        )
+        pu.add_argument(
+            "--include-prereleases",
+            action="store_true",
+            default=False,
+            dest="include_prereleases",
+            help="Consider pre-release tags (rc, alpha, beta …) when checking for updates",
+        )
+        pu.set_defaults(func=lambda cfg: run_update(cfg))
+
+        pl = sub.add_parser(
+            "list",
+            help="Show pinned revisions and cache status",
+        )
+        pl.set_defaults(func=lambda cfg: run_list(cfg))
+
+    def run(self, cfg: IshConfig) -> int:
+        """Fallback when no sub-subcommand is given (argparse enforces required=True)."""
+        log.warning("Usage: ishfiles external <apply|update|list>")
+        return 2
+
+
 # ---------------------------------------------------------------------------
 # Shared pipeline helper
 # ---------------------------------------------------------------------------
@@ -224,18 +211,8 @@ def apply_externals_stage(
 ) -> int:
     """Fetch and apply all (or selected) externals, then seed ``cfg.context``.
 
-    Called both by :func:`run_apply` and by Phase 4b of
-    :func:`~pyishlib.ishfiles.commands.apply.run`.
-
-    Fetch errors are logged and the external is skipped; file-copy errors
-    are logged but the apply continues.  Returns 1 if any external failed
-    to fetch; 0 otherwise.
-
-    Args:
-        cfg:   :class:`~pyishlib.ish_config.IshConfig` instance.
-        paths: Restrict to externals whose ``path`` is in this sequence.
-               ``None`` means apply all.
-        force: When ``True``, bypass the refresh-period check.
+    Called both by :meth:`ExternalCommand.run` (via ``run_apply``) and by
+    Phase 4b of :class:`~pyishlib.ishfiles.commands.apply.ApplyCommand`.
 
     Returns:
         0 on success (or nothing to do), 1 if any external failed.
@@ -260,7 +237,6 @@ def apply_externals_stage(
     for spec in specs:
         log.info("Processing external: %s", spec.path)
 
-        # Fetch -----------------------------------------------------------
         try:
             fetch_result = engine.fetch(spec, force=force)
         except Exception as exc:  # noqa: BLE001
@@ -269,7 +245,6 @@ def apply_externals_stage(
             _seed_context(cfg, spec, "")
             continue
 
-        # Apply -----------------------------------------------------------
         try:
             apply_result = engine.apply(spec, target_root)
             log.info(
@@ -281,24 +256,13 @@ def apply_externals_stage(
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to apply external %s: %s", spec.path, exc)
 
-        # Seed context ---------------------------------------------------
         _seed_context(cfg, spec, fetch_result.commit_sha)
 
     return 1 if had_error else 0
 
 
 def _seed_context(cfg: IshConfig, spec: ExternalSpec, commit_sha: str) -> None:
-    """Write ``ext_<safe>_revision`` and ``ext_<safe>_commit_sha`` into context.
-
-    Scripts referencing ``${__ish_ext_fzf_revision}`` get a different
-    preprocessed body when the revision changes, so :class:`ScriptState`
-    naturally re-runs them on bump.
-
-    Args:
-        cfg:        Config object owning ``context``.
-        spec:       External spec (``path`` and ``revision``).
-        commit_sha: Resolved commit SHA (may be empty on dry-run or error).
-    """
+    """Write ``ext_<safe>_revision`` and ``ext_<safe>_commit_sha`` into context."""
     safe = re.sub(r"[^a-zA-Z0-9]", "_", spec.path).strip("_")
     cfg.context.set(f"ext_{safe}_revision", spec.revision)
     cfg.context.set(f"ext_{safe}_commit_sha", commit_sha)
