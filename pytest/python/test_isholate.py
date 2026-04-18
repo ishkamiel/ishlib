@@ -31,7 +31,8 @@ from pyishlib.isholate.config import (
     load_project_config,
     resolve_default_shell,
 )
-from pyishlib.isholate.container import (
+from pyishlib.container.incus import check_incus_available
+from pyishlib.isholate.claude import (
     _CLAUDE_ALLOW_DOMAINS,
     _CLAUDE_DNS_UPSTREAM,
     _CLAUDE_FIREWALL_APPLY_SCRIPT,
@@ -39,20 +40,21 @@ from pyishlib.isholate.container import (
     _CLAUDE_IPSET_NAME,
     _CLAUDE_IPTABLES_CHAIN,
     _CLAUDE_NETWORK_NAME,
-    _META_SOURCE_HASH,
     _apply_network_restrictions,
-    _assert_no_isholate_devices,
     _build_claude_firewall_install_script,
     _build_claude_raw_dnsmasq,
-    _check_incus_available,
     _claude_firewall_rules_in_place,
     _ensure_claude_network,
+    _install_claude_firewall,
+    _preflight_claude_host_tools,
+)
+from pyishlib.isholate.container import (
+    _META_SOURCE_HASH,
+    _assert_no_isholate_devices,
     _find_isholate_containers,
     _host_base_name,
     _image_tag,
-    _install_claude_firewall,
     _list_isholate_devices,
-    _preflight_claude_host_tools,
     _project_base_name,
     _project_hash,
     _remove_isholate_devices,
@@ -201,18 +203,14 @@ class TestSourceFingerprint:
                     returncode=0, stdout=f"{log_stdout}\n", stderr=""
                 )
             if "status" in cmd:
-                return SimpleNamespace(
-                    returncode=0, stdout=status_stdout, stderr=""
-                )
+                return SimpleNamespace(returncode=0, stdout=status_stdout, stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         return fake_run, calls
 
     def test_scopes_git_log_to_path(self):
         fake_run, calls = self._fake_git_runner()
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run):
             _source_fingerprint(self._FAKE_SOURCE)
 
         log_calls = [c for c in calls if "log" in c]
@@ -220,16 +218,12 @@ class TestSourceFingerprint:
         for c in log_calls:
             # Must be scoped with '-- .' pathspec so state outside the source
             # tree does not contribute to the fingerprint.
-            assert "--" in c and c[-1] == ".", (
-                f"git log must be path-scoped, got: {c}"
-            )
+            assert "--" in c and c[-1] == ".", f"git log must be path-scoped, got: {c}"
             assert "-C" in c and str(self._FAKE_SOURCE) in c
 
     def test_scopes_git_status_to_path(self):
         fake_run, calls = self._fake_git_runner()
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run):
             _source_fingerprint(self._FAKE_SOURCE)
 
         status_calls = [c for c in calls if "status" in c]
@@ -248,39 +242,27 @@ class TestSourceFingerprint:
         fake_run_b, _ = self._fake_git_runner(
             log_stdout="deadbeef", status_stdout=" M foo\n"
         )
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a):
             fp_a = _source_fingerprint(self._FAKE_SOURCE)
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b):
             fp_b = _source_fingerprint(self._FAKE_SOURCE)
         assert fp_a == fp_b
 
     def test_changes_when_scoped_history_changes(self):
         fake_run_a, _ = self._fake_git_runner(log_stdout="aaaaaaaa")
         fake_run_b, _ = self._fake_git_runner(log_stdout="bbbbbbbb")
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a):
             fp_a = _source_fingerprint(self._FAKE_SOURCE)
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b):
             fp_b = _source_fingerprint(self._FAKE_SOURCE)
         assert fp_a != fp_b
 
     def test_changes_when_scoped_status_changes(self):
         fake_run_a, _ = self._fake_git_runner(status_stdout="")
         fake_run_b, _ = self._fake_git_runner(status_stdout="?? newfile\n")
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run_a):
             fp_a = _source_fingerprint(self._FAKE_SOURCE)
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run_b):
             fp_b = _source_fingerprint(self._FAKE_SOURCE)
         assert fp_a != fp_b
 
@@ -291,9 +273,7 @@ class TestSourceFingerprint:
         (src / "a.txt").write_text("hello")
 
         fake_run, calls = self._fake_git_runner(log_stdout="")  # empty
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run):
             fp = _source_fingerprint(src)
 
         # Status must NOT have been called — we bailed out of the git branch.
@@ -312,9 +292,7 @@ class TestSourceFingerprint:
         def fake_run(cmd, **kwargs):
             raise FileNotFoundError("git not found")
 
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run):
             fp = _source_fingerprint(src)
         assert len(fp) == 16
 
@@ -329,9 +307,7 @@ class TestSourceFingerprint:
         def fake_run(cmd, **kwargs):
             raise _sp.CalledProcessError(128, cmd)
 
-        with patch(
-            "pyishlib.isholate.container.subprocess.run", side_effect=fake_run
-        ):
+        with patch("pyishlib.isholate.container.subprocess.run", side_effect=fake_run):
             fp = _source_fingerprint(src)
         assert len(fp) == 16
 
@@ -362,7 +338,7 @@ class TestDeviceHelpers:
     def test_list_returns_only_isholate_prefix(self):
         plain_output = "eth0\nisholate-ishlib\nroot\nisholate-ishconf\n"
         with patch(
-            "pyishlib.isholate.container._run",
+            "pyishlib.container.incus._run",
             side_effect=self._fake_run_for_list(plain_output),
         ):
             result = _list_isholate_devices("mycontainer")
@@ -371,7 +347,7 @@ class TestDeviceHelpers:
     def test_list_returns_empty_when_no_isholate_devices(self):
         plain_output = "eth0\nroot\n"
         with patch(
-            "pyishlib.isholate.container._run",
+            "pyishlib.container.incus._run",
             side_effect=self._fake_run_for_list(plain_output),
         ):
             result = _list_isholate_devices("mycontainer")
@@ -379,7 +355,7 @@ class TestDeviceHelpers:
 
     def test_list_returns_empty_on_command_failure(self):
         with patch(
-            "pyishlib.isholate.container._run",
+            "pyishlib.container.incus._run",
             side_effect=self._fake_run_for_list("", returncode=1),
         ):
             result = _list_isholate_devices("mycontainer")
@@ -396,7 +372,7 @@ class TestDeviceHelpers:
                 removed.append(cmd[5])  # device name is 6th token
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             _remove_isholate_devices("mycontainer")
 
         assert set(removed) == {"isholate-ishlib", "isholate-ishsrc"}
@@ -412,7 +388,7 @@ class TestDeviceHelpers:
                 removed.append(cmd[5])
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             _remove_isholate_devices("mycontainer")
 
         assert removed == []
@@ -420,7 +396,7 @@ class TestDeviceHelpers:
     def test_assert_raises_when_isholate_devices_remain(self):
         plain_output = "eth0\nisholate-ishlib\nroot\n"
         with patch(
-            "pyishlib.isholate.container._run",
+            "pyishlib.container.incus._run",
             side_effect=self._fake_run_for_list(plain_output),
         ):
             with pytest.raises(RuntimeError, match="isholate-ishlib"):
@@ -429,7 +405,7 @@ class TestDeviceHelpers:
     def test_assert_passes_when_clean(self):
         plain_output = "eth0\nroot\n"
         with patch(
-            "pyishlib.isholate.container._run",
+            "pyishlib.container.incus._run",
             side_effect=self._fake_run_for_list(plain_output),
         ):
             _assert_no_isholate_devices("mycontainer")  # must not raise
@@ -449,7 +425,7 @@ class TestDeviceHelpers:
                 )
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with pytest.raises(RuntimeError, match="exited with 1"):
                 _assert_no_isholate_devices("mycontainer")
 
@@ -457,27 +433,19 @@ class TestDeviceHelpers:
 class TestPurgeContainers:
     def _run_purge(self, username, existing_containers, *, include_bases=False):
         """Helper: run purge_containers with a mocked container list."""
+        import json
+
         run_calls = []
+        listing_json = json.dumps(existing_containers)
 
         def fake_run(cmd, **kwargs):
+            if cmd[:3] == ["incus", "list", "--format=json"]:
+                return SimpleNamespace(returncode=0, stdout=listing_json, stderr="")
             run_calls.append(cmd)
             return SimpleNamespace(returncode=0)
 
-        def fake_subprocess_run(cmd, **kwargs):
-            import json
-
-            return SimpleNamespace(
-                returncode=0, stdout=json.dumps(existing_containers), stderr=""
-            )
-
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
-            with patch(
-                "pyishlib.isholate.container.subprocess.run",
-                side_effect=fake_subprocess_run,
-            ):
-                rc = purge_containers(
-                    username, quiet=True, include_bases=include_bases
-                )
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
+            rc = purge_containers(username, quiet=True, include_bases=include_bases)
         return rc, run_calls
 
     def test_prefix_matches_sanitised_username(self):
@@ -552,9 +520,7 @@ def _fake_incus_list(containers):
     def _inner(cmd, **kwargs):
         import json as _json
 
-        return SimpleNamespace(
-            returncode=0, stdout=_json.dumps(containers), stderr=""
-        )
+        return SimpleNamespace(returncode=0, stdout=_json.dumps(containers), stderr="")
 
     return _inner
 
@@ -568,7 +534,7 @@ class TestFindIsholateContainers:
             {"name": "not-an-isholate-container", "status": "Running"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             entries = _find_isholate_containers(username)
@@ -588,7 +554,7 @@ class TestFindIsholateContainers:
             {"name": _project_base_name(username, Path("/p")), "status": "Stopped"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             entries = _find_isholate_containers(username, include_bases=False)
@@ -606,7 +572,7 @@ class TestFindIsholateContainers:
             {"name": pbase, "status": "Stopped"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             entries = _find_isholate_containers(username, include_bases=True)
@@ -620,7 +586,7 @@ class TestFindIsholateContainers:
             {"name": generate_name("bob"), "status": "Stopped"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             entries = _find_isholate_containers("carol", all_users=True)
@@ -636,7 +602,7 @@ class TestFindIsholateContainers:
             {"name": "isholate", "status": "Running"},  # also malformed
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             entries = _find_isholate_containers("alice", all_users=True)
@@ -652,7 +618,7 @@ class TestFindIsholateContainers:
             {"name": f"isholate-{username}-mmm", "status": "Running"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             entries = _find_isholate_containers(username)
@@ -669,7 +635,7 @@ class TestFindIsholateContainers:
 class TestListContainers:
     def test_empty_returns_zero_and_no_stdout(self, capsys):
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list([]),
         ):
             rc = list_containers("alice")
@@ -685,7 +651,7 @@ class TestListContainers:
             {"name": _host_base_name(username, _FAKE_IMAGE), "status": "Stopped"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             rc = list_containers(username)
@@ -712,7 +678,7 @@ class TestListContainers:
             {"name": ephemeral_stopped, "status": "Stopped"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             rc = list_containers(username, running_only=True)
@@ -730,7 +696,7 @@ class TestListContainers:
             {"name": host_base, "status": "Stopped"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             list_containers(username, include_bases=False)
@@ -744,7 +710,7 @@ class TestListContainers:
             {"name": generate_name("bob"), "status": "Running"},
         ]
         with patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             side_effect=_fake_incus_list(existing),
         ):
             list_containers("carol", all_users=True)
@@ -760,25 +726,23 @@ class TestListContainers:
 
 
 class TestStopContainers:
-    def _run_stop(self, username, existing_containers, *, names=None,
-                  include_bases=False):
+    def _run_stop(
+        self, username, existing_containers, *, names=None, include_bases=False
+    ):
         """Invoke stop_containers with mocked incus list + incus stop."""
+        import json
+
         stop_calls = []
+        listing_json = json.dumps(existing_containers)
 
         def fake_run(cmd, **kwargs):
+            if cmd[:3] == ["incus", "list", "--format=json"]:
+                return SimpleNamespace(returncode=0, stdout=listing_json, stderr="")
             stop_calls.append(list(cmd))
             return SimpleNamespace(returncode=0)
 
-        with patch(
-            "pyishlib.isholate.container.subprocess.run",
-            side_effect=_fake_incus_list(existing_containers),
-        ):
-            with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
-            ):
-                rc = stop_containers(
-                    username, names=names, include_bases=include_bases
-                )
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
+            rc = stop_containers(username, names=names, include_bases=include_bases)
         return rc, stop_calls
 
     def test_no_names_stops_all_running_ephemerals(self):
@@ -850,21 +814,20 @@ class TestStopContainers:
         assert stopped == []
 
     def test_stop_failure_returns_one(self):
+        import json
+
         username = "alice"
         name = generate_name(username)
         existing = [{"name": name, "status": "Running"}]
+        listing_json = json.dumps(existing)
 
         def fake_run(cmd, **kwargs):
+            if cmd[:3] == ["incus", "list", "--format=json"]:
+                return SimpleNamespace(returncode=0, stdout=listing_json, stderr="")
             return SimpleNamespace(returncode=1)
 
-        with patch(
-            "pyishlib.isholate.container.subprocess.run",
-            side_effect=_fake_incus_list(existing),
-        ):
-            with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
-            ):
-                rc = stop_containers(username, names=[name])
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
+            rc = stop_containers(username, names=[name])
         assert rc == 1
 
 
@@ -916,10 +879,10 @@ class TestLaunchAndExec:
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
+                "pyishlib.container.incus._run", side_effect=fake_run
             ) as mock_run:
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     rc = launch_and_exec(args, **launch_kwargs)
@@ -936,12 +899,18 @@ class TestLaunchAndExec:
 
         # Must create container first (without starting), with nesting enabled
         init_cmd = next(
-            (c for c in cmds if c[:4] == ["incus", "init", _FAKE_IMAGE, "test-container"]),
+            (
+                c
+                for c in cmds
+                if c[:4] == ["incus", "init", _FAKE_IMAGE, "test-container"]
+            ),
             None,
         )
         assert init_cmd is not None, "incus init not found in commands"
         assert "--config" in init_cmd, "incus init missing --config flag"
-        assert "security.nesting=true" in init_cmd, "incus init missing security.nesting=true"
+        assert "security.nesting=true" in init_cmd, (
+            "incus init missing security.nesting=true"
+        )
 
         # Must start the container
         assert ["incus", "start", "test-container"] in cmds
@@ -1120,19 +1089,17 @@ class TestLaunchAndExec:
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
+                "pyishlib.container.incus._run", side_effect=fake_run
             ) as mock_run:
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     rc = launch_and_exec(_make_args())
 
                 assert rc == 1
                 cmds = [c.args[0] for c in mock_run.call_args_list]
-                assert any(
-                    c[:3] == ["incus", "stop", "test-container"] for c in cmds
-                )
+                assert any(c[:3] == ["incus", "stop", "test-container"] for c in cmds)
 
     def test_auto_generated_name_when_none(self):
         args = _make_args(name=None)
@@ -1173,6 +1140,7 @@ class TestLaunchAndExec:
     def test_progress_messages_on_stderr_by_default(self, capsys):
         import logging
         from pyishlib.ish_logging import setup_logging
+
         setup_logging(logging.INFO)
         args = _make_args()
         self._run_with_mocks(args)
@@ -1185,6 +1153,7 @@ class TestLaunchAndExec:
     def test_quiet_suppresses_progress_messages(self, capsys):
         import logging
         from pyishlib.ish_logging import setup_logging
+
         setup_logging(logging.WARNING)
         args = _make_args(quiet=True)
         self._run_with_mocks(args)
@@ -1224,10 +1193,10 @@ class TestProvisioning:
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
+                "pyishlib.container.incus._run", side_effect=fake_run
             ) as mock_run:
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     with patch.object(Path, "is_dir", return_value=True):
@@ -1352,7 +1321,9 @@ class TestProvisioning:
         # The legacy in-container firewall packages must no longer appear
         # in the base bootstrap — restriction is applied via the
         # isholate-claude bridge at the Incus layer.
-        pkg_install_scripts = " ".join(c[-1] for c in sh_cmds if "apt-get install" in c[-1])
+        pkg_install_scripts = " ".join(
+            c[-1] for c in sh_cmds if "apt-get install" in c[-1]
+        )
         assert "iptables" not in pkg_install_scripts
         assert "ipset" not in pkg_install_scripts
         assert "dnsmasq" not in pkg_install_scripts
@@ -1446,10 +1417,10 @@ class TestProvisioning:
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
+                "pyishlib.container.incus._run", side_effect=fake_run
             ) as mock_run:
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     with patch.object(Path, "is_dir", fake_is_dir):
@@ -1568,10 +1539,7 @@ class TestBaseManagement:
 
         def fake_run(cmd, **kwargs):
             # Return the stored fingerprint for config get of source_hash
-            if (
-                cmd[:3] == ["incus", "config", "get"]
-                and _META_SOURCE_HASH in cmd
-            ):
+            if cmd[:3] == ["incus", "config", "get"] and _META_SOURCE_HASH in cmd:
                 fp = stored_fp or ""
                 return SimpleNamespace(returncode=0, stdout=fp, stderr="")
             # incus info returns success iff container_exists
@@ -1590,9 +1558,9 @@ class TestBaseManagement:
             calls.append(cmd)
             return fake_run(cmd, **kwargs)
 
-        with patch("pyishlib.isholate.container._run", side_effect=recording_run):
+        with patch("pyishlib.container.incus._run", side_effect=recording_run):
             with patch(
-                "pyishlib.isholate.container.subprocess.run",
+                "pyishlib.container.incus.subprocess.run",
                 side_effect=_fake_subprocess_run,
             ):
                 with patch.object(Path, "is_dir", return_value=True):
@@ -1662,9 +1630,7 @@ class TestBaseManagement:
 
     def test_base_is_stopped_after_creation(self):
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        name, calls = self._run_ensure_host_base(
-            fake_src, container_exists=False
-        )
+        name, calls = self._run_ensure_host_base(fake_src, container_exists=False)
         cmds = calls
         stop_cmds = [c for c in cmds if c[:2] == ["incus", "stop"]]
         assert len(stop_cmds) >= 1
@@ -1695,9 +1661,9 @@ class TestBaseManagement:
             "pyishlib.isholate.container.get_host_user_info",
             return_value=_fake_user_info(),
         ):
-            with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+            with patch("pyishlib.container.incus._run", side_effect=fake_run):
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     with patch.object(Path, "is_dir", return_value=True):
@@ -1741,7 +1707,9 @@ class TestStaleDeviceHandling:
         def fake_run(cmd, **kwargs):
             calls.append(list(cmd))
             if cmd[:2] == ["incus", "info"]:
-                return SimpleNamespace(returncode=1, stdout="", stderr="")  # pbase absent
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr=""
+                )  # pbase absent
             if cmd[:3] == ["incus", "config", "get"] and "source_hash" in str(cmd):
                 # host_base fingerprint lookup
                 if _FAKE_BASE_NAME in cmd:
@@ -1750,9 +1718,7 @@ class TestStaleDeviceHandling:
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 device_list_count[0] += 1
                 if device_list_count[0] == 1 and stale_output:
-                    return SimpleNamespace(
-                        returncode=0, stdout=stale_output, stderr=""
-                    )
+                    return SimpleNamespace(returncode=0, stdout=stale_output, stderr="")
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             return default
 
@@ -1762,9 +1728,9 @@ class TestStaleDeviceHandling:
         """ensure_project_base must remove inherited isholate-* devices before incus start."""
         fake_run, calls = self._make_pbase_run(stale_output=self._STALE_OUTPUT)
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with patch(
-                "pyishlib.isholate.container.subprocess.run",
+                "pyishlib.container.incus.subprocess.run",
                 side_effect=_fake_subprocess_run,
             ):
                 with patch(
@@ -1815,7 +1781,9 @@ class TestStaleDeviceHandling:
         def fake_run(cmd, **kwargs):
             calls.append(list(cmd))
             if cmd[:2] == ["incus", "info"]:
-                return SimpleNamespace(returncode=0, stdout="", stderr="")  # base exists
+                return SimpleNamespace(
+                    returncode=0, stdout="", stderr=""
+                )  # base exists
             if cmd[:3] == ["incus", "config", "get"] and "source_hash" in str(cmd):
                 return SimpleNamespace(returncode=0, stdout="COMPUTED\n", stderr="")
             if cmd[:4] == ["incus", "config", "device", "list"]:
@@ -1827,9 +1795,9 @@ class TestStaleDeviceHandling:
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             return default
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with patch(
-                "pyishlib.isholate.container.subprocess.run",
+                "pyishlib.container.incus.subprocess.run",
                 side_effect=_fake_subprocess_run,
             ):
                 with patch.object(Path, "is_dir", return_value=True):
@@ -1861,7 +1829,9 @@ class TestStaleDeviceHandling:
 
         def fake_run(cmd, **kwargs):
             if cmd[:2] == ["incus", "info"]:
-                return SimpleNamespace(returncode=1, stdout="", stderr="")  # base absent
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr=""
+                )  # base absent
             # device list always returns a stale entry (simulate failed removal)
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(
@@ -1869,9 +1839,9 @@ class TestStaleDeviceHandling:
                 )
             return default
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with patch(
-                "pyishlib.isholate.container.subprocess.run",
+                "pyishlib.container.incus.subprocess.run",
                 side_effect=_fake_subprocess_run,
             ):
                 with patch.object(Path, "is_dir", return_value=True):
@@ -1934,10 +1904,7 @@ class TestBaseBuildLocking:
                 with state_lock:
                     rc = 0 if state["exists"] else 1
                 return SimpleNamespace(returncode=rc, stdout="", stderr="")
-            if (
-                cmd[:3] == ["incus", "config", "get"]
-                and _META_SOURCE_HASH in cmd
-            ):
+            if cmd[:3] == ["incus", "config", "get"] and _META_SOURCE_HASH in cmd:
                 with state_lock:
                     fp = state["fingerprint"]
                 return SimpleNamespace(returncode=0, stdout=fp, stderr="")
@@ -1982,23 +1949,22 @@ class TestBaseBuildLocking:
 
         # Patches applied once outside the threads — unittest.mock.patch is
         # not thread-safe, and both workers must see the same mocked state.
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container.subprocess.run",
-            side_effect=_fake_subprocess_run,
-        ), patch.object(Path, "is_dir", return_value=True), patch(
-            "pyishlib.isholate.container._host_base_fingerprint",
-            return_value="COMPUTED",
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.container.incus.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ), \
+            patch.object(Path, "is_dir", return_value=True), \
+            patch(
+                "pyishlib.isholate.container._host_base_fingerprint",
+                return_value="COMPUTED",
+            ):
             t1 = threading.Thread(target=worker, args=(1,))
             t2 = threading.Thread(target=worker, args=(2,))
             t1.start()
             # Wait for thread 1 to be blocked inside incus init (i.e. it
             # holds the lock).
-            assert init_entered.wait(timeout=5.0), (
-                "worker 1 never entered init"
-            )
+            assert init_entered.wait(timeout=5.0), "worker 1 never entered init"
             t2.start()
             # Give t2 time to reach the flock() and block on it.
             time.sleep(0.2)
@@ -2066,9 +2032,7 @@ class TestBaseBuildLocking:
             ):
                 target = cmd[3]
                 with state_lock:
-                    state.setdefault(target, {"exists": True, "fp": ""})[
-                        "fp"
-                    ] = cmd[5]
+                    state.setdefault(target, {"exists": True, "fp": ""})["fp"] = cmd[5]
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -2087,21 +2051,20 @@ class TestBaseBuildLocking:
             except Exception as exc:  # pragma: no cover
                 errors[idx] = exc
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container.subprocess.run",
-            side_effect=_fake_subprocess_run,
-        ), patch.object(Path, "is_dir", return_value=True), patch(
-            "pyishlib.isholate.container._source_fingerprint",
-            return_value="OVERLAYFP",
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.container.incus.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ), \
+            patch.object(Path, "is_dir", return_value=True), \
+            patch(
+                "pyishlib.isholate.container._source_fingerprint",
+                return_value="OVERLAYFP",
+            ):
             t1 = threading.Thread(target=worker, args=(1,))
             t2 = threading.Thread(target=worker, args=(2,))
             t1.start()
-            assert copy_entered.wait(timeout=5.0), (
-                "worker 1 never entered copy"
-            )
+            assert copy_entered.wait(timeout=5.0), "worker 1 never entered copy"
             t2.start()
             time.sleep(0.2)
             release_copy.set()
@@ -2121,9 +2084,7 @@ class TestBaseBuildLocking:
         )
         assert results[1] == results[2] == _FAKE_PBASE_NAME
 
-    def test_parallel_ephemeral_launches_do_not_serialize(
-        self, tmp_path, monkeypatch
-    ):
+    def test_parallel_ephemeral_launches_do_not_serialize(self, tmp_path, monkeypatch):
         """Two ensure_host_base calls where the base is already valid must
         not queue on the base-build lock.  Both workers must be able to pass
         through the fast path concurrently."""
@@ -2136,10 +2097,7 @@ class TestBaseBuildLocking:
         def fake_run(cmd, **kwargs):
             if cmd[:2] == ["incus", "info"]:
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            if (
-                cmd[:3] == ["incus", "config", "get"]
-                and _META_SOURCE_HASH in cmd
-            ):
+            if cmd[:3] == ["incus", "config", "get"] and _META_SOURCE_HASH in cmd:
                 # Synchronise both threads inside the fast-path check.  If
                 # one were holding the base-build lock, the other could
                 # never reach this point — the barrier would time out.
@@ -2165,15 +2123,16 @@ class TestBaseBuildLocking:
             except Exception as exc:  # pragma: no cover
                 errors[idx] = exc
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container.subprocess.run",
-            side_effect=_fake_subprocess_run,
-        ), patch.object(Path, "is_dir", return_value=True), patch(
-            "pyishlib.isholate.container._host_base_fingerprint",
-            return_value="COMPUTED",
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.container.incus.subprocess.run",
+                side_effect=_fake_subprocess_run,
+            ), \
+            patch.object(Path, "is_dir", return_value=True), \
+            patch(
+                "pyishlib.isholate.container._host_base_fingerprint",
+                return_value="COMPUTED",
+            ):
             t1 = threading.Thread(target=worker, args=(1,))
             t2 = threading.Thread(target=worker, args=(2,))
             t1.start()
@@ -2196,20 +2155,15 @@ class TestBaseBuildLocking:
             calls.append(list(cmd))
             if cmd[:2] == ["incus", "info"]:
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            if (
-                cmd[:3] == ["incus", "config", "get"]
-                and _META_SOURCE_HASH in cmd
-            ):
-                return SimpleNamespace(
-                    returncode=0, stdout="COMPUTED", stderr=""
-                )
+            if cmd[:3] == ["incus", "config", "get"] and _META_SOURCE_HASH in cmd:
+                return SimpleNamespace(returncode=0, stdout="COMPUTED", stderr="")
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(returncode=0, stdout="{}", stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch("pyishlib.isholate.container._run", side_effect=fake_run):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with patch(
-                "pyishlib.isholate.container.subprocess.run",
+                "pyishlib.container.incus.subprocess.run",
                 side_effect=_fake_subprocess_run,
             ):
                 with patch.object(Path, "is_dir", return_value=True):
@@ -2258,16 +2212,14 @@ class TestNetworkPreflight:
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=wrapped_run
+                "pyishlib.container.incus._run", side_effect=wrapped_run
             ) as mock_run:
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     with patch.object(Path, "is_dir", return_value=True):
-                        rc = launch_and_exec(
-                            args, host_ishfiles_source=host_source
-                        )
+                        rc = launch_and_exec(args, host_ishfiles_source=host_source)
                         return mock_run.call_args_list, rc
 
     def _cmds(self, calls):
@@ -2354,7 +2306,7 @@ class TestParser:
         The check is covered by :class:`TestCheckIncusAvailable`; these tests
         exercise argparse wiring and dispatch, so we simulate a healthy host.
         """
-        with patch("pyishlib.isholate.cli._check_incus_available", return_value=None):
+        with patch("pyishlib.isholate.cli.check_incus_available", return_value=None):
             yield
 
     def test_subcommand_is_required(self):
@@ -2498,9 +2450,7 @@ class TestParser:
 
     def test_no_ishfiles_suppresses_provisioning(self):
         """--no-ishfiles must pass None for both sources to launch_and_exec."""
-        with patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
-        ):
+        with patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None):
             with patch(
                 "pyishlib.isholate.cli.get_host_user_info",
                 return_value=_fake_user_info(),
@@ -2665,9 +2615,7 @@ class TestParser:
             "pyishlib.isholate.cli.get_host_user_info",
             return_value=_fake_user_info(),
         ):
-            with patch(
-                "pyishlib.isholate.cli.list_containers", return_value=0
-            ):
+            with patch("pyishlib.isholate.cli.list_containers", return_value=0):
                 with patch(
                     "pyishlib.isholate.cli.launch_and_exec", return_value=0
                 ) as mock_launch:
@@ -2706,9 +2654,7 @@ class TestParser:
 
     def test_cli_image_flag_overrides_project_config(self, tmp_path):
         """--image CLI flag takes priority over .ishlib/isholate/config.toml."""
-        with patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
-        ):
+        with patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None):
             with patch(
                 "pyishlib.isholate.cli.get_host_user_info",
                 return_value=_fake_user_info(),
@@ -2726,9 +2672,7 @@ class TestParser:
 
     def test_rebuild_wires_flags_to_launch_and_exec(self):
         """--rebuild must set rebuild_base=True and rebuild_project_base=True on args."""
-        with patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
-        ):
+        with patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None):
             with patch(
                 "pyishlib.isholate.cli.get_host_user_info",
                 return_value=_fake_user_info(),
@@ -2900,9 +2844,7 @@ class TestDiscoverHostIshfilesSource:
         src.mkdir()
         config_dir = tmp_path / ".config" / "ishfiles"
         config_dir.mkdir(parents=True)
-        (config_dir / "config.toml").write_text(
-            f'[ishfiles]\nsource = "{src}"\n'
-        )
+        (config_dir / "config.toml").write_text(f'[ishfiles]\nsource = "{src}"\n')
         result = discover_host_ishfiles_source(tmp_path)
         assert result == src
 
@@ -2929,9 +2871,7 @@ class TestDiscoverHostIshfilesSource:
     def test_source_from_config_must_exist(self, tmp_path):
         config_dir = tmp_path / ".config" / "ishfiles"
         config_dir.mkdir(parents=True)
-        (config_dir / "config.toml").write_text(
-            'source = "/nonexistent/path"\n'
-        )
+        (config_dir / "config.toml").write_text('source = "/nonexistent/path"\n')
         result = discover_host_ishfiles_source(tmp_path)
         assert result is None
 
@@ -2962,9 +2902,7 @@ class TestResolveDefaultShell:
 
     def test_reads_from_host_repo_config(self, tmp_path):
         host_src = tmp_path / "ishfiles-src"
-        self._write_ishfiles_config(
-            host_src / "ishconfig" / "config.toml", "/bin/fish"
-        )
+        self._write_ishfiles_config(host_src / "ishconfig" / "config.toml", "/bin/fish")
         result = resolve_default_shell(tmp_path, host_src, None)
         assert result == "/bin/fish"
 
@@ -2973,9 +2911,7 @@ class TestResolveDefaultShell:
             tmp_path / ".config" / "ishfiles" / "config.toml", "/bin/zsh"
         )
         host_src = tmp_path / "ishfiles-src"
-        self._write_ishfiles_config(
-            host_src / "ishconfig" / "config.toml", "/bin/fish"
-        )
+        self._write_ishfiles_config(host_src / "ishconfig" / "config.toml", "/bin/fish")
         result = resolve_default_shell(tmp_path, host_src, None)
         assert result == "/bin/zsh"
 
@@ -2984,9 +2920,7 @@ class TestResolveDefaultShell:
             tmp_path / ".config" / "ishfiles" / "config.toml", "/bin/zsh"
         )
         overlay = tmp_path / "project" / ".ishlib" / "ishfiles"
-        self._write_ishfiles_config(
-            overlay / "ishconfig" / "config.toml", "/bin/fish"
-        )
+        self._write_ishfiles_config(overlay / "ishconfig" / "config.toml", "/bin/fish")
         result = resolve_default_shell(tmp_path, None, overlay)
         assert result == "/bin/fish"
 
@@ -3031,35 +2965,29 @@ class TestCheckIncusAvailable:
         """Return a patch context for subprocess.run that mimics incus info."""
         result = SimpleNamespace(returncode=returncode, stdout="", stderr=stderr)
         return patch(
-            "pyishlib.isholate.container.subprocess.run",
+            "pyishlib.container.incus.subprocess.run",
             return_value=result,
         )
 
     def test_missing_binary_debian(self):
-        with patch("pyishlib.isholate.container.shutil.which", return_value=None):
-            with patch(
-                "pyishlib.isholate.container.detect_distro", return_value="debian"
-            ):
-                msg = _check_incus_available()
+        with patch("pyishlib.container.incus.shutil.which", return_value=None):
+            with patch("pyishlib.container.incus.detect_distro", return_value="debian"):
+                msg = check_incus_available()
         assert msg is not None
         assert "not found on PATH" in msg
         assert "apt install incus" in msg
 
     def test_missing_binary_fedora(self):
-        with patch("pyishlib.isholate.container.shutil.which", return_value=None):
-            with patch(
-                "pyishlib.isholate.container.detect_distro", return_value="fedora"
-            ):
-                msg = _check_incus_available()
+        with patch("pyishlib.container.incus.shutil.which", return_value=None):
+            with patch("pyishlib.container.incus.detect_distro", return_value="fedora"):
+                msg = check_incus_available()
         assert msg is not None
         assert "dnf install incus" in msg
 
     def test_missing_binary_unknown_distro(self):
-        with patch("pyishlib.isholate.container.shutil.which", return_value=None):
-            with patch(
-                "pyishlib.isholate.container.detect_distro", return_value=None
-            ):
-                msg = _check_incus_available()
+        with patch("pyishlib.container.incus.shutil.which", return_value=None):
+            with patch("pyishlib.container.incus.detect_distro", return_value=None):
+                msg = check_incus_available()
         assert msg is not None
         # Match on the path substring rather than a full hostname so the
         # test doesn't look like URL-origin validation to static analysers.
@@ -3067,19 +2995,19 @@ class TestCheckIncusAvailable:
 
     def test_healthy_returns_none(self):
         with patch(
-            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+            "pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"
         ):
             with self._patch_incus_info(0):
-                assert _check_incus_available() is None
+                assert check_incus_available() is None
 
     def test_permission_denied(self):
         with patch(
-            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+            "pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"
         ):
             with self._patch_incus_info(
                 1, stderr="Error: permission denied on /var/lib/incus/unix.socket"
             ):
-                msg = _check_incus_available()
+                msg = check_incus_available()
         assert msg is not None
         assert "permission denied" in msg.lower()
         assert "usermod -aG incus-admin" in msg
@@ -3087,35 +3015,36 @@ class TestCheckIncusAvailable:
 
     def test_daemon_not_initialized(self):
         with patch(
-            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+            "pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"
         ):
             with self._patch_incus_info(
                 1, stderr="Error: Daemon is not initialized, run 'incus admin init'"
             ):
-                msg = _check_incus_available()
+                msg = check_incus_available()
         assert msg is not None
         assert "incus admin init" in msg
 
     def test_connection_refused(self):
         with patch(
-            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+            "pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"
         ):
             with self._patch_incus_info(
-                1, stderr="dial unix /var/lib/incus/unix.socket: connect: connection refused"
+                1,
+                stderr="dial unix /var/lib/incus/unix.socket: connect: connection refused",
             ):
-                msg = _check_incus_available()
+                msg = check_incus_available()
         assert msg is not None
         assert "daemon is not ready" in msg.lower()
         assert "systemctl" in msg
 
     def test_unknown_failure_surfaces_stderr(self):
         with patch(
-            "pyishlib.isholate.container.shutil.which", return_value="/usr/bin/incus"
+            "pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"
         ):
             with self._patch_incus_info(
                 2, stderr="Error: something surprising went wrong"
             ):
-                msg = _check_incus_available()
+                msg = check_incus_available()
         assert msg is not None
         assert "something surprising went wrong" in msg
         assert "exit 2" in msg
@@ -3126,7 +3055,7 @@ class TestCliIncusPreflight:
 
     def test_main_returns_1_and_prints_guidance(self, capsys):
         with patch(
-            "pyishlib.isholate.cli._check_incus_available",
+            "pyishlib.isholate.cli.check_incus_available",
             return_value="isholate: error: TEST GUIDANCE",
         ):
             rc = cli_main(["run"])
@@ -3137,7 +3066,7 @@ class TestCliIncusPreflight:
     def test_help_works_without_incus(self, capsys):
         """`--help` must still print usage on hosts without a healthy incus."""
         with patch(
-            "pyishlib.isholate.cli._check_incus_available",
+            "pyishlib.isholate.cli.check_incus_available",
             return_value="isholate: error: SHOULD NOT BE PRINTED",
         ) as mock_check:
             with pytest.raises(SystemExit) as exc_info:
@@ -3228,10 +3157,10 @@ class TestClaudeBaseMountsInLaunch:
             return_value=_fake_user_info(),
         ):
             with patch(
-                "pyishlib.isholate.container._run", side_effect=fake_run
+                "pyishlib.container.incus._run", side_effect=fake_run
             ) as mock_run:
                 with patch(
-                    "pyishlib.isholate.container.subprocess.run",
+                    "pyishlib.container.incus.subprocess.run",
                     side_effect=_fake_subprocess_run,
                 ):
                     rc = launch_and_exec(args)
@@ -3267,7 +3196,9 @@ class TestClaudeBaseMountsInLaunch:
         with patch(
             "pyishlib.isholate.container._apply_network_restrictions"
         ) as mock_net:
-            with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
+            with patch.object(
+                Path, "is_file", lambda self: str(self) == str(cred_path)
+            ):
                 with patch.object(Path, "is_dir", lambda self: False):
                     self._run_with_mocks(args)
 
@@ -3292,9 +3223,8 @@ class TestApplyNetworkRestrictions:
 
     def test_no_claude_detaches_eth0_device(self):
         """Without --claude we remove eth0 at the Incus layer; no iptables."""
-        with patch("pyishlib.isholate.container._run") as mock_run, patch(
-            "pyishlib.isholate.container._run_checked"
-        ) as mock_checked:
+        with patch("pyishlib.container.incus._run") as mock_run, \
+            patch("pyishlib.container.incus._run_checked") as mock_checked:
             mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
             mock_checked.return_value = SimpleNamespace(
                 returncode=0, stdout="", stderr=""
@@ -3348,18 +3278,16 @@ class TestApplyNetworkRestrictions:
         helpers are mocked here and covered by their own suites.
         """
         with patch(
-            "pyishlib.isholate.container._ensure_claude_network",
-            return_value=_CLAUDE_NETWORK_NAME,
-        ) as mock_ensure, patch(
-            "pyishlib.isholate.container._claude_firewall_rules_in_place",
-            return_value=True,
-        ) as mock_in_place, patch(
-            "pyishlib.isholate.container._install_claude_firewall"
-        ) as mock_install, patch(
-            "pyishlib.isholate.container._run"
-        ) as mock_run, patch(
-            "pyishlib.isholate.container._run_checked"
-        ) as mock_checked:
+                "pyishlib.isholate.claude._ensure_claude_network",
+                return_value=_CLAUDE_NETWORK_NAME,
+            ) as mock_ensure, \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_rules_in_place",
+                return_value=True,
+            ) as mock_in_place, \
+            patch("pyishlib.isholate.claude._install_claude_firewall") as mock_install, \
+            patch("pyishlib.container.incus._run") as mock_run, \
+            patch("pyishlib.container.incus._run_checked") as mock_checked:
             mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
             mock_checked.return_value = SimpleNamespace(
                 returncode=0, stdout="", stderr=""
@@ -3428,18 +3356,16 @@ class TestApplyNetworkRestrictions:
     def test_claude_installs_firewall_when_rules_missing(self):
         """If _claude_firewall_rules_in_place is False, install is invoked."""
         with patch(
-            "pyishlib.isholate.container._ensure_claude_network",
-            return_value=_CLAUDE_NETWORK_NAME,
-        ), patch(
-            "pyishlib.isholate.container._claude_firewall_rules_in_place",
-            return_value=False,
-        ), patch(
-            "pyishlib.isholate.container._install_claude_firewall"
-        ) as mock_install, patch(
-            "pyishlib.isholate.container._run"
-        ) as mock_run, patch(
-            "pyishlib.isholate.container._run_checked"
-        ) as mock_checked:
+                "pyishlib.isholate.claude._ensure_claude_network",
+                return_value=_CLAUDE_NETWORK_NAME,
+            ), \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_rules_in_place",
+                return_value=False,
+            ), \
+            patch("pyishlib.isholate.claude._install_claude_firewall") as mock_install, \
+            patch("pyishlib.container.incus._run") as mock_run, \
+            patch("pyishlib.container.incus._run_checked") as mock_checked:
             mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
             mock_checked.return_value = SimpleNamespace(
                 returncode=0, stdout="", stderr=""
@@ -3475,9 +3401,7 @@ class TestBuildClaudeRawDnsmasq:
         # ipset= takes a slash-separated domain list followed by the set name.
         expected_suffix = f"/{_CLAUDE_IPSET_NAME}"
         ipset_lines = [line for line in raw.split("\n") if line.startswith("ipset=")]
-        assert len(ipset_lines) == 1, (
-            f"expected one ipset= line, got {ipset_lines!r}"
-        )
+        assert len(ipset_lines) == 1, f"expected one ipset= line, got {ipset_lines!r}"
         line = ipset_lines[0]
         assert line.endswith(expected_suffix)
         for domain in _CLAUDE_ALLOW_DOMAINS:
@@ -3512,11 +3436,8 @@ class TestEnsureClaudeNetwork:
                 return SimpleNamespace(returncode=1, stdout="", stderr="not found")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ) as mock_run, patch(
-            "pyishlib.isholate.container._run_checked"
-        ) as mock_checked:
+        with patch("pyishlib.container.incus._run", side_effect=fake_run) as mock_run, \
+            patch("pyishlib.container.incus._run_checked") as mock_checked:
             mock_checked.return_value = SimpleNamespace(
                 returncode=0, stdout="", stderr=""
             )
@@ -3566,11 +3487,8 @@ class TestEnsureClaudeNetwork:
         def fake_run(cmd, **kwargs):
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._run_checked"
-        ) as mock_checked:
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch("pyishlib.container.incus._run_checked") as mock_checked:
             mock_checked.return_value = SimpleNamespace(
                 returncode=0, stdout="", stderr=""
             )
@@ -3601,11 +3519,8 @@ class TestEnsureClaudeNetwork:
         def fake_run(cmd, **kwargs):
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._run_checked"
-        ) as mock_checked:
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch("pyishlib.container.incus._run_checked") as mock_checked:
             mock_checked.return_value = SimpleNamespace(
                 returncode=0, stdout="", stderr=""
             )
@@ -3614,8 +3529,7 @@ class TestEnsureClaudeNetwork:
         raw_sets = [
             cmd
             for cmd in self._collect_cmds(mock_checked.call_args_list)
-            if cmd[:3] == ["incus", "network", "set"]
-            and cmd[4] == "raw.dnsmasq"
+            if cmd[:3] == ["incus", "network", "set"] and cmd[4] == "raw.dnsmasq"
         ]
         assert len(raw_sets) == 1
         value = raw_sets[0][5]  # key=cmd[4], value=cmd[5] (separate args)
@@ -3641,12 +3555,11 @@ class TestClaudeFirewallRulesInPlace:
                 return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
             return SimpleNamespace(returncode=1, stdout="", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
-            return_value=True,
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
+                return_value=True,
+            ):
             assert _claude_firewall_rules_in_place() is True
 
     def test_returns_false_when_systemd_unit_disabled(self):
@@ -3657,12 +3570,11 @@ class TestClaudeFirewallRulesInPlace:
                 return SimpleNamespace(returncode=1, stdout="disabled\n", stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
-            return_value=True,
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
+                return_value=True,
+            ):
             assert _claude_firewall_rules_in_place() is False
 
     def test_returns_false_when_on_disk_content_drifts(self):
@@ -3676,12 +3588,11 @@ class TestClaudeFirewallRulesInPlace:
         def fake_run(cmd, **kwargs):
             return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
-            return_value=False,
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
+                return_value=False,
+            ):
             assert _claude_firewall_rules_in_place() is False
 
     def test_returns_false_when_systemctl_missing(self):
@@ -3692,12 +3603,11 @@ class TestClaudeFirewallRulesInPlace:
                 raise FileNotFoundError(2, "No such file or directory", "systemctl")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
-            return_value=True,
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
+                return_value=True,
+            ):
             assert _claude_firewall_rules_in_place() is False
 
     def test_does_not_invoke_sudo_or_netfilter_tools(self):
@@ -3713,12 +3623,11 @@ class TestClaudeFirewallRulesInPlace:
             calls.append(list(cmd))
             return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
 
-        with patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ), patch(
-            "pyishlib.isholate.container._claude_firewall_on_disk_matches",
-            return_value=True,
-        ):
+        with patch("pyishlib.container.incus._run", side_effect=fake_run), \
+            patch(
+                "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
+                return_value=True,
+            ):
             _claude_firewall_rules_in_place()
 
         forbidden = {"sudo", "ipset", "iptables"}
@@ -3733,76 +3642,65 @@ class TestClaudeFirewallOnDiskMatches:
 
     def test_returns_true_when_both_files_match(self, tmp_path):
         """Both files present and identical to the embedded content -> True."""
-        from pyishlib.isholate import container
+        from pyishlib.isholate import claude
 
         apply_path = tmp_path / "apply.sh"
         unit_path = tmp_path / "unit.service"
-        apply_path.write_text(container._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
-        unit_path.write_text(container._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
-        with patch.object(
-            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
-        ), patch.object(
-            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
-        ):
-            assert container._claude_firewall_on_disk_matches() is True
+        apply_path.write_text(claude._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
+        unit_path.write_text(claude._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
+        with patch.object(claude, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)), \
+            patch.object(claude, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)):
+            assert claude._claude_firewall_on_disk_matches() is True
 
     def test_returns_false_when_apply_script_missing(self, tmp_path):
         """Missing apply script file -> False."""
-        from pyishlib.isholate import container
+        from pyishlib.isholate import claude
 
         unit_path = tmp_path / "unit.service"
-        unit_path.write_text(container._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
+        unit_path.write_text(claude._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
         with patch.object(
-            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(tmp_path / "missing.sh")
-        ), patch.object(
-            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
-        ):
-            assert container._claude_firewall_on_disk_matches() is False
+                claude, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(tmp_path / "missing.sh")
+            ), \
+            patch.object(claude, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)):
+            assert claude._claude_firewall_on_disk_matches() is False
 
     def test_returns_false_when_unit_missing(self, tmp_path):
         """Missing systemd unit file -> False."""
-        from pyishlib.isholate import container
+        from pyishlib.isholate import claude
 
         apply_path = tmp_path / "apply.sh"
-        apply_path.write_text(container._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
-        with patch.object(
-            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
-        ), patch.object(
-            container,
-            "_CLAUDE_FIREWALL_SYSTEMD_UNIT",
-            str(tmp_path / "missing.service"),
-        ):
-            assert container._claude_firewall_on_disk_matches() is False
+        apply_path.write_text(claude._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
+        with patch.object(claude, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)), \
+            patch.object(
+                claude,
+                "_CLAUDE_FIREWALL_SYSTEMD_UNIT",
+                str(tmp_path / "missing.service"),
+            ):
+            assert claude._claude_firewall_on_disk_matches() is False
 
     def test_returns_false_when_apply_script_stale(self, tmp_path):
         """Apply script content drifted from embedded -> False (triggers reinstall)."""
-        from pyishlib.isholate import container
+        from pyishlib.isholate import claude
 
         apply_path = tmp_path / "apply.sh"
         unit_path = tmp_path / "unit.service"
         apply_path.write_text("# stale content from previous isholate version\n")
-        unit_path.write_text(container._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
-        with patch.object(
-            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
-        ), patch.object(
-            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
-        ):
-            assert container._claude_firewall_on_disk_matches() is False
+        unit_path.write_text(claude._CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT)
+        with patch.object(claude, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)), \
+            patch.object(claude, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)):
+            assert claude._claude_firewall_on_disk_matches() is False
 
     def test_returns_false_when_unit_stale(self, tmp_path):
         """Unit content drifted from embedded -> False."""
-        from pyishlib.isholate import container
+        from pyishlib.isholate import claude
 
         apply_path = tmp_path / "apply.sh"
         unit_path = tmp_path / "unit.service"
-        apply_path.write_text(container._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
+        apply_path.write_text(claude._CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT)
         unit_path.write_text("# stale unit content\n")
-        with patch.object(
-            container, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)
-        ), patch.object(
-            container, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)
-        ):
-            assert container._claude_firewall_on_disk_matches() is False
+        with patch.object(claude, "_CLAUDE_FIREWALL_APPLY_SCRIPT", str(apply_path)), \
+            patch.object(claude, "_CLAUDE_FIREWALL_SYSTEMD_UNIT", str(unit_path)):
+            assert claude._claude_firewall_on_disk_matches() is False
 
 
 class TestBuildClaudeFirewallInstallScript:
@@ -3827,9 +3725,9 @@ class TestBuildClaudeFirewallInstallScript:
         # The apply script path appears as a standalone command line near the
         # end of the install script.
         lines = script.splitlines()
-        assert any(
-            line.strip() == _CLAUDE_FIREWALL_APPLY_SCRIPT for line in lines
-        ), "install script must run the apply helper once"
+        assert any(line.strip() == _CLAUDE_FIREWALL_APPLY_SCRIPT for line in lines), (
+            "install script must run the apply helper once"
+        )
 
     def test_apply_script_references_ipset_and_chain(self):
         """The embedded apply script must actually configure our set + chain."""
@@ -3861,11 +3759,10 @@ class TestInstallClaudeFirewall:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with patch(
-            "pyishlib.isholate.container.shutil.which",
-            side_effect=self._all_tools_present,
-        ), patch(
-            "pyishlib.isholate.container._run", side_effect=fake_run
-        ) as mock_run:
+                "pyishlib.isholate.claude.shutil.which",
+                side_effect=self._all_tools_present,
+            ), \
+            patch("pyishlib.container.incus._run", side_effect=fake_run) as mock_run:
             _install_claude_firewall()
 
         # One _run call, and it's the sudo invocation.
@@ -3881,9 +3778,7 @@ class TestInstallClaudeFirewall:
         def fake_which(tool):
             return None if tool == "ipset" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             with pytest.raises(RuntimeError) as excinfo:
                 _install_claude_firewall()
         msg = str(excinfo.value)
@@ -3896,9 +3791,7 @@ class TestInstallClaudeFirewall:
         def fake_which(tool):
             return None if tool == "iptables" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             with pytest.raises(RuntimeError) as excinfo:
                 _install_claude_firewall()
         msg = str(excinfo.value)
@@ -3911,9 +3804,7 @@ class TestInstallClaudeFirewall:
         def fake_which(tool):
             return None if tool == "systemctl" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             with pytest.raises(RuntimeError) as excinfo:
                 _install_claude_firewall()
         msg = str(excinfo.value)
@@ -3926,9 +3817,7 @@ class TestInstallClaudeFirewall:
         def fake_which(tool):
             return None if tool == "sudo" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             with pytest.raises(RuntimeError, match="sudo not found"):
                 _install_claude_firewall()
 
@@ -3939,9 +3828,7 @@ class TestInstallClaudeFirewall:
             # Only systemctl is present; ipset and iptables are missing.
             return "/usr/bin/systemctl" if tool == "systemctl" else None
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             with pytest.raises(RuntimeError) as excinfo:
                 _install_claude_firewall()
         msg = str(excinfo.value)
@@ -3955,9 +3842,10 @@ class TestInstallClaudeFirewall:
             return SimpleNamespace(returncode=1, stdout="", stderr="denied")
 
         with patch(
-            "pyishlib.isholate.container.shutil.which",
-            side_effect=self._all_tools_present,
-        ), patch("pyishlib.isholate.container._run", side_effect=fake_run):
+                "pyishlib.isholate.claude.shutil.which",
+                side_effect=self._all_tools_present,
+            ), \
+            patch("pyishlib.container.incus._run", side_effect=fake_run):
             with pytest.raises(RuntimeError, match="failed to install"):
                 _install_claude_firewall()
 
@@ -3978,7 +3866,7 @@ class TestPreflightClaudeHostTools:
     def test_returns_none_when_all_tools_present(self):
         """All tools on PATH -> None (no error)."""
         with patch(
-            "pyishlib.isholate.container.shutil.which",
+            "pyishlib.isholate.claude.shutil.which",
             side_effect=self._all_present,
         ):
             assert _preflight_claude_host_tools() is None
@@ -3989,9 +3877,7 @@ class TestPreflightClaudeHostTools:
         def fake_which(tool):
             return None if tool == "ipset" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             msg = _preflight_claude_host_tools()
         assert msg is not None
         assert "ipset" in msg
@@ -4002,9 +3888,7 @@ class TestPreflightClaudeHostTools:
         def fake_which(tool):
             return None if tool == "iptables" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             msg = _preflight_claude_host_tools()
         assert msg is not None
         assert "iptables" in msg
@@ -4015,9 +3899,7 @@ class TestPreflightClaudeHostTools:
         def fake_which(tool):
             return None if tool == "systemctl" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             msg = _preflight_claude_host_tools()
         assert msg is not None
         assert "systemctl" in msg
@@ -4028,9 +3910,7 @@ class TestPreflightClaudeHostTools:
         def fake_which(tool):
             return None if tool == "sudo" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             msg = _preflight_claude_host_tools()
         assert msg is not None
         assert "sudo" in msg
@@ -4041,9 +3921,7 @@ class TestPreflightClaudeHostTools:
         def fake_which(tool):
             return "/usr/bin/systemctl" if tool == "systemctl" else None
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ):
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which):
             msg = _preflight_claude_host_tools()
         assert msg is not None
         assert "ipset" in msg
@@ -4065,18 +3943,14 @@ class TestCliPreflightClaudeHostTools:
         def fake_which(tool):
             return None if tool == "ipset" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ), patch(
-            "pyishlib.isholate.cli.is_linux", return_value=True
-        ), patch(
-            "pyishlib.isholate.cli._check_incus_available", return_value=None
-        ), patch(
-            "pyishlib.isholate.cli.get_host_user_info",
-            return_value=("testuser", tmp_path, tmp_path),
-        ), patch(
-            "pyishlib.isholate.cli.launch_and_exec"
-        ) as mock_launch:
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which), \
+            patch("pyishlib.isholate.cli.is_linux", return_value=True), \
+            patch("pyishlib.isholate.cli.check_incus_available", return_value=None), \
+            patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=("testuser", tmp_path, tmp_path),
+            ), \
+            patch("pyishlib.isholate.cli.launch_and_exec") as mock_launch:
             rc = cli_main(["run", "--no-network", "--claude"])
 
         assert rc == 1
@@ -4088,26 +3962,22 @@ class TestCliPreflightClaudeHostTools:
         def fake_which(tool):
             return f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ), patch(
-            "pyishlib.isholate.cli.is_linux", return_value=True
-        ), patch(
-            "pyishlib.isholate.cli._check_incus_available", return_value=None
-        ), patch(
-            "pyishlib.isholate.cli.get_host_user_info",
-            return_value=("testuser", tmp_path, tmp_path),
-        ), patch(
-            "pyishlib.isholate.cli.discover_host_ishfiles_source", return_value=None
-        ), patch(
-            "pyishlib.isholate.cli.discover_project_overlay", return_value=None
-        ), patch(
-            "pyishlib.isholate.cli.load_project_config", return_value={}
-        ), patch(
-            "pyishlib.isholate.cli.resolve_default_shell", return_value=None
-        ), patch(
-            "pyishlib.isholate.cli.launch_and_exec", return_value=0
-        ) as mock_launch:
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which), \
+            patch("pyishlib.isholate.cli.is_linux", return_value=True), \
+            patch("pyishlib.isholate.cli.check_incus_available", return_value=None), \
+            patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=("testuser", tmp_path, tmp_path),
+            ), \
+            patch(
+                "pyishlib.isholate.cli.discover_host_ishfiles_source", return_value=None
+            ), \
+            patch("pyishlib.isholate.cli.discover_project_overlay", return_value=None), \
+            patch("pyishlib.isholate.cli.load_project_config", return_value={}), \
+            patch("pyishlib.isholate.cli.resolve_default_shell", return_value=None), \
+            patch(
+                "pyishlib.isholate.cli.launch_and_exec", return_value=0
+            ) as mock_launch:
             rc = cli_main(["run", "--no-network", "--claude"])
 
         assert rc == 0
@@ -4119,18 +3989,14 @@ class TestCliPreflightClaudeHostTools:
         def fake_which(tool):
             return None if tool == "ipset" else f"/usr/bin/{tool}"
 
-        with patch(
-            "pyishlib.isholate.container.shutil.which", side_effect=fake_which
-        ), patch(
-            "pyishlib.isholate.cli.is_linux", return_value=True
-        ), patch(
-            "pyishlib.isholate.cli._check_incus_available", return_value=None
-        ), patch(
-            "pyishlib.isholate.cli.get_host_user_info",
-            return_value=("testuser", tmp_path, tmp_path),
-        ), patch(
-            "pyishlib.isholate.cli.launch_and_exec"
-        ) as mock_launch:
+        with patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which), \
+            patch("pyishlib.isholate.cli.is_linux", return_value=True), \
+            patch("pyishlib.isholate.cli.check_incus_available", return_value=None), \
+            patch(
+                "pyishlib.isholate.cli.get_host_user_info",
+                return_value=("testuser", tmp_path, tmp_path),
+            ), \
+            patch("pyishlib.isholate.cli.launch_and_exec") as mock_launch:
             rc = cli_main(["run", "--no-network", "--claude-base"])
 
         assert rc == 1

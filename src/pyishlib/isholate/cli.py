@@ -17,8 +17,10 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
+from ..container.incus import check_incus_available
 from ..environment import is_linux
 from ..ish_logging import setup_logging
+from .claude import _preflight_claude_host_tools
 from .config import (
     discover_host_ishfiles_source,
     discover_project_overlay,
@@ -26,8 +28,6 @@ from .config import (
     resolve_default_shell,
 )
 from .container import (
-    _check_incus_available,
-    _preflight_claude_host_tools,
     get_host_user_info,
     launch_and_exec,
     list_containers,
@@ -451,7 +451,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Run the incus preflight after argparse so that `--help` still works on
     # hosts without a healthy incus setup.
-    incus_guidance = _check_incus_available()
+    incus_guidance = check_incus_available()
     if incus_guidance is not None:
         log.error("%s", incus_guidance)
         return 1
