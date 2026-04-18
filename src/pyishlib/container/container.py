@@ -106,6 +106,24 @@ class Container(ABC):
         not raise on transport-level errors; callers may retry or log.
         """
 
+    @abstractmethod
+    def push_file(
+        self,
+        host_src: Path,
+        container_path: str,
+        *,
+        uid: Optional[int] = None,
+        gid: Optional[int] = None,
+        mode: Optional[int] = None,
+    ) -> bool:
+        """Copy *host_src* into the container at *container_path*.
+
+        Optional ``uid``/``gid``/``mode`` set the in-container ownership
+        and permissions (backends map these onto their native flags).
+        Returns True on success, False on failure.  Implementations must
+        not raise on transport-level errors.
+        """
+
     # ------------------------------------------------------------------
     # Device primitives
     # ------------------------------------------------------------------

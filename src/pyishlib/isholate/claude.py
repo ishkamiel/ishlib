@@ -14,12 +14,14 @@ is tool-agnostic; anything that is specific to the Claude API lives here.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..container import incus as _incus
 from ..container.incus import IncusContainer
@@ -84,14 +86,102 @@ def _add_claude_mounts(
         )
 
 
-def _add_claude_base_mounts(
-    name: str, home: Path, username: str, *, quiet: bool = False
+# Fields copied verbatim from the host's ``~/.claude.json`` into the
+# synthesised in-container copy.  ``oauthAccount`` is the field Claude Code
+# actually uses to decide "the user is logged in"; the others suppress
+# first-run prompts without leaking session / project state.
+_CLAUDE_JSON_AUTH_ALLOWLIST: tuple = (
+    "oauthAccount",
+    "userID",
+    "firstStartTime",
+)
+
+
+def _build_minimal_claude_json(home: Path) -> Optional[Dict[str, Any]]:
+    """Return a minimal ``.claude.json`` payload for ``--claude-base``.
+
+    Reads the host's ``~/.claude.json`` and returns only the auth-identity
+    fields from :data:`_CLAUDE_JSON_AUTH_ALLOWLIST`, plus a hard-coded
+    ``hasCompletedOnboarding=True`` so the container skips onboarding.
+
+    Returns ``None`` when the host file is missing, unparseable, or lacks
+    an ``oauthAccount`` — in all three cases the container cannot be made
+    to recognise the credentials and the caller should warn instead.
+    """
+    src = home / ".claude.json"
+    if not src.is_file():
+        return None
+    try:
+        with open(src, encoding="utf-8") as f:
+            host_cfg = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(host_cfg, dict):
+        return None
+    if not isinstance(host_cfg.get("oauthAccount"), dict):
+        return None
+
+    minimal: Dict[str, Any] = {"hasCompletedOnboarding": True}
+    for key in _CLAUDE_JSON_AUTH_ALLOWLIST:
+        if key in host_cfg:
+            minimal[key] = host_cfg[key]
+    return minimal
+
+
+def _push_minimal_claude_json(
+    container: IncusContainer,
+    username: str,
+    container_uid: int,
+    data: Dict[str, Any],
+) -> bool:
+    """Serialise *data* and push it to ``/home/{username}/.claude.json``.
+
+    Writes the file owned by the container user's uid/gid (gid mirrors uid
+    to match the common Ubuntu ``useradd -m`` default) with mode 0600.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".claude.json", delete=False
+    ) as tmp:
+        json.dump(data, tmp, indent=2)
+        tmp_path = Path(tmp.name)
+    try:
+        return container.push_file(
+            tmp_path,
+            f"/home/{username}/.claude.json",
+            uid=container_uid,
+            gid=container_uid,
+            mode=0o600,
+        )
+    finally:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+
+
+def _install_claude_base_auth(
+    name: str,
+    home: Path,
+    username: str,
+    container_uid: int,
+    *,
+    quiet: bool = False,
 ) -> None:
-    """Mount only ``~/.claude/.credentials.json`` read-write with shift=true."""
+    """Set up minimal Claude auth inside an ephemeral container.
+
+    Mounts ``~/.claude/.credentials.json`` read-write (with ``shift=true``)
+    so token refresh writes back to the host, and pushes a synthesised
+    ``~/.claude.json`` containing only the host's ``oauthAccount`` (plus
+    a hard-coded ``hasCompletedOnboarding=True``) so Claude Code inside
+    the container recognises the credentials without inheriting host
+    session / project state.
+    """
+    container = IncusContainer(name)
+
     rel = ".claude/.credentials.json"
     src = home / rel
     if src.is_file():
-        IncusContainer(name).add_mount(
+        container.add_mount(
             "isholate-claude-cred",
             src,
             f"/home/{username}/{rel}",
@@ -101,6 +191,30 @@ def _add_claude_base_mounts(
     else:
         _say(
             "warning: --claude-base requested but ~/.claude/.credentials.json not found",
+            quiet=quiet,
+        )
+        return
+
+    minimal = _build_minimal_claude_json(home)
+    if minimal is None:
+        _say(
+            "warning: --claude-base could not build a synthetic ~/.claude.json "
+            "(host ~/.claude.json missing, unreadable, or has no oauthAccount); "
+            "Claude inside the container will likely prompt for login",
+            quiet=quiet,
+        )
+        return
+
+    if _push_minimal_claude_json(container, username, container_uid, minimal):
+        _say(
+            f"installed synthetic ~/.claude.json in '{name}' "
+            "(oauthAccount only; session state isolated)",
+            quiet=quiet,
+        )
+    else:
+        _say(
+            "warning: --claude-base failed to push synthetic ~/.claude.json; "
+            "Claude inside the container will likely prompt for login",
             quiet=quiet,
         )
 

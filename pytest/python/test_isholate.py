@@ -43,6 +43,7 @@ from pyishlib.isholate.claude import (
     _apply_network_restrictions,
     _build_claude_firewall_install_script,
     _build_claude_raw_dnsmasq,
+    _build_minimal_claude_json,
     _claude_firewall_rules_in_place,
     _ensure_claude_network,
     _install_claude_firewall,
@@ -1033,7 +1034,9 @@ class TestLaunchAndExec:
         assert device_cmds == []
 
     def test_claude_base_adds_credentials_mount_when_present(self):
-        """--claude-base mounts only ~/.claude/.credentials.json."""
+        """--claude-base mounts ~/.claude/.credentials.json even with no host
+        ~/.claude.json (push of synthetic .claude.json is skipped with a warn).
+        """
         args = _make_args(claude_base=True)
         cred_path = _FAKE_HOME / ".claude" / ".credentials.json"
 
@@ -1051,6 +1054,10 @@ class TestLaunchAndExec:
         assert "shift=true" in cmd
         assert "readonly=true" not in cmd
 
+        # No synthetic .claude.json push happens when host config is missing.
+        push_cmds = [c for c in cmds if c[:3] == ["incus", "file", "push"]]
+        assert push_cmds == []
+
     def test_claude_base_is_noop_when_credentials_absent(self):
         """--claude-base is a no-op when ~/.claude/.credentials.json does not exist."""
         args = _make_args(claude_base=True)
@@ -1062,6 +1069,62 @@ class TestLaunchAndExec:
 
         device_cmds = [c for c in cmds if "device" in c and "add" in c]
         assert device_cmds == []
+        push_cmds = [c for c in cmds if c[:3] == ["incus", "file", "push"]]
+        assert push_cmds == []
+
+    def test_claude_base_pushes_synthetic_claude_json(self):
+        """When host has usable ~/.claude.json, --claude-base mounts credentials
+        and pushes a synthetic ~/.claude.json into the container."""
+        args = _make_args(claude_base=True)
+        cred_path = _FAKE_HOME / ".claude" / ".credentials.json"
+
+        synthetic = {
+            "hasCompletedOnboarding": True,
+            "oauthAccount": {"emailAddress": "test@example.com"},
+        }
+
+        with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
+            with patch.object(Path, "is_dir", lambda self: False):
+                with patch(
+                    "pyishlib.isholate.claude._build_minimal_claude_json",
+                    return_value=synthetic,
+                ):
+                    calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        assert len(device_cmds) == 1
+        assert device_cmds[0][5] == "isholate-claude-cred"
+
+        push_cmds = [c for c in cmds if c[:3] == ["incus", "file", "push"]]
+        assert len(push_cmds) == 1
+        push = push_cmds[0]
+        assert "--uid" in push
+        assert push[push.index("--uid") + 1] == str(_FAKE_CONTAINER_UID)
+        assert "--gid" in push
+        assert push[push.index("--gid") + 1] == str(_FAKE_CONTAINER_UID)
+        assert "--mode" in push
+        assert push[push.index("--mode") + 1] == "600"
+        assert push[-1] == f"test-container/home/{_FAKE_USER}/.claude.json"
+
+    def test_claude_base_skips_push_when_no_oauth_account(self):
+        """No synthetic .claude.json is pushed when host config lacks oauthAccount."""
+        args = _make_args(claude_base=True)
+        cred_path = _FAKE_HOME / ".claude" / ".credentials.json"
+
+        with patch.object(Path, "is_file", lambda self: str(self) == str(cred_path)):
+            with patch.object(Path, "is_dir", lambda self: False):
+                with patch(
+                    "pyishlib.isholate.claude._build_minimal_claude_json",
+                    return_value=None,
+                ):
+                    calls, _ = self._run_with_mocks(args)
+        cmds = self._cmds(calls)
+
+        device_cmds = [c for c in cmds if "device" in c and "add" in c]
+        assert len(device_cmds) == 1  # credentials mount only
+        push_cmds = [c for c in cmds if c[:3] == ["incus", "file", "push"]]
+        assert push_cmds == []
 
     def test_ro_cwd_adds_readonly_device(self):
         args = _make_args(ro_cwd=True)
@@ -4001,3 +4064,86 @@ class TestCliPreflightClaudeHostTools:
 
         assert rc == 1
         mock_launch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _build_minimal_claude_json — pure function tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildMinimalClaudeJson:
+    """Verify the allowlist-only synthesis used by --claude-base."""
+
+    def test_returns_none_when_file_missing(self, tmp_path):
+        assert _build_minimal_claude_json(tmp_path) is None
+
+    def test_returns_none_on_invalid_json(self, tmp_path):
+        (tmp_path / ".claude.json").write_text("{not json", encoding="utf-8")
+        assert _build_minimal_claude_json(tmp_path) is None
+
+    def test_returns_none_without_oauth_account(self, tmp_path):
+        import json as _json
+
+        (tmp_path / ".claude.json").write_text(
+            _json.dumps({"userID": "abc", "firstStartTime": "t0"}),
+            encoding="utf-8",
+        )
+        assert _build_minimal_claude_json(tmp_path) is None
+
+    def test_returns_none_when_oauth_account_not_dict(self, tmp_path):
+        import json as _json
+
+        (tmp_path / ".claude.json").write_text(
+            _json.dumps({"oauthAccount": "not a dict"}),
+            encoding="utf-8",
+        )
+        assert _build_minimal_claude_json(tmp_path) is None
+
+    def test_happy_path_copies_allowlisted_fields_only(self, tmp_path):
+        import json as _json
+
+        host = {
+            "oauthAccount": {"emailAddress": "me@example.com", "accountUuid": "u"},
+            "userID": "abc123",
+            "firstStartTime": "2026-01-01T00:00:00Z",
+            # Fields that must NOT be copied:
+            "projects": {"secret-project": {"foo": "bar"}},
+            "mcpServers": {"x": {}},
+            "promptQueueLog": ["sensitive"],
+            "cachedGrowthBookFeatures": {"flag": True},
+            "cachedExtraUsageDisabledReason": "something",
+        }
+        (tmp_path / ".claude.json").write_text(_json.dumps(host), encoding="utf-8")
+
+        out = _build_minimal_claude_json(tmp_path)
+        assert out is not None
+        # Allowlisted fields are copied verbatim.
+        assert out["oauthAccount"] == host["oauthAccount"]
+        assert out["userID"] == "abc123"
+        assert out["firstStartTime"] == "2026-01-01T00:00:00Z"
+        # hasCompletedOnboarding is always True, independent of host.
+        assert out["hasCompletedOnboarding"] is True
+        # Non-allowlisted fields are dropped.
+        for forbidden in (
+            "projects",
+            "mcpServers",
+            "promptQueueLog",
+            "cachedGrowthBookFeatures",
+            "cachedExtraUsageDisabledReason",
+        ):
+            assert forbidden not in out
+
+    def test_missing_optional_allowlist_keys_are_dropped(self, tmp_path):
+        """userID/firstStartTime are optional — only oauthAccount is required."""
+        import json as _json
+
+        (tmp_path / ".claude.json").write_text(
+            _json.dumps({"oauthAccount": {"emailAddress": "m@e.com"}}),
+            encoding="utf-8",
+        )
+        out = _build_minimal_claude_json(tmp_path)
+        assert out is not None
+        assert out == {
+            "hasCompletedOnboarding": True,
+            "oauthAccount": {"emailAddress": "m@e.com"},
+        }

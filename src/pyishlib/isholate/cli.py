@@ -119,9 +119,10 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=False,
         help=(
-            "Expose only ~/.claude/.credentials.json so the container can "
-            "authenticate to the Claude API without sharing the host's full "
-            "session state. Mutually exclusive with --claude."
+            "Expose ~/.claude/.credentials.json and inject a synthetic "
+            "~/.claude.json (oauthAccount only) so Claude Code inside the "
+            "container recognises the host credentials without sharing the "
+            "host's full session state. Mutually exclusive with --claude."
         ),
     )
     parser.add_argument(
