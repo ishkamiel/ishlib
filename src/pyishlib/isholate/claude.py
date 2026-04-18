@@ -90,7 +90,7 @@ def _add_claude_mounts(
 # synthesised in-container copy.  ``oauthAccount`` is the field Claude Code
 # actually uses to decide "the user is logged in"; the others suppress
 # first-run prompts without leaking session / project state.
-_CLAUDE_JSON_AUTH_ALLOWLIST: tuple = (
+_CLAUDE_JSON_AUTH_ALLOWLIST: "tuple[str, ...]" = (
     "oauthAccount",
     "userID",
     "firstStartTime",
@@ -104,7 +104,7 @@ def _build_minimal_claude_json(home: Path) -> Optional[Dict[str, Any]]:
     fields from :data:`_CLAUDE_JSON_AUTH_ALLOWLIST`, plus a hard-coded
     ``hasCompletedOnboarding=True`` so the container skips onboarding.
 
-    Returns ``None`` when the host file is missing, unparseable, or lacks
+    Returns ``None`` when the host file is missing, unparsable, or lacks
     an ``oauthAccount`` — in all three cases the container cannot be made
     to recognise the credentials and the caller should warn instead.
     """
@@ -171,10 +171,11 @@ def _install_claude_base_auth(
 
     Mounts ``~/.claude/.credentials.json`` read-write (with ``shift=true``)
     so token refresh writes back to the host, and pushes a synthesised
-    ``~/.claude.json`` containing only the host's ``oauthAccount`` (plus
-    a hard-coded ``hasCompletedOnboarding=True``) so Claude Code inside
-    the container recognises the credentials without inheriting host
-    session / project state.
+    ``~/.claude.json`` built from :func:`_build_minimal_claude_json`
+    (the :data:`_CLAUDE_JSON_AUTH_ALLOWLIST` fields from the host plus a
+    hard-coded ``hasCompletedOnboarding=True``) so Claude Code inside the
+    container recognises the credentials without inheriting host session
+    / project state.
     """
     container = IncusContainer(name)
 
@@ -208,7 +209,7 @@ def _install_claude_base_auth(
     if _push_minimal_claude_json(container, username, container_uid, minimal):
         _say(
             f"installed synthetic ~/.claude.json in '{name}' "
-            "(oauthAccount only; session state isolated)",
+            "(minimal auth config only; session state isolated)",
             quiet=quiet,
         )
     else:
