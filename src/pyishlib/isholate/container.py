@@ -25,11 +25,10 @@ one-shot container is created from the raw image (original behaviour).
 from __future__ import annotations
 
 import hashlib
-import json
+import logging
 import os
 import random
 import re
-import shutil
 import socket
 import string
 import subprocess
@@ -37,13 +36,17 @@ import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
-import logging
-
-from ..environment import detect_distro
+from ..container import incus as _incus
+from .claude import (
+    _add_claude_base_mounts,
+    _add_claude_mounts,
+    _apply_network_restrictions,
+)
 from .config import FAILED_LOGS_STATE_DIR
 from .locks import base_build_lock
 
 log = logging.getLogger(__name__)
+
 
 # Root of the ishlib checkout — used to mount the ishfiles CLI into containers.
 # Path: container.py -> isholate/ -> pyishlib/ -> src/ -> ishlib/
@@ -69,113 +72,6 @@ def _say(msg: str, *, quiet: bool = False) -> None:  # noqa: ARG001
     in :func:`~pyishlib.isholate.cli.main`.
     """
     log.info(msg)
-
-
-def _incus_install_hint() -> str:
-    """Return a distro-aware hint for installing the ``incus`` package."""
-    distro = detect_distro()
-    if distro == "debian":
-        return (
-            "Install incus:\n"
-            "  sudo apt install incus\n"
-            "(On older Ubuntu releases you may need the zabbly repository:\n"
-            "  https://github.com/zabbly/incus)"
-        )
-    if distro == "fedora":
-        return "Install incus:\n  sudo dnf install incus incus-tools"
-    return (
-        "Install incus following the instructions at\n"
-        "  https://linuxcontainers.org/incus/"
-    )
-
-
-def _check_incus_available() -> Optional[str]:
-    """Probe the incus daemon and return setup guidance on failure.
-
-    Returns ``None`` when incus is installed and the daemon is reachable by
-    the current user via a successful ``incus info`` probe.  Otherwise
-    returns a multi-line, user-facing message (with the ``isholate:`` prefix
-    already applied) describing what to do next.
-
-    The probe is deliberately cheap — a single ``incus info`` invocation
-    with a short timeout and no further output inspection — so the healthy
-    path adds negligible overhead.
-    """
-    if shutil.which("incus") is None:
-        return (
-            "isholate: error: the 'incus' command was not found on PATH.\n"
-            f"{_incus_install_hint()}\n"
-            "After installing, run 'sudo incus admin init' and add your user\n"
-            "to the 'incus-admin' group."
-        )
-
-    try:
-        result = subprocess.run(
-            ["incus", "info"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return (
-            f"isholate: error: failed to run 'incus info': {exc}\n"
-            "Make sure the incus daemon is installed and running."
-        )
-
-    if result.returncode == 0:
-        return None
-
-    stderr = (result.stderr or "").strip()
-    lowered = stderr.lower()
-    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "$USER"
-
-    # Permission / socket access — user not in the incus(-admin) group.
-    permission_markers = (
-        "permission denied",
-        "permission is denied",
-        "access denied",
-        "forbidden",
-    )
-    if any(marker in lowered for marker in permission_markers):
-        return (
-            "isholate: error: cannot talk to the incus daemon (permission denied).\n"
-            "Your user is probably not in the 'incus-admin' group.\n"
-            "Fix it with:\n"
-            f"  sudo usermod -aG incus-admin {user}\n"
-            "  newgrp incus-admin   # or log out and back in\n"
-            "(Some distros use the 'incus' group instead of 'incus-admin'.)\n"
-            f"Raw error from incus:\n  {stderr or '(no stderr output)'}"
-        )
-
-    # Daemon not initialized yet.
-    init_markers = (
-        "not initialized",
-        "no storage pool",
-        "no storage pools",
-        "no profiles",
-        "no such file or directory",
-        "connection refused",
-        "cannot connect",
-        "connect: ",
-    )
-    if any(marker in lowered for marker in init_markers):
-        return (
-            "isholate: error: the incus daemon is not ready.\n"
-            "Run the one-time setup:\n"
-            "  sudo incus admin init           # interactive\n"
-            "  sudo incus admin init --minimal # non-interactive defaults\n"
-            "If the daemon is not running, start it with:\n"
-            "  sudo systemctl enable --now incus\n"
-            f"Raw error from incus:\n  {stderr or '(no stderr output)'}"
-        )
-
-    # Unknown failure — surface the raw error so the user can act on it.
-    return (
-        "isholate: error: 'incus info' failed "
-        f"(exit {result.returncode}).\n"
-        f"Raw error from incus:\n  {stderr or '(no stderr output)'}"
-    )
 
 
 def get_host_user_info() -> "tuple[str, Path, Path]":
@@ -266,47 +162,19 @@ def _project_base_name(username: str, project_path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Low-level Incus wrappers
-# ---------------------------------------------------------------------------
-
-
-def _run(cmd: List[str], **kwargs: Any) -> subprocess.CompletedProcess:
-    """Run an incus command. Pass check=True to raise on failure."""
-    return subprocess.run(cmd, **kwargs)
-
-
-def _run_checked(
-    cmd: List[str], step: str, **kwargs: Any
-) -> subprocess.CompletedProcess:
-    """Run *cmd* with ``check=True``; on failure flush output and re-raise with a
-    labelled message so the user knows which provisioning step broke.
-
-    Args:
-        cmd:  Command to run.
-        step: Human-readable label for this step (shown on failure).
-    """
-    kwargs["check"] = True
-    try:
-        return _run(cmd, **kwargs)
-    except subprocess.CalledProcessError as exc:
-        log.error("%s failed (exit %d)", step, exc.returncode)
-        raise
-
-
-# ---------------------------------------------------------------------------
 # Container state helpers
 # ---------------------------------------------------------------------------
 
 
 def _container_exists(name: str) -> bool:
     """Return True if an Incus container with *name* exists (any state)."""
-    r = _run(["incus", "info", name], capture_output=True, check=False)
+    r = _incus._run(["incus", "info", name], capture_output=True, check=False)
     return r.returncode == 0
 
 
 def _get_stored_fingerprint(name: str) -> Optional[str]:
     """Read the source fingerprint stored on a base container's metadata."""
-    r = _run(
+    r = _incus._run(
         ["incus", "config", "get", name, _META_SOURCE_HASH],
         capture_output=True,
         text=True,
@@ -319,7 +187,7 @@ def _get_stored_fingerprint(name: str) -> Optional[str]:
 
 def _set_stored_fingerprint(name: str, fingerprint: str) -> None:
     """Store *fingerprint* on *name*'s container metadata."""
-    _run(
+    _incus._run(
         ["incus", "config", "set", name, _META_SOURCE_HASH, fingerprint],
         check=True,
     )
@@ -327,7 +195,7 @@ def _set_stored_fingerprint(name: str, fingerprint: str) -> None:
 
 def _get_stored_uid(name: str) -> Optional[int]:
     """Read the container user UID from a base container's metadata."""
-    r = _run(
+    r = _incus._run(
         ["incus", "config", "get", name, _META_UID],
         capture_output=True,
         text=True,
@@ -344,7 +212,7 @@ def _get_stored_uid(name: str) -> Optional[int]:
 
 def _set_stored_uid(name: str, uid: int) -> None:
     """Store *uid* on *name*'s container metadata."""
-    _run(
+    _incus._run(
         ["incus", "config", "set", name, _META_UID, str(uid)],
         check=True,
     )
@@ -372,7 +240,7 @@ def _list_isholate_devices(name: str) -> List[str]:
     (plain text, no ``--format`` flag support).  Returns an empty list when
     the container does not exist or the command fails.
     """
-    r = _run(
+    r = _incus._run(
         ["incus", "config", "device", "list", name],
         capture_output=True,
         text=True,
@@ -390,7 +258,7 @@ def _remove_isholate_devices(name: str) -> None:
     host-path bind-mount references.
     """
     for device_name in _list_isholate_devices(name):
-        _run(
+        _incus._run(
             ["incus", "config", "device", "remove", name, device_name],
             check=False,
         )
@@ -407,7 +275,7 @@ def _assert_no_isholate_devices(name: str) -> None:
     ``incus config device list`` so a failed device-list call cannot mask a
     poisoned base.
     """
-    r = _run(
+    r = _incus._run(
         ["incus", "config", "device", "list", name],
         capture_output=True,
         text=True,
@@ -515,7 +383,7 @@ def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> N
     _say("checking container network connectivity...", quiet=quiet)
 
     def _probe(cmd: List[str]) -> "tuple[int, str]":
-        r = _run(
+        r = _incus._run(
             ["incus", "exec", name, "--"] + cmd,
             check=False,
             capture_output=True,
@@ -665,7 +533,7 @@ def _add_mount(
         cmd.append("readonly=true")
     if shift:
         cmd.append("shift=true")
-    _run(cmd, check=True)
+    _incus._run(cmd, check=True)
 
 
 def _add_home_mount(
@@ -689,598 +557,6 @@ def _add_home_mount(
     dst = f"/home/{container_username}/{rel}"
     _add_mount(name, device_name, src, dst, readonly=readonly, shift=shift)
     return True
-
-
-def _add_claude_mounts(
-    name: str, home: Path, username: str, *, quiet: bool = False
-) -> None:
-    """Mount the host's Claude config (``~/.claude/`` and ``~/.claude.json``).
-
-    Adds read-write disk devices with ``shift=true`` so the in-container user
-    can read and write the host user's Claude credentials and state.  Either
-    source can be missing; only existing paths are mounted.
-
-    Args:
-        name:     Incus container name.
-        home:     Host user's home directory.
-        username: Container username (used to derive the in-container path).
-        quiet:    Suppress isholate's own progress messages.
-    """
-    mounted: List[str] = []
-
-    if (home / ".claude").is_dir() and _add_home_mount(
-        name, "isholate-claude", home, ".claude", username, shift=True
-    ):
-        mounted.append(str(home / ".claude"))
-
-    if (home / ".claude.json").is_file() and _add_home_mount(
-        name, "isholate-claude-json", home, ".claude.json", username, shift=True
-    ):
-        mounted.append(str(home / ".claude.json"))
-
-    if mounted:
-        _say(f"exposing host Claude config: {', '.join(mounted)}", quiet=quiet)
-    else:
-        _say(
-            "warning: --claude requested but no host Claude config found "
-            "(~/.claude or ~/.claude.json)",
-            quiet=quiet,
-        )
-
-
-def _add_claude_base_mounts(
-    name: str, home: Path, username: str, *, quiet: bool = False
-) -> None:
-    """Mount only ``~/.claude/.credentials.json`` read-write with shift=true.
-
-    Args:
-        name:     Incus container name.
-        home:     Host user's home directory.
-        username: Container username (used to derive the in-container path).
-        quiet:    Suppress isholate's own progress messages.
-    """
-    rel = ".claude/.credentials.json"
-    if (home / rel).is_file() and _add_home_mount(
-        name, "isholate-claude-cred", home, rel, username, shift=True
-    ):
-        _say(f"exposing host Claude credentials: {home / rel}", quiet=quiet)
-    else:
-        _say(
-            "warning: --claude-base requested but ~/.claude/.credentials.json not found",
-            quiet=quiet,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Network isolation
-# ---------------------------------------------------------------------------
-
-# Domain suffixes the Claude CLI needs to reach when running inside a
-# locked-down container.  The bridge's dnsmasq forwards queries for these
-# domains (and all their subdomains) to _CLAUDE_DNS_UPSTREAM; everything
-# else returns NXDOMAIN via the ``local=/#/`` catch-all.
-_CLAUDE_ALLOW_DOMAINS = (
-    "anthropic.com",  # api., console., statsig., auth fronts
-    "claude.ai",  # OAuth redirect target
-    "statsig.com",  # feature flags / analytics
-    "statsigapi.net",  # Statsig events endpoint
-    "sentry.io",  # covers *.ingest.*.sentry.io too
-)
-
-# Incus managed network used when --no-network --claude is in effect.
-# Created on first use and reused across runs.  The bridge owns its own
-# FORWARD policy (ipv4.firewall=false tells Incus not to auto-generate
-# rules for it) — host-side iptables + ipset enforce the allowlist at the
-# packet level so a malicious process inside the container cannot bypass
-# DNS filtering by hard-coding IPs.
-_CLAUDE_NETWORK_NAME = "isholate-claude"
-
-# Upstream DNS server the bridge forwards allowlisted queries to.  A public
-# resolver is used deliberately so the setup does not depend on the host's
-# own resolver configuration.
-_CLAUDE_DNS_UPSTREAM = "1.1.1.1"
-
-# Host-side firewall state names.  The ipset is populated by the bridge's
-# dnsmasq via the ``ipset=`` directive on every DNS lookup of an
-# allowlisted domain; the iptables chain gates FORWARD against it so only
-# IPs dnsmasq has just resolved can receive packets on port 443.
-_CLAUDE_IPSET_NAME = "isholate-claude-allowed"
-_CLAUDE_IPTABLES_CHAIN = "ISHOLATE-CLAUDE"
-
-# Where the persistent apply script and systemd unit are installed.  The
-# systemd unit runs the apply script on boot so rules survive reboots
-# without further sudo prompts.
-_CLAUDE_FIREWALL_APPLY_SCRIPT = "/usr/local/libexec/isholate-claude-firewall"
-_CLAUDE_FIREWALL_SYSTEMD_UNIT = "/etc/systemd/system/isholate-claude-firewall.service"
-
-
-def _build_claude_raw_dnsmasq() -> str:
-    """Build the ``raw.dnsmasq`` value for the isholate-claude bridge.
-
-    The config combines three dnsmasq features to give us DNS-level
-    allowlisting AND live population of a host ipset that iptables can
-    match against:
-
-    - ``local=/#/`` — catch-all: answer non-allowlisted queries locally
-      with NXDOMAIN.
-    - ``server=/<domain>/<upstream>`` — more specific match wins, so
-      allowlisted domains (and subdomains) forward to the upstream.
-    - ``ipset=/<d1>/<d2>/.../<setname>`` — on every successful lookup of
-      an allowlisted domain, dnsmasq adds each resolved IP to the host
-      ipset ``isholate-claude-allowed`` with the set's timeout.  Host
-      iptables matches ``-m set --match-set`` against this set to allow
-      only just-resolved destinations.
-    """
-    lines = ["local=/#/"]
-    for domain in _CLAUDE_ALLOW_DOMAINS:
-        lines.append(f"server=/{domain}/{_CLAUDE_DNS_UPSTREAM}")
-    # ipset= takes a slash-separated domain list followed by the set name:
-    #   ipset=/anthropic.com/claude.ai/.../<setname>
-    ipset_spec = "/".join(_CLAUDE_ALLOW_DOMAINS)
-    lines.append(f"ipset=/{ipset_spec}/{_CLAUDE_IPSET_NAME}")
-    return "\n".join(lines)
-
-
-def _ensure_claude_network(*, quiet: bool = False) -> str:
-    """Ensure the ``isholate-claude`` Incus managed network exists and is current.
-
-    Creates the bridge on first use and always updates ``raw.dnsmasq`` +
-    ``ipv4.firewall`` so the config stays in sync with the current isholate
-    version.  The bridge is a persistent host resource: it outlives
-    individual isholate runs and is shared across all containers launched
-    with ``--no-network --claude``.
-
-    ``ipv4.firewall=false`` tells Incus not to auto-generate FORWARD rules
-    for this bridge — we own them via :func:`_install_claude_firewall`.
-    ``ipv4.nat=true`` is (re-)applied on every run so the container can
-    reach allowlisted IPs via MASQUERADE even if a previous run or manual
-    edit toggled the flag off.
-
-    No ``sudo`` is required here — the Incus daemon (running as root)
-    configures the bridge and dnsmasq.  Host iptables rules are installed
-    separately by :func:`_install_claude_firewall`.
-
-    Returns:
-        The name of the Incus managed network (``isholate-claude``).
-    """
-    show_r = _run(
-        ["incus", "network", "show", _CLAUDE_NETWORK_NAME],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    if show_r.returncode != 0:
-        _say(
-            f"creating Incus managed network '{_CLAUDE_NETWORK_NAME}' "
-            "(one-time setup for --no-network --claude)...",
-            quiet=quiet,
-        )
-        _run_checked(
-            [
-                "incus",
-                "network",
-                "create",
-                _CLAUDE_NETWORK_NAME,
-                "ipv4.address=auto",
-                "ipv4.nat=true",
-                "ipv4.firewall=false",
-                "ipv6.address=none",
-            ],
-            f"create isholate-claude bridge '{_CLAUDE_NETWORK_NAME}'",
-            stdin=subprocess.DEVNULL,
-        )
-
-    # Always (re-)apply the dnsmasq allowlist, the ipv4.firewall flag, and
-    # ipv4.nat so upgrades that change the allowlist or toggle flags are
-    # picked up regardless of whether the network already existed.
-    # Use separate key/value arguments to avoid CLI parsing edge cases with
-    # multi-line values or embedded '=' characters.
-    raw_dnsmasq = _build_claude_raw_dnsmasq()
-    _run_checked(
-        [
-            "incus",
-            "network",
-            "set",
-            _CLAUDE_NETWORK_NAME,
-            "raw.dnsmasq",
-            raw_dnsmasq,
-        ],
-        "configure DNS allowlist on isholate-claude bridge",
-        stdin=subprocess.DEVNULL,
-    )
-    _run_checked(
-        [
-            "incus",
-            "network",
-            "set",
-            _CLAUDE_NETWORK_NAME,
-            "ipv4.firewall",
-            "false",
-        ],
-        "disable Incus auto-firewall on isholate-claude bridge",
-        stdin=subprocess.DEVNULL,
-    )
-    _run_checked(
-        [
-            "incus",
-            "network",
-            "set",
-            _CLAUDE_NETWORK_NAME,
-            "ipv4.nat",
-            "true",
-        ],
-        "ensure NAT is enabled on isholate-claude bridge",
-        stdin=subprocess.DEVNULL,
-    )
-    return _CLAUDE_NETWORK_NAME
-
-
-# ---------------------------------------------------------------------------
-# Host firewall (ipset + iptables) for the isholate-claude bridge
-# ---------------------------------------------------------------------------
-
-
-def _claude_firewall_rules_in_place() -> bool:
-    """Return True if the host-side ipset + iptables rules are already set up.
-
-    Checked without sudo so the common happy path (rules already installed)
-    never prompts for a password.  Two preconditions must hold:
-
-    1. The on-disk apply script and systemd unit match the embedded
-       content.  Verified by :func:`_claude_firewall_on_disk_matches`.
-       A mismatch means an isholate upgrade changed the rules and we must
-       reinstall so the on-boot restore uses the current script.
-    2. The systemd unit is enabled via ``systemctl is-enabled``.  An
-       enabled ``Type=oneshot RemainAfterExit=yes`` unit means the apply
-       script has either already run on this boot (loading rules into the
-       kernel) or will run on the next boot.
-
-    Probing the kernel-level state directly (``ipset list``, ``iptables
-    -S``) would require root on every modern Linux distro; doing so would
-    force a ``sudo`` prompt on every invocation and defeat the purpose of
-    this check.  Instead we trust isholate-owned host artifacts: the
-    on-disk files are our install receipt, and systemd is responsible for
-    keeping the rules loaded across reboots.
-
-    Trade-off: if someone manually runs ``iptables -F`` or ``ipset
-    destroy`` after install, the check still returns True until the next
-    reboot (when the systemd unit would restore them).  To recover
-    immediately, run the apply script manually under sudo, or remove
-    ``/etc/systemd/system/isholate-claude-firewall.service`` to force a
-    reinstall.
-    """
-    if not _claude_firewall_on_disk_matches():
-        return False
-
-    unit_name = Path(_CLAUDE_FIREWALL_SYSTEMD_UNIT).name
-    try:
-        enabled_r = _run(
-            ["systemctl", "is-enabled", unit_name],
-            capture_output=True,
-            text=True,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        return False
-    if enabled_r.returncode != 0:
-        return False
-
-    return True
-
-
-def _claude_firewall_on_disk_matches() -> bool:
-    """Return True if the installed apply script + systemd unit match the
-    embedded content.
-
-    A mismatch (or missing file) means an isholate upgrade changed the
-    embedded content and the on-disk version is stale; we must reinstall
-    so reboots restore the current rules.
-    """
-    for path, expected in (
-        (_CLAUDE_FIREWALL_APPLY_SCRIPT, _CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT),
-        (_CLAUDE_FIREWALL_SYSTEMD_UNIT, _CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT),
-    ):
-        try:
-            with open(path, encoding="utf-8") as f:
-                current = f.read()
-        except OSError:
-            return False
-        if current != expected:
-            return False
-    return True
-
-
-# The shell script that (re-)applies the ipset + iptables rules.  Installed
-# to _CLAUDE_FIREWALL_APPLY_SCRIPT and invoked by the systemd unit on boot.
-# Idempotent: safe to run any number of times.
-_CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT = f"""#!/bin/sh
-# Managed by isholate.  Do not edit by hand — changes are overwritten on
-# the next `isholate --no-network --claude` invocation that needs to
-# reinstall rules.
-set -eu
-
-SET={_CLAUDE_IPSET_NAME}
-CHAIN={_CLAUDE_IPTABLES_CHAIN}
-BRIDGE={_CLAUDE_NETWORK_NAME}
-
-# 1. Ensure the ipset exists.  Dnsmasq on the bridge requires it to be
-#    present before it can add resolved IPs; ``create ... -exist`` is a
-#    no-op if the set already exists (Linux >= ipset 6.x).
-ipset create "$SET" hash:ip family inet timeout 3600 -exist
-
-# 2. Ensure our chain exists and contains exactly our ruleset.
-iptables -N "$CHAIN" 2>/dev/null || true
-iptables -F "$CHAIN"
-
-# Return/related traffic on flows we allowed out.
-iptables -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-# DNS: allow only to the bridge's gateway, which runs the restricted
-# dnsmasq.  Any attempt to contact external resolvers (e.g. 8.8.8.8) is
-# dropped by the default policy at the end of this chain.
-BRIDGE_IP=$(ip -4 addr show "$BRIDGE" 2>/dev/null | awk '/inet /{{split($2,a,"/"); print a[1]; exit}}')
-if [ -n "$BRIDGE_IP" ]; then
-    iptables -A "$CHAIN" -d "$BRIDGE_IP" -p udp --dport 53 -j ACCEPT
-    iptables -A "$CHAIN" -d "$BRIDGE_IP" -p tcp --dport 53 -j ACCEPT
-fi
-
-# HTTPS only to IPs in the live ipset (populated by the bridge's dnsmasq
-# on every DNS lookup of an allowlisted domain).
-iptables -A "$CHAIN" -p tcp --dport 443 -m set --match-set "$SET" dst -j ACCEPT
-
-# Default deny for everything else.
-iptables -A "$CHAIN" -j DROP
-
-# 3. FORWARD jump: egress from the bridge goes through our chain.
-#    Remove any duplicates first so the rule appears exactly once.
-while iptables -C FORWARD -i "$BRIDGE" -j "$CHAIN" 2>/dev/null; do
-    iptables -D FORWARD -i "$BRIDGE" -j "$CHAIN"
-done
-iptables -I FORWARD -i "$BRIDGE" -j "$CHAIN"
-
-# 4. Return direction: allow established/related responses back to the
-#    container (belt-and-braces; the default FORWARD policy is ACCEPT on
-#    most distros, but we cannot rely on that).
-while iptables -C FORWARD -o "$BRIDGE" -m conntrack \\
-    --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; do
-    iptables -D FORWARD -o "$BRIDGE" -m conntrack \\
-        --ctstate ESTABLISHED,RELATED -j ACCEPT
-done
-iptables -I FORWARD -o "$BRIDGE" -m conntrack \\
-    --ctstate ESTABLISHED,RELATED -j ACCEPT
-"""
-
-_CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT = f"""# Managed by isholate.
-[Unit]
-Description=isholate-claude bridge firewall rules (ipset + iptables)
-Documentation=https://github.com/ishkamiel/ishlib
-After=network-online.target incus.service
-Wants=network-online.target
-PartOf=incus.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart={_CLAUDE_FIREWALL_APPLY_SCRIPT}
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-
-def _build_claude_firewall_install_script() -> str:
-    """Return the bootstrap shell script run under ``sudo``.
-
-    The script writes the persistent apply script and systemd unit to the
-    host, runs the apply script once, and enables the unit so rules come
-    back on boot.  Writing via ``cat <<'EOF'`` avoids quoting pitfalls from
-    subprocess argv interpolation.
-    """
-    # Use a non-clashing heredoc terminator since the apply script itself
-    # contains a bunch of shell syntax.
-    apply_script = _CLAUDE_FIREWALL_APPLY_SCRIPT_CONTENT
-    unit = _CLAUDE_FIREWALL_SYSTEMD_UNIT_CONTENT
-    return (
-        "set -eu\n"
-        f"mkdir -p {os.path.dirname(_CLAUDE_FIREWALL_APPLY_SCRIPT)}\n"
-        # Write the apply script.
-        f"cat > {_CLAUDE_FIREWALL_APPLY_SCRIPT} <<'ISHOLATE_APPLY_EOF'\n"
-        f"{apply_script}"
-        "ISHOLATE_APPLY_EOF\n"
-        f"chmod +x {_CLAUDE_FIREWALL_APPLY_SCRIPT}\n"
-        # Write the systemd unit.
-        f"cat > {_CLAUDE_FIREWALL_SYSTEMD_UNIT} <<'ISHOLATE_UNIT_EOF'\n"
-        f"{unit}"
-        "ISHOLATE_UNIT_EOF\n"
-        # Reload systemd, enable the unit, and apply rules now.
-        "systemctl daemon-reload\n"
-        "systemctl enable isholate-claude-firewall.service >/dev/null\n"
-        f"{_CLAUDE_FIREWALL_APPLY_SCRIPT}\n"
-    )
-
-
-# Host tools the install script invokes.  Checked up-front so missing
-# dependencies produce targeted errors instead of an opaque "sudo exit
-# status N" failure.  Each entry is (tool, distro-neutral install hint).
-_CLAUDE_FIREWALL_REQUIRED_TOOLS: "tuple[tuple[str, str], ...]" = (
-    ("ipset", "install the 'ipset' package (apt/dnf install ipset)"),
-    (
-        "iptables",
-        "install the 'iptables' package "
-        "(apt install iptables / dnf install iptables-nft)",
-    ),
-    (
-        "systemctl",
-        "systemd is required for the boot-time firewall restore unit; "
-        "isholate currently only supports systemd hosts for --no-network --claude",
-    ),
-)
-
-
-def _preflight_claude_host_tools() -> Optional[str]:
-    """Return an actionable error message if any required host tool is missing.
-
-    Checks ``ipset``, ``iptables``, and ``systemctl`` (from
-    :data:`_CLAUDE_FIREWALL_REQUIRED_TOOLS`) plus ``sudo``.  Returns ``None``
-    when all tools are found on ``PATH``.
-
-    Intended to be called early — before any Incus container or network state
-    is created — so that a missing dependency on the host fails fast with a
-    clear, targeted hint instead of a traceback mid-run.
-    """
-    missing: "list[str]" = []
-    for tool, hint in _CLAUDE_FIREWALL_REQUIRED_TOOLS:
-        if shutil.which(tool) is None:
-            missing.append(f"  - {tool}: {hint}")
-    if missing:
-        return (
-            "cannot enable Claude network isolation — missing host tools:\n"
-            + "\n".join(missing)
-            + "\nInstall the packages above and re-run with"
-            " --no-network --claude or --no-network --claude-base."
-        )
-    if shutil.which("sudo") is None:
-        return (
-            "sudo not found on PATH; cannot install host-side firewall rules "
-            "automatically.\n"
-            "Install sudo and re-run, or follow the documented manual firewall "
-            "installation steps as root."
-        )
-    return None
-
-
-def _install_claude_firewall(*, quiet: bool = False) -> None:
-    """Install the host-side ipset + iptables rules under ``sudo``.
-
-    Idempotent: the underlying apply script is safe to run any number of
-    times, and writing the systemd unit overwrites an existing copy with
-    the current content.  Uses an interactive sudo (no ``-n``) so a first
-    invocation on a fresh host prompts the user once for their password;
-    subsequent isholate runs pass :func:`_claude_firewall_rules_in_place`
-    and skip this step entirely.
-
-    A short preflight runs before the sudo prompt so that missing host
-    tools (``ipset``, ``iptables``, ``systemctl``, ``sudo``) produce
-    specific, actionable errors instead of a generic "sudo exit status N"
-    after the password prompt.
-
-    Raises:
-        RuntimeError: if any required tool is missing, or sudo fails
-            (password refused, sudo not installed, install script exits
-            non-zero).
-    """
-    _say(
-        "installing host-side firewall rules for --no-network --claude "
-        "(requires sudo on first run)...",
-        quiet=quiet,
-    )
-
-    # Preflight: targeted errors for each missing dependency.
-    msg = _preflight_claude_host_tools()
-    if msg is not None:
-        raise RuntimeError(msg)
-
-    script = _build_claude_firewall_install_script()
-    result = _run(
-        ["sudo", "/bin/sh", "-c", script],
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            "failed to install host-side firewall rules "
-            f"(sudo exit status {result.returncode}).  "
-            "Re-run with --no-network --claude after resolving the sudo issue, "
-            "or install the rules manually (see isholate docs)."
-        )
-
-
-def _apply_network_restrictions(
-    name: str, *, allow_claude: bool, quiet: bool = False
-) -> None:
-    """Lock down network egress for the ephemeral container.
-
-    Both paths operate at the Incus layer via device overrides on the running
-    container — nothing is configured inside the container.  This runs after
-    provisioning, so the provisioning phase (apt, ishfiles) still has full
-    network access.
-
-    Args:
-        name:         Incus container name.
-        allow_claude: If True, switch ``eth0`` to the dedicated
-                      ``isholate-claude`` Incus managed network whose dnsmasq
-                      only resolves Claude API domains (see
-                      :data:`_CLAUDE_ALLOW_DOMAINS`).  If False, detach
-                      ``eth0`` entirely at the Incus layer — a simpler,
-                      config-free cut-off.
-        quiet:        Suppress isholate progress messages.
-    """
-    if not allow_claude:
-        _say(
-            f"--no-network: detaching eth0 from '{name}' via Incus device override...",
-            quiet=quiet,
-        )
-        # Override the profile-provided eth0 NIC with a 'none' device at the
-        # Incus layer.  This hot-detaches the NIC from the running container so
-        # systemd-networkd / netplan cannot bring it back up — unlike
-        # `ip link set eth0 down`, which is advisory inside the container and
-        # gets immediately undone by the DHCP client.
-        #
-        # `device add` fails if eth0 already exists at the instance level (e.g.
-        # from a prior run or an instance-level config override).  Remove any
-        # existing instance-level device first; this is a no-op (returns non-zero)
-        # if eth0 only comes from a profile, which is the common case.
-        _run(
-            ["incus", "config", "device", "remove", name, "eth0"],
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-        _run_checked(
-            ["incus", "config", "device", "add", name, "eth0", "none"],
-            "detach eth0 via Incus device override (--no-network)",
-        )
-        return
-
-    # --no-network --claude: attach eth0 to the dedicated isholate-claude
-    # bridge and enforce an IP-level allowlist via host iptables + a
-    # dnsmasq-populated ipset.  Nothing is configured inside the container,
-    # so a malicious process cannot tamper with the rules.
-    network = _ensure_claude_network(quiet=quiet)
-
-    # Install the host firewall if it is not already in place.  The check
-    # runs without sudo; only the install step elevates.  Idempotent: once
-    # the rules are loaded (and the systemd unit is enabled), this branch
-    # is skipped on subsequent runs and across reboots.
-    if not _claude_firewall_rules_in_place():
-        _install_claude_firewall(quiet=quiet)
-
-    _say(
-        f"--no-network --claude: switching '{name}' to the '{network}' bridge...",
-        quiet=quiet,
-    )
-    # Remove any existing instance-level eth0 so the profile/previous override
-    # cannot conflict with the new NIC device.  Best-effort: exits non-zero
-    # when eth0 comes only from a profile, which is the common case.
-    _run(
-        ["incus", "config", "device", "remove", name, "eth0"],
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    _run_checked(
-        [
-            "incus",
-            "config",
-            "device",
-            "add",
-            name,
-            "eth0",
-            "nic",
-            f"network={network}",
-            "name=eth0",
-        ],
-        f"attach eth0 to '{network}' bridge (--no-network --claude)",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1314,7 +590,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
         quiet:   Suppress isholate's own progress messages.
     """
     # Create the /run/isholate staging directory.
-    _run_checked(
+    _incus._run_checked(
         ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
         "create staging directory",
         stdin=subprocess.DEVNULL,
@@ -1338,7 +614,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     _network_preflight(name, verbose=verbose, quiet=quiet)
 
     # Force apt to use IPv4.
-    _run(
+    _incus._run(
         [
             "incus",
             "exec",
@@ -1360,7 +636,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
             f"apt-cacher-ng detected on host — configuring proxy ({bridge_ip}:3142) in container...",
             quiet=quiet,
         )
-        _run(
+        _incus._run(
             [
                 "incus",
                 "exec",
@@ -1390,7 +666,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
         if verbose
         else f"apt-get install -qq -y --no-install-recommends {_base_pkgs}"
     )
-    _run_checked(
+    _incus._run_checked(
         [
             "incus",
             "exec",
@@ -1411,7 +687,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     )
     _say("installing @anthropic-ai/sandbox-runtime via npm...", quiet=quiet)
     npm_flags = "" if verbose else "--loglevel=error "
-    _run_checked(
+    _incus._run_checked(
         [
             "incus",
             "exec",
@@ -1449,7 +725,7 @@ def _pull_container_log(
         host_dest:          Host file path to write the pulled log to.
     """
     host_dest.parent.mkdir(parents=True, exist_ok=True)
-    r = _run(
+    r = _incus._run(
         [
             "incus",
             "file",
@@ -1536,7 +812,7 @@ def _apply_host_ishfiles(
         pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
     pass1_cmd += ["apply", "--isholate", "--yes"]
     try:
-        _run_checked(
+        _incus._run_checked(
             pass1_cmd,
             "ishfiles apply (pass 1: host dotfiles)",
             stdin=subprocess.DEVNULL,
@@ -1546,7 +822,7 @@ def _apply_host_ishfiles(
         _pull_container_log(name, container_log, host_log)
 
     _say("finalising ownership of container home...", quiet=quiet)
-    _run_checked(
+    _incus._run_checked(
         [
             "incus",
             "exec",
@@ -1597,7 +873,7 @@ def _apply_project_overlay(
         readonly=True,
     )
     try:
-        _run_checked(
+        _incus._run_checked(
             [
                 "incus",
                 "exec",
@@ -1627,7 +903,7 @@ def _apply_project_overlay(
         _pull_container_log(name, container_log, host_log)
 
     _say("finalising ownership of container home...", quiet=quiet)
-    _run_checked(
+    _incus._run_checked(
         [
             "incus",
             "exec",
@@ -1780,7 +1056,7 @@ def ensure_host_base(
                         "— forcing rebuild...",
                         quiet=quiet,
                     )
-                    del_r = _run(
+                    del_r = _incus._run(
                         ["incus", "delete", name, "--force"],
                         capture_output=True,
                         text=True,
@@ -1807,20 +1083,20 @@ def ensure_host_base(
                     f"host base '{name}' is stale (source changed) — rebuilding...",
                     quiet=quiet,
                 )
-                _run(["incus", "delete", name, "--force"], check=False)
+                _incus._run(["incus", "delete", name, "--force"], check=False)
         elif rebuild and _container_exists(name):
             _say(
                 f"rebuilding host base '{name}' (--rebuild requested)...",
                 quiet=quiet,
             )
-            _run(["incus", "delete", name, "--force"], check=False)
+            _incus._run(["incus", "delete", name, "--force"], check=False)
 
         _say(
             f"creating host base '{name}' from {image} "
             "(may pull the image on first use)...",
             quiet=quiet,
         )
-        _run(
+        _incus._run(
             ["incus", "init", image, name, "--config", "security.nesting=true"],
             check=True,
         )
@@ -1828,16 +1104,16 @@ def ensure_host_base(
 
         try:
             _say(f"starting host base '{name}'...", quiet=quiet)
-            _run(["incus", "start", name], check=True)
+            _incus._run(["incus", "start", name], check=True)
             started = True
 
             # Create the container user matching the host username.
             _say(f"creating user '{username}' in host base...", quiet=quiet)
-            _run(
+            _incus._run(
                 ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
                 check=False,
             )
-            _run(
+            _incus._run(
                 ["incus", "exec", name, "--", "useradd", "-m", "-s", shell, username],
                 check=True,
             )
@@ -1874,7 +1150,7 @@ def ensure_host_base(
             # without racing a live container.  The assertion ensures a silently-failing
             # removal cannot poison the base for future copies.
             _say(f"stopping and saving host base '{name}'...", quiet=quiet)
-            _run(["incus", "stop", name, "--force"], check=False)
+            _incus._run(["incus", "stop", name, "--force"], check=False)
             _remove_isholate_devices(name)
             _assert_no_isholate_devices(name)
             _set_stored_fingerprint(name, fingerprint)
@@ -1883,8 +1159,8 @@ def ensure_host_base(
 
         except (subprocess.CalledProcessError, RuntimeError):
             if started:
-                _run(["incus", "stop", name, "--force"], check=False)
-                _run(["incus", "delete", name, "--force"], check=False)
+                _incus._run(["incus", "stop", name, "--force"], check=False)
+                _incus._run(["incus", "delete", name, "--force"], check=False)
             raise
 
 
@@ -1961,13 +1237,13 @@ def ensure_project_base(
                     f"project base '{name}' is stale (host base or overlay changed) — rebuilding...",
                     quiet=quiet,
                 )
-            _run(["incus", "delete", name, "--force"], check=False)
+            _incus._run(["incus", "delete", name, "--force"], check=False)
 
         _say(
             f"creating project base '{name}' from host base '{host_base}'...",
             quiet=quiet,
         )
-        _run(["incus", "copy", host_base, name], check=True)
+        _incus._run(["incus", "copy", host_base, name], check=True)
         # Strip any isholate-* devices inherited from the host base.  The host
         # base is supposed to be device-free when stopped, but a stale base from
         # an interrupted earlier run may still carry them; starting a container
@@ -1980,7 +1256,7 @@ def ensure_project_base(
 
         try:
             _say(f"starting project base '{name}'...", quiet=quiet)
-            _run(["incus", "start", name], check=True)
+            _incus._run(["incus", "start", name], check=True)
             started = True
 
             # Retrieve the uid stored in the host base (inherited by the copy).
@@ -1996,7 +1272,7 @@ def ensure_project_base(
 
             # Re-create the staging dir (it lives in /run, which is tmpfs and
             # does not persist across container stop/start).
-            _run_checked(
+            _incus._run_checked(
                 ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
                 "create staging directory",
                 stdin=subprocess.DEVNULL,
@@ -2027,14 +1303,14 @@ def ensure_project_base(
             _remove_isholate_devices(name)
 
             _say(f"stopping and saving project base '{name}'...", quiet=quiet)
-            _run(["incus", "stop", name, "--force"], check=False)
+            _incus._run(["incus", "stop", name, "--force"], check=False)
             _set_stored_fingerprint(name, combined_fp)
 
             return name
 
         except (subprocess.CalledProcessError, RuntimeError):
             if started and verbose >= 1:
-                dev_r = _run(
+                dev_r = _incus._run(
                     ["incus", "config", "device", "list", name],
                     capture_output=True,
                     text=True,
@@ -2043,8 +1319,8 @@ def ensure_project_base(
                 if dev_r.returncode == 0 and dev_r.stdout.strip():
                     _say(f"devices on '{name}' at failure: {dev_r.stdout.strip()}")
             if started:
-                _run(["incus", "stop", name, "--force"], check=False)
-                _run(["incus", "delete", name, "--force"], check=False)
+                _incus._run(["incus", "stop", name, "--force"], check=False)
+                _incus._run(["incus", "delete", name, "--force"], check=False)
             raise
 
 
@@ -2088,11 +1364,11 @@ def _launch_ephemeral_from_base(
         f"creating ephemeral container '{name}' from base '{parent_base}'...",
         quiet=quiet,
     )
-    _run(["incus", "copy", parent_base, name], check=True)
+    _incus._run(["incus", "copy", parent_base, name], check=True)
 
     try:
         _say(f"starting container '{name}'...", quiet=quiet)
-        _run(["incus", "start", name], check=True)
+        _incus._run(["incus", "start", name], check=True)
         started = True
 
         # Determine container UID; fall back to live lookup if metadata was lost.
@@ -2156,14 +1432,14 @@ def _launch_ephemeral_from_base(
             exec_cmd.extend(_login_shell_argv(args.shell))
             _say(f"launching {args.shell} as login shell in '{name}'...", quiet=quiet)
 
-        result = _run(exec_cmd, check=False)
+        result = _incus._run(exec_cmd, check=False)
         return result.returncode
 
     finally:
         if started:
             _say(f"stopping and deleting '{name}'...", quiet=quiet)
-            _run(["incus", "stop", name, "--force"], check=False)
-            _run(["incus", "delete", name, "--force"], check=False)
+            _incus._run(["incus", "stop", name, "--force"], check=False)
+            _incus._run(["incus", "delete", name, "--force"], check=False)
 
 
 # ---------------------------------------------------------------------------
@@ -2208,7 +1484,7 @@ def _launch_one_shot(
         "(may pull the image on first use)...",
         quiet=quiet,
     )
-    _run(
+    _incus._run(
         ["incus", "init", args.image, name, "--config", "security.nesting=true"],
         check=True,
     )
@@ -2216,14 +1492,14 @@ def _launch_one_shot(
     try:
         _say(f"starting container '{name}'...", quiet=quiet)
         try:
-            _run(["incus", "start", name], check=True)
+            _incus._run(["incus", "start", name], check=True)
             started = True
         except subprocess.CalledProcessError:
             print(
                 f"\nContainer failed to start. Fetching logs for '{name}':\n",
                 file=sys.stderr,
             )
-            _run(["incus", "info", "--show-log", name], check=False)
+            _incus._run(["incus", "info", "--show-log", name], check=False)
             print(
                 f"\nContainer '{name}' left in place for manual inspection.\n"
                 f"Clean up with: incus delete {name} --force",
@@ -2232,11 +1508,11 @@ def _launch_one_shot(
             return 1
 
         _say(f"creating user '{username}' inside container...", quiet=quiet)
-        _run(
+        _incus._run(
             ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
             check=False,
         )
-        _run(
+        _incus._run(
             ["incus", "exec", name, "--", "useradd", "-m", "-s", args.shell, username],
             check=True,
         )
@@ -2308,7 +1584,7 @@ def _launch_one_shot(
             exec_cmd.extend(_login_shell_argv(args.shell))
             _say(f"launching {args.shell} as login shell in '{name}'...", quiet=quiet)
 
-        result = _run(exec_cmd, check=False)
+        result = _incus._run(exec_cmd, check=False)
         return result.returncode
 
     except subprocess.CalledProcessError as exc:
@@ -2338,8 +1614,8 @@ def _launch_one_shot(
     finally:
         if started:
             _say(f"stopping and deleting '{name}'...", quiet=quiet)
-            _run(["incus", "stop", name, "--force"], check=False)
-            _run(["incus", "delete", name, "--force"], check=False)
+            _incus._run(["incus", "stop", name, "--force"], check=False)
+            _incus._run(["incus", "delete", name, "--force"], check=False)
 
 
 # ---------------------------------------------------------------------------
@@ -2365,7 +1641,7 @@ def _pull_container_logs(
     """
     log_dir_in_container = f"{container_home}/.local/state/ishfiles/logs"
 
-    check = _run(
+    check = _incus._run(
         ["incus", "exec", name, "--", "test", "-d", log_dir_in_container],
         check=False,
         capture_output=True,
@@ -2379,7 +1655,7 @@ def _pull_container_logs(
     dest = local_log_root / name
     dest.mkdir(parents=True, exist_ok=True)
 
-    result = _run(
+    result = _incus._run(
         [
             "incus",
             "file",
@@ -2480,15 +1756,8 @@ def _find_isholate_containers(
     """
     safe_user = _sanitize_for_name(username)
 
-    result = subprocess.run(
-        ["incus", "list", "--format=json"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
     entries = []
-    for c in json.loads(result.stdout):
+    for c in _incus.list_incus_containers():
         name = c.get("name", "")
         classified = _classify_isholate_name(
             name, safe_user=None if all_users else safe_user
@@ -2547,7 +1816,7 @@ def purge_containers(
     failed = False
     for name in containers:
         _say(f"deleting {name}...", quiet=quiet)
-        r = _run(["incus", "delete", name, "--force"], check=False)
+        r = _incus._run(["incus", "delete", name, "--force"], check=False)
         if r.returncode != 0:
             print(f"isholate: failed to delete {name}", file=sys.stderr)
             failed = True
@@ -2707,7 +1976,7 @@ def stop_containers(
 
     for name in targets:
         log.info("stopping %s...", name)
-        r = _run(["incus", "stop", name, "--force"], check=False)
+        r = _incus._run(["incus", "stop", name, "--force"], check=False)
         if r.returncode != 0:
             log.error("failed to stop %s", name)
             failed = True
