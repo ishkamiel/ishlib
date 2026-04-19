@@ -77,8 +77,8 @@ def _install_launchers(cfg: IshConfig) -> int:
 
     Returns 0 on success, 1 if any launcher could not be written.
     """
-    source = Path(cfg.get_opt("source")).expanduser().resolve()
-    target = Path(cfg.get_opt("target")).expanduser().resolve()
+    source = Path(cfg.get_opt("source")).expanduser()
+    target = Path(cfg.get_opt("target")).expanduser()
     source_dir = source / "ishlib" / "src"
     dest_dir = target / ".local" / "bin"
     if not source_dir.is_dir():

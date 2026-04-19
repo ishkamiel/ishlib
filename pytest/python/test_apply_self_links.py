@@ -9,13 +9,11 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
-
-from pathlib import Path  # noqa: E402
 
 from pyishlib.ishfiles.commands.apply import _install_launchers  # noqa: E402
 from pyishlib.tools import TOOLS  # noqa: E402
