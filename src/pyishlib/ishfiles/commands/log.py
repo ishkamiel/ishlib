@@ -40,6 +40,7 @@ class LogCommand(CliCommand):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "-i",
             "--index",
             metavar="N",
             type=int,
