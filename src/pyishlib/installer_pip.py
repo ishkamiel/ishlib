@@ -82,9 +82,7 @@ class InstallerPip(InstallerBase):
 
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a pip package is installed"""
-        return self._check_pkg_installed_by_output(
-            pkg, [*self._pip_cmd, "list"]
-        )
+        return self._check_pkg_installed_by_output(pkg, [*self._pip_cmd, "list"])
 
     def update_pkgs(self) -> bool:
         """Update all installed pip packages"""

@@ -36,9 +36,7 @@ class InstallerCargo(InstallerBase):
 
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a cargo package is installed"""
-        return self._check_pkg_installed_by_output(
-            pkg, ["cargo", "install", "--list"]
-        )
+        return self._check_pkg_installed_by_output(pkg, ["cargo", "install", "--list"])
 
     def update_or_install_rust(self) -> bool:
         """Update rustup and install stable if needed"""

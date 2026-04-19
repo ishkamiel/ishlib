@@ -26,9 +26,7 @@ class InstallerBrew(InstallerBase):
 
     def is_pkg_installed(self, pkg: dict) -> bool:
         """Check if a Homebrew package is installed"""
-        return self._check_pkg_installed_by_output(
-            pkg, ["brew", "list", "--formula"]
-        )
+        return self._check_pkg_installed_by_output(pkg, ["brew", "list", "--formula"])
 
     def update_pkgs(self) -> bool:
         """Update all installed Homebrew packages"""
