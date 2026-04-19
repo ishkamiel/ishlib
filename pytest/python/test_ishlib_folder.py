@@ -4,6 +4,7 @@
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,13 +14,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
-from pyishlib.ishlib_folder import (  # noqa: E402
-    ISHFILES_SUBDIR,
-    ISHOLATE_SUBDIR,
-    ISHPROJECT_SUBDIR,
-    PROJECT_DIR_NAME,
-    IshlibFolder,
-)
+from pyishlib.ishlib_folder import PROJECT_DIR_NAME, IshlibFolder  # noqa: E402
+from pyishlib.tools import TOOLS  # noqa: E402
 
 # Skipped on Windows for parity with the rest of the ishproject test
 # suite; the primitives here are covered by the Linux matrix.
@@ -36,48 +32,41 @@ class TestIshlibFolderPaths(unittest.TestCase):
         folder = IshlibFolder(Path("/tmp/proj"))
         self.assertEqual(folder.path, Path("/tmp/proj") / PROJECT_DIR_NAME)
 
-    def test_subdir_accessors(self) -> None:
+    def test_tool_dir_for_all_registered_tools(self) -> None:
         folder = IshlibFolder(Path("/tmp/proj"))
-        self.assertEqual(folder.ishfiles_dir, folder.path / ISHFILES_SUBDIR)
-        self.assertEqual(folder.isholate_dir, folder.path / ISHOLATE_SUBDIR)
-        self.assertEqual(folder.ishproject_dir, folder.path / ISHPROJECT_SUBDIR)
+        for tool in TOOLS:
+            expected = folder.path / tool.subdir
+            self.assertEqual(folder.tool_dir(tool.name), expected)
 
     def test_root_is_resolved_absolute(self) -> None:
         folder = IshlibFolder(Path("./relative/path"))
         self.assertTrue(folder.root.is_absolute())
 
+    def test_tool_dir_unknown_raises(self) -> None:
+        folder = IshlibFolder(Path("/tmp/proj"))
+        with self.assertRaises(ValueError):
+            folder.tool_dir("notarealtool")
+
 
 class TestIshlibFolderDiscovery(unittest.TestCase):
-    """``discover_*`` returns a path when it exists, else ``None``."""
+    """``discover_tool`` returns a path when it exists, else ``None``."""
 
     def setUp(self) -> None:
-        import tempfile
-
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         self.folder = IshlibFolder(self.root)
 
-    def test_discover_ishfiles_missing(self) -> None:
-        self.assertIsNone(self.folder.discover_ishfiles())
+    def test_discover_tool_missing(self) -> None:
+        for tool in TOOLS:
+            self.assertIsNone(self.folder.discover_tool(tool.name))
 
-    def test_discover_isholate_missing(self) -> None:
-        self.assertIsNone(self.folder.discover_isholate())
-
-    def test_discover_ishproject_missing(self) -> None:
-        self.assertIsNone(self.folder.discover_ishproject())
-
-    def test_discover_ishfiles_present(self) -> None:
-        self.folder.ishfiles_dir.mkdir(parents=True)
-        self.assertEqual(self.folder.discover_ishfiles(), self.folder.ishfiles_dir)
-
-    def test_discover_isholate_present(self) -> None:
-        self.folder.isholate_dir.mkdir(parents=True)
-        self.assertEqual(self.folder.discover_isholate(), self.folder.isholate_dir)
-
-    def test_discover_ishproject_present(self) -> None:
-        self.folder.ishproject_dir.mkdir(parents=True)
-        self.assertEqual(self.folder.discover_ishproject(), self.folder.ishproject_dir)
+    def test_discover_tool_present(self) -> None:
+        for tool in TOOLS:
+            d = self.folder.tool_dir(tool.name)
+            d.mkdir(parents=True, exist_ok=True)
+            self.assertEqual(self.folder.discover_tool(tool.name), d)
+            d.rmdir()
 
     def test_exists_reflects_disk_state(self) -> None:
         self.assertFalse(self.folder.exists())

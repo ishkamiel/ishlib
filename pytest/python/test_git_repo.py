@@ -49,6 +49,8 @@ def _make_tempdir() -> tempfile.TemporaryDirectory:
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     env = os.environ.copy()
+    for _var in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY"):
+        env.pop(_var, None)
     env.setdefault("GIT_AUTHOR_NAME", "Test")
     env.setdefault("GIT_AUTHOR_EMAIL", "test@example.com")
     env.setdefault("GIT_COMMITTER_NAME", "Test")
@@ -156,6 +158,8 @@ class TestSubmoduleDiscovery(unittest.TestCase):
             _make_repo(child)
             # Allow file:// submodule clones in modern git.
             env = os.environ.copy()
+            for _var in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY"):
+                env.pop(_var, None)
             env["GIT_AUTHOR_NAME"] = "Test"
             env["GIT_AUTHOR_EMAIL"] = "test@example.com"
             env["GIT_COMMITTER_NAME"] = "Test"

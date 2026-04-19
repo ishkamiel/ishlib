@@ -139,6 +139,19 @@ class CommandRunner:
         command_list = list(command)
         if work_dir is not None and "-C" not in command_list:
             command_list = ["-C", str(work_dir)] + command_list
+        if "env" not in kwargs:
+            # Clear git-dir env vars so that a parent git hook environment
+            # (e.g. pre-commit) does not bleed into subprocess git calls on
+            # a different repo or temp directory.
+            env = os.environ.copy()
+            for _var in (
+                "GIT_DIR",
+                "GIT_INDEX_FILE",
+                "GIT_WORK_TREE",
+                "GIT_OBJECT_DIRECTORY",
+            ):
+                env.pop(_var, None)
+            kwargs["env"] = env
         return self.run(["git"] + command_list, work_dir=work_dir, **kwargs)
 
     def chdir(

@@ -13,6 +13,7 @@ owns that resolution.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,21 @@ from typing import Optional
 from .command_runner import CommandRunner
 
 log = logging.getLogger(__name__)
+
+_GIT_DIR_VARS = (
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_WORK_TREE",
+    "GIT_OBJECT_DIRECTORY",
+)
+
+
+def _clean_git_env() -> dict:
+    """Return a copy of environ with git-dir override vars removed."""
+    env = os.environ.copy()
+    for var in _GIT_DIR_VARS:
+        env.pop(var, None)
+    return env
 
 
 class NotAGitRepoError(RuntimeError):
@@ -77,6 +93,7 @@ class GitRepo:
                 check=True,
                 capture_output=True,
                 text=True,
+                env=_clean_git_env(),
             )
         except (subprocess.CalledProcessError, FileNotFoundError) as exc:
             raise NotAGitRepoError(f"Not a git repository: {path}") from exc
@@ -120,6 +137,7 @@ class GitRepo:
             check=False,
             capture_output=capture_output,
             text=text,
+            env=_clean_git_env(),
         )
 
     def branch_exists(self, branch: str, *, local_only: bool = False) -> bool:

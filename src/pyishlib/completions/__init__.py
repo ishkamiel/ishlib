@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-"""Shell-completion generators for ishfiles and isholate.
+"""Shell-completion generators for all registered ishlib tools.
 
 Completions are produced by the optional `shtab`_ package from each
 tool's live :mod:`argparse` parser, so they stay in sync with the CLI
@@ -15,7 +15,10 @@ logs a hint to install ``shtab``).
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Tuple
+
+from .. import tools as _tools
 
 try:
     import shtab
@@ -33,7 +36,8 @@ def generate(tool: str, shell: str) -> str:
     """Generate a completion script for *tool* in *shell*.
 
     Args:
-        tool:  Either ``"ishfiles"`` or ``"isholate"``.
+        tool:  Name of any registered ishlib tool (see
+               :mod:`pyishlib.tools`).
         shell: One of :data:`SUPPORTED_SHELLS` (``"bash"``, ``"zsh"``,
                ``"tcsh"``).
 
@@ -53,11 +57,6 @@ def generate(tool: str, shell: str) -> str:
             f"unsupported shell {shell!r}; expected one of {SUPPORTED_SHELLS}"
         )
 
-    if tool == "ishfiles":
-        from ..ishfiles.cli import build_parser
-    elif tool == "isholate":
-        from ..isholate.cli import build_parser
-    else:
-        raise ValueError(f"unknown tool {tool!r}; expected 'ishfiles' or 'isholate'")
-
-    return shtab.complete(build_parser(), shell=shell)
+    spec = _tools.get(tool)  # raises ValueError for unknown tool
+    mod = import_module(f"{spec.module}.cli")
+    return shtab.complete(mod.build_parser(), shell=shell)

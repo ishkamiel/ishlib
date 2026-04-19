@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from pathlib import Path
 
+from ...launchers import install_all as _install_launchers_impl
 from ...userio import prompt_yes_no_always
 from ...ish_config import IshConfig
 from ..applier import make_applier, make_finder
@@ -68,70 +68,24 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=run)
 
 
-_SELF_LINK_NAMES = ["ishfiles", "isholate"]
+def _install_launchers(cfg: IshConfig) -> int:
+    """Generate and install tool launcher scripts into ``~/.local/bin``.
 
+    Delegates to :func:`pyishlib.launchers.install_all` with paths derived
+    from *cfg*.  The source directory is ``<source>/ishlib/src``; the
+    destination is ``<target>/.local/bin``.
 
-def _same_file(a: Path, b: Path) -> bool:
-    """Return True if *a* and *b* refer to the same filesystem object."""
-    try:
-        return os.path.samefile(a, b)
-    except OSError:
-        return False
-
-
-def _install_self_links(cfg: IshConfig) -> int:
-    """Create ``~/.local/bin`` symlinks for ``ishfiles`` and ``isholate``.
-
-    Links ``{target}/.local/bin/{name}`` → ``{source}/ishlib/bin/{name}``
-    for each tool.  Existing correct symlinks are silently skipped.
-    Stale symlinks (wrong target) are replaced.  Regular files at the
-    destination are left untouched with a warning.
-
-    Returns 0 on success, 1 if any link could not be created.
+    Returns 0 on success, 1 if any launcher could not be written.
     """
     source = Path(cfg.get_opt("source")).expanduser().resolve()
     target = Path(cfg.get_opt("target")).expanduser().resolve()
-    bin_src = source / "ishlib" / "bin"
-    bin_dst = target / ".local" / "bin"
-
-    had_error = False
-
-    for name in _SELF_LINK_NAMES:
-        src = bin_src / name
-        dst = bin_dst / name
-
-        if not src.exists():
-            log.warning("Self-link: source not found, skipping: %s", src)
-            had_error = True
-            continue
-
-        try:
-            if dst.is_symlink():
-                if _same_file(dst, src):
-                    log.debug("Self-link already correct: %s", dst)
-                    continue
-                # Stale symlink — replace it
-                if cfg.dry_run:
-                    log.info("Would run: ln -sf %s %s", src, dst)
-                    continue
-                dst.unlink()
-            elif dst.exists():
-                log.warning("Self-link: %s exists as a regular file; skipping", dst)
-                had_error = True
-                continue
-            else:
-                if cfg.dry_run:
-                    log.info("Would run: ln -s %s %s", src, dst)
-                    continue
-
-            bin_dst.mkdir(parents=True, exist_ok=True)
-            os.symlink(src, dst)
-            log.info("Linked: %s -> %s", dst, src)
-        except OSError as exc:
-            log.warning("Self-link: failed to link %s: %s", name, exc)
-            had_error = True
-
-    return 1 if had_error else 0
+    source_dir = source / "ishlib" / "src"
+    dest_dir = target / ".local" / "bin"
+    return _install_launchers_impl(
+        dest_dir=dest_dir,
+        source_dir=source_dir,
+        dry_run=cfg.dry_run,
+    )
 
 
 def run(cfg: IshConfig) -> int:
@@ -139,8 +93,8 @@ def run(cfg: IshConfig) -> int:
 
     The pipeline runs in the following phases:
 
-    0. **Self-links** -- create ``~/.local/bin`` symlinks for ``ishfiles``
-       and ``isholate`` so the tools are on the user's PATH.
+    0. **Launchers** -- generate tool launcher scripts into ``~/.local/bin``
+       so all registered ishlib tools are on the user's PATH.
     1. **Scan** -- discover dotfiles and scripts, read metadata, apply
        OS/tag filtering, and collect embedded package declarations.
     2. **Merge** -- combine metadata packages with the main package list.
@@ -160,12 +114,12 @@ def run(cfg: IshConfig) -> int:
     # None → not passed; [] → flag present with no args (force all)
     force_scripts = force_scripts_arg  # None means "respect state"
 
-    # -- Phase 0: Self-links -------------------------------------------------
-    # Best-effort: self-link failures are warnings only.  The most common
-    # cause (ishlib/bin/ missing because the submodule hasn't been
+    # -- Phase 0: Launchers --------------------------------------------------
+    # Best-effort: launcher failures are warnings only.  The most common
+    # cause (ishlib/src/ missing because the submodule hasn't been
     # initialised yet) should not abort the rest of apply.
-    log.info("Phase 0: Installing self-links in ~/.local/bin")
-    _install_self_links(cfg)
+    log.info("Phase 0: Installing tool launchers in ~/.local/bin")
+    _install_launchers(cfg)
     had_errors = False
 
     finder = make_finder(cfg)

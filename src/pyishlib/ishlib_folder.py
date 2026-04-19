@@ -14,20 +14,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-PROJECT_DIR_NAME = ".ishlib"
+from . import tools as _tools
 
-ISHFILES_SUBDIR = "ishfiles"
-ISHOLATE_SUBDIR = "isholate"
-ISHPROJECT_SUBDIR = "ishproject"
+PROJECT_DIR_NAME = ".ishlib"
 
 
 class IshlibFolder:
     """Wrapper around a project's ``.ishlib/`` umbrella directory.
 
-    Provides path accessors and ``discover_*`` helpers for each tool that
-    stores per-project state under ``.ishlib/``. All paths are resolved
-    against the project root passed to the constructor; no parent search
-    is performed.
+    Provides path accessors and ``discover_tool`` helpers for each tool
+    that stores per-project state under ``.ishlib/``. All paths are
+    resolved against the project root passed to the constructor; no
+    parent search is performed.
     """
 
     def __init__(self, root: Path) -> None:
@@ -47,29 +45,25 @@ class IshlibFolder:
         """True iff the ``.ishlib/`` directory exists."""
         return self.path.is_dir()
 
-    @property
-    def ishfiles_dir(self) -> Path:
-        """Absolute path of ``.ishlib/ishfiles/`` (may not exist)."""
-        return self.path / ISHFILES_SUBDIR
+    def tool_dir(self, name: str) -> Path:
+        """Absolute path of ``.ishlib/<subdir>/`` for the named tool (may not exist).
 
-    @property
-    def isholate_dir(self) -> Path:
-        """Absolute path of ``.ishlib/isholate/`` (may not exist)."""
-        return self.path / ISHOLATE_SUBDIR
+        Args:
+            name: Tool name as registered in :mod:`pyishlib.tools`.
 
-    @property
-    def ishproject_dir(self) -> Path:
-        """Absolute path of ``.ishlib/ishproject/`` (may not exist)."""
-        return self.path / ISHPROJECT_SUBDIR
+        Raises:
+            ValueError: If *name* is not a registered tool.
+        """
+        return self.path / _tools.get(name).subdir
 
-    def discover_ishfiles(self) -> Optional[Path]:
-        """Return ``.ishlib/ishfiles/`` if it exists, else ``None``."""
-        return self.ishfiles_dir if self.ishfiles_dir.is_dir() else None
+    def discover_tool(self, name: str) -> Optional[Path]:
+        """Return ``.ishlib/<subdir>/`` for *name* if it exists, else ``None``.
 
-    def discover_isholate(self) -> Optional[Path]:
-        """Return ``.ishlib/isholate/`` if it exists, else ``None``."""
-        return self.isholate_dir if self.isholate_dir.is_dir() else None
+        Args:
+            name: Tool name as registered in :mod:`pyishlib.tools`.
 
-    def discover_ishproject(self) -> Optional[Path]:
-        """Return ``.ishlib/ishproject/`` if it exists, else ``None``."""
-        return self.ishproject_dir if self.ishproject_dir.is_dir() else None
+        Raises:
+            ValueError: If *name* is not a registered tool.
+        """
+        d = self.tool_dir(name)
+        return d if d.is_dir() else None

@@ -95,7 +95,7 @@ def run(args: argparse.Namespace) -> int:
     repo.runner = runner
 
     folder = IshlibFolder(root)
-    source = folder.ishproject_dir
+    source = folder.tool_dir("ishproject")
 
     if source.is_dir():
         log.info("Project dotfiles already present at %s", source)

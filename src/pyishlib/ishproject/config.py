@@ -19,4 +19,4 @@ def resolve_project_paths(root: Path) -> Tuple[Path, Path]:
     ``ishproject init``); ``target`` is the project root itself.
     """
     folder = IshlibFolder(root)
-    return folder.ishproject_dir, folder.root
+    return folder.tool_dir("ishproject"), folder.root
