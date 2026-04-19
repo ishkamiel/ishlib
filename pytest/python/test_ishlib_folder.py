@@ -29,8 +29,10 @@ class TestIshlibFolderPaths(unittest.TestCase):
     """Path accessors compose ``<root>/.ishlib/<subdir>`` correctly."""
 
     def test_path_is_root_plus_project_dir(self) -> None:
+        # IshlibFolder resolves symlinks; on macOS /tmp -> /private/tmp so we
+        # compare against the resolved root rather than the raw input path.
         folder = IshlibFolder(Path("/tmp/proj"))
-        self.assertEqual(folder.path, Path("/tmp/proj") / PROJECT_DIR_NAME)
+        self.assertEqual(folder.path, Path("/tmp/proj").resolve() / PROJECT_DIR_NAME)
 
     def test_tool_dir_for_all_registered_tools(self) -> None:
         folder = IshlibFolder(Path("/tmp/proj"))

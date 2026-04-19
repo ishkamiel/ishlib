@@ -196,16 +196,25 @@ class GitRepo:
         self.runner.git(cmd, work_dir=self.work_tree)
 
     def checkout_orphan(self, branch: str, *, work_dir: Path) -> None:
-        """Run ``git checkout --orphan <branch>`` inside *work_dir*."""
+        """Run ``git switch --orphan <branch>`` inside *work_dir*."""
         self.runner.git(
-            ["checkout", "--orphan", branch],
+            ["switch", "--orphan", branch],
             work_dir=work_dir,
         )
 
     def empty_commit(self, message: str, *, work_dir: Path) -> None:
         """Run ``git commit --allow-empty -m <message>`` inside *work_dir*."""
         self.runner.git(
-            ["commit", "--allow-empty", "-m", message],
+            [
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "tag.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-m",
+                message,
+            ],
             work_dir=work_dir,
         )
 

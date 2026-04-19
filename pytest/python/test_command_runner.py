@@ -101,6 +101,19 @@ class TestCommandRunnerRun:
         # Must restore cwd even after error
         assert os.getcwd() == original_dir
 
+    def test_run_with_work_dir_when_cwd_invalid(self):
+        runner = CommandRunner()
+        original_dir = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("os.getcwd", side_effect=OSError("deleted cwd")):
+                result = runner.run(
+                    ["pwd"], work_dir=Path(tmpdir), capture_output=True, text=True
+                )
+            # run() couldn't save old_path (getcwd failed), so it left cwd as
+            # tmpdir; restore before TemporaryDirectory.__exit__ deletes it.
+            os.chdir(original_dir)
+        assert tmpdir in result.stdout
+
     def test_run_converts_command_to_strings(self):
         runner = CommandRunner()
         result = runner.run(["echo", Path("/tmp")], capture_output=True, text=True)
@@ -129,10 +142,16 @@ class TestCommandRunnerFileOps:
         runner = CommandRunner()
         original_dir = os.getcwd()
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = runner.chdir(Path(tmpdir))
-            assert result is True
-            assert os.getcwd() == tmpdir
-            os.chdir(original_dir)
+            try:
+                result = runner.chdir(Path(tmpdir))
+                assert result is True
+                # On macOS os.chdir resolves symlinks so /var/folders/... becomes
+                # /private/var/folders/... — compare via resolved paths.
+                assert Path(os.getcwd()).resolve() == Path(tmpdir).resolve()
+            finally:
+                # Restore cwd before TemporaryDirectory.__exit__ deletes tmpdir;
+                # on Windows a process cannot delete its own cwd.
+                os.chdir(original_dir)
 
     def test_chdir_same_dir(self):
         runner = CommandRunner()
