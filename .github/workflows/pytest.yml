@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -26,10 +26,8 @@ jobs:
         sudo apt-get install -y shellcheck dash zsh
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install pytest pytest-xdist
-        pip install -r requirements.txt
-        pip install -r requirements-extra.txt
+        python -m pip install -U 'pip>=25.1'
+        pip install --group test --group extras --group runtime
     - name: Run all pytests
       run: |
         pytest
@@ -45,15 +43,8 @@ jobs:
     - name: Install Python dependencies
       shell: bash
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install pytest pytest-xdist
-        grep -v -E '^(griffe|mkdocs)' requirements.txt > requirements-test.txt
-        python -m pip install -r requirements-test.txt
-        # Install optional packages so the shtab-backed completion tests
-        # and other optional-dep paths are exercised on Windows too
-        # (matches the Linux jobs, and removes "optional dep missing"
-        # as a cross-platform divergence in test coverage).
-        python -m pip install -r requirements-extra.txt
+        python -m pip install -U 'pip>=25.1'
+        pip install --group test --group extras --group runtime
     - name: Run Python tests
       run: |
         python -m pytest pytest/python/ -n 0 -v --tb=long
@@ -68,10 +59,8 @@ jobs:
         python-version: "3.13"
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install pytest pytest-xdist
-        python -m pip install -r requirements.txt
-        python -m pip install -r requirements-extra.txt
+        python -m pip install -U 'pip>=25.1'
+        pip install --group test --group extras --group runtime
     - name: Run Python tests
       run: |
         python -m pytest pytest/python/ -n 0 -v --tb=long

@@ -1,8 +1,0 @@
-# Optional packages that enhance ishlib functionality.
-# Install with: pip install -r requirements-extra.txt
-# Run `ishfiles doctor` to see what is available and what each enables.
-shtab         # Shell tab-completion via `ishfiles init --bash/--zsh`
-cerberus      # Schema validation for packages.toml and __ISH__ metadata
-jsonschema    # Installer config schema validation
-PyYAML        # Tolerant schema file parsing (comments, trailing commas)
-tomli_w       # Writing TOML metadata files
