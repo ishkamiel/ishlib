@@ -18,9 +18,13 @@ log = logging.getLogger(__name__)
 class InstallerBase(ABC):
     """Abstract base class for package installer backends.
 
-    Subclasses must set :attr:`INSTALLER_NAME` and implement the four
-    abstract methods: :meth:`is_pkg_installed`, :meth:`install_pkgs`,
-    :meth:`update_pkgs`, and :meth:`update_and_install_all`.
+    Subclasses must set :attr:`INSTALLER_NAME` and implement the two
+    abstract methods :meth:`is_pkg_installed` and :meth:`update_pkgs`.
+    :meth:`install_pkgs` and :meth:`update_and_install_all` have default
+    implementations on the base class — override them only if the
+    default argv shape (:meth:`_build_install_cmd`) or sudo requirement
+    (:meth:`_needs_sudo_for_install`) cannot express the backend's
+    quirks (e.g. winget loops per package).
 
     Most subclasses also override :meth:`_tool_cmd` and :meth:`_pkg_key`
     to get the default :attr:`available` and :meth:`can_install` behaviour

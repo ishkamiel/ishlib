@@ -1594,7 +1594,7 @@ def _launch_one_shot(
             f"\nisholate: provisioning failed — see output above for details.\n"
             f"  Failed command: {' '.join(str(a) for a in exc.cmd)}\n"
             f"  Exit status: {exc.returncode}\n"
-            "  Tip: re-run with -vv to stream full debug output from inside the container.",
+            "  Tip: re-run with --debug to stream full debug output from inside the container.",
             file=sys.stderr,
             flush=True,
         )
@@ -2084,7 +2084,7 @@ def launch_and_exec(
             if isinstance(exc, subprocess.CalledProcessError):
                 print(
                     "\nisholate: host-base provisioning failed — see output above.\n"
-                    "  Tip: re-run with -vv to stream full debug output.",
+                    "  Tip: re-run with --debug to stream full debug output.",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -2114,7 +2114,7 @@ def launch_and_exec(
                 if isinstance(exc, subprocess.CalledProcessError):
                     print(
                         "\nisholate: project-base provisioning failed — see output above.\n"
-                        "  Tip: re-run with -vv to stream full debug output.",
+                        "  Tip: re-run with --debug to stream full debug output.",
                         file=sys.stderr,
                         flush=True,
                     )
