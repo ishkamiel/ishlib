@@ -96,6 +96,11 @@ class TestInstallAll(unittest.TestCase):
         self.assertEqual(ret, 0)
         self.assertFalse(self.dest.exists(), "dry_run must not create directories")
 
+    @unittest.skipIf(
+        sys.platform == "win32"
+        or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        "chmod(0o555) is unreliable on Windows and when running as root",
+    )
     def test_error_on_unwritable_dest(self):
         self.dest.mkdir(parents=True)
         self.dest.chmod(0o555)

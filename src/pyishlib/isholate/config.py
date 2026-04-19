@@ -55,7 +55,7 @@ LOCKS_STATE_DIR = Path(".local") / "state" / "isholate" / "locks"
 def discover_project_overlay(root: Path) -> Optional[Path]:
     """Check *root* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
 
-    Thin wrapper around :meth:`IshlibFolder.discover_ishfiles` kept under
+    Thin wrapper around :meth:`IshlibFolder.discover_tool` kept under
     its historical name for the isholate call sites.
 
     Args:

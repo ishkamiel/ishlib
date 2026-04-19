@@ -143,13 +143,10 @@ class CommandRunner:
             # Clear git-dir env vars so that a parent git hook environment
             # (e.g. pre-commit) does not bleed into subprocess git calls on
             # a different repo or temp directory.
+            from .git_repo import _GIT_DIR_VARS  # lazy to avoid circular import
+
             env = os.environ.copy()
-            for _var in (
-                "GIT_DIR",
-                "GIT_INDEX_FILE",
-                "GIT_WORK_TREE",
-                "GIT_OBJECT_DIRECTORY",
-            ):
+            for _var in _GIT_DIR_VARS:
                 env.pop(_var, None)
             kwargs["env"] = env
         return self.run(["git"] + command_list, work_dir=work_dir, **kwargs)

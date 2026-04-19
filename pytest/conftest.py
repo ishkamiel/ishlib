@@ -33,6 +33,8 @@ a specific scenario) set them explicitly via ``monkeypatch.setenv`` or by
 building an ``env`` dict from ``os.environ.copy()`` inside the test.
 """
 
+from __future__ import annotations
+
 import os
 
 import pytest

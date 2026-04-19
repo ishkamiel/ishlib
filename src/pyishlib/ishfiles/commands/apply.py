@@ -81,6 +81,9 @@ def _install_launchers(cfg: IshConfig) -> int:
     target = Path(cfg.get_opt("target")).expanduser().resolve()
     source_dir = source / "ishlib" / "src"
     dest_dir = target / ".local" / "bin"
+    if not source_dir.is_dir():
+        log.warning("Skipping launcher installation: %s does not exist", source_dir)
+        return 1
     return _install_launchers_impl(
         dest_dir=dest_dir,
         source_dir=source_dir,
