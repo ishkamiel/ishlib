@@ -16,6 +16,7 @@ sys.path.insert(
 )
 
 from pyishlib.launchers import install_all, render_launcher  # noqa: E402
+from pyishlib.launchers.__main__ import _build_parser  # noqa: E402
 from pyishlib.tools import TOOLS, get as get_tool  # noqa: E402
 
 
@@ -117,6 +118,47 @@ class TestInstallAll(unittest.TestCase):
         for tool in TOOLS:
             content = (self.dest / tool.name).read_text()
             self.assertIn(str(self.source), content)
+
+
+class TestParser(unittest.TestCase):
+    """The launchers CLI uses the unified ishlib flag shape."""
+
+    def setUp(self):
+        self.parser = _build_parser()
+
+    def test_install_default_flags(self):
+        ns = self.parser.parse_args(["install"])
+        self.assertFalse(ns.verbose)
+        self.assertFalse(ns.debug)
+        self.assertFalse(ns.quiet)
+        self.assertIsNone(ns.log_file)
+        self.assertFalse(ns.dry_run)
+
+    def test_install_short_verbose(self):
+        ns = self.parser.parse_args(["install", "-v"])
+        self.assertTrue(ns.verbose)
+
+    def test_install_long_verbose(self):
+        ns = self.parser.parse_args(["install", "--verbose"])
+        self.assertTrue(ns.verbose)
+
+    def test_install_debug(self):
+        ns = self.parser.parse_args(["install", "--debug"])
+        self.assertTrue(ns.debug)
+
+    def test_install_quiet(self):
+        ns = self.parser.parse_args(["install", "-q"])
+        self.assertTrue(ns.quiet)
+
+    def test_install_log_file(self):
+        ns = self.parser.parse_args(["install", "--log-file", "/tmp/x.log"])
+        self.assertEqual(ns.log_file, "/tmp/x.log")
+
+    def test_verbose_is_boolean_not_count(self):
+        # The old behaviour was action="count"; -vv would equal 2.  Under the
+        # unified flag shape -v is store_true, so repeating it has no effect.
+        ns = self.parser.parse_args(["install", "-v", "-v"])
+        self.assertEqual(ns.verbose, True)
 
 
 if __name__ == "__main__":

@@ -5,11 +5,43 @@
 from __future__ import annotations
 
 import argparse
-import logging
 from pathlib import Path
 
 from . import install_all
-from ..ish_logging import setup_logging
+from ..ish_logging import log_level_from_args, setup_logging
+
+
+def _add_common_flags(parser: argparse.ArgumentParser) -> None:
+    """Attach the unified ishlib ``-v/--debug/-q/--log-file`` flags."""
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose output",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable debug output",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Suppress non-essential output",
+    )
+    parser.add_argument(
+        "--log-file",
+        metavar="FILE",
+        default=None,
+        help=(
+            "Append all log output (DEBUG and above) to this file, "
+            "regardless of terminal verbosity."
+        ),
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -52,13 +84,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Show what would be installed without writing files.",
     )
-    install.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase log verbosity (-v=info, -vv=debug).",
-    )
+    _add_common_flags(install)
     return parser
 
 
@@ -66,14 +92,8 @@ def main(argv=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    level = (
-        logging.DEBUG
-        if args.verbose >= 2
-        else logging.INFO
-        if args.verbose
-        else logging.WARNING
-    )
-    setup_logging(level, log_file=None, quiet=False)
+    log_file = Path(args.log_file) if args.log_file else None
+    setup_logging(log_level_from_args(args), log_file=log_file, quiet=args.quiet)
 
     if args.subcommand == "install":
         dest_dir = Path(args.dest).expanduser().resolve()
