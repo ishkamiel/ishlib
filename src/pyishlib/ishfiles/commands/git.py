@@ -33,7 +33,9 @@ class GitCommand(CliCommand):
         finder = make_finder(cfg)
 
         if not finder.source_dir.is_dir():
-            print(f"Source directory does not exist: {finder.source_dir}", file=sys.stderr)
+            print(
+                f"Source directory does not exist: {finder.source_dir}", file=sys.stderr
+            )
             return 1
 
         git_args = cfg.get_opt("git_args", [])

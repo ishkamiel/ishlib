@@ -234,9 +234,7 @@ class InstallerBase(ABC):
         """
         self._validate_pkgs(pkgs)
         pkg_names: Sequence[str] = [pkg[self._pkg_key()] for pkg in pkgs]
-        log.info(
-            "Installing with %s: %s", self.INSTALLER_NAME, " ".join(pkg_names)
-        )
+        log.info("Installing with %s: %s", self.INSTALLER_NAME, " ".join(pkg_names))
         res = self._run_cmd(
             self._build_install_cmd(pkg_names),
             sudo=self._needs_sudo_for_install(),
