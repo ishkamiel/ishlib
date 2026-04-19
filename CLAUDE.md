@@ -231,6 +231,26 @@ GitHub Actions runs four workflows:
 - **Pytest** (`.github/workflows/pytest.yml`): Runs the full test suite across Python 3.8-3.12 with shellcheck/dash/zsh for cross-shell testing (on push and pull request)
 - **Docs** (`.github/workflows/docs.yml`): Verifies generated docs (`docs/ishlib_shell.md`, `docs/pyishlib/`) are up to date (on push and pull request)
 
+### Accessing CI logs
+
+The `gh` CLI is available and authenticated in this environment. Use it to access run logs, job output, and other GitHub Actions details that the MCP tools cannot provide:
+
+```bash
+# List recent runs for the PR branch
+gh run list --repo ishkamiel/ishlib --branch <branch>
+
+# View run summary (all jobs + annotations)
+gh run view <run-id> --repo ishkamiel/ishlib
+
+# Stream full step-level logs for a specific job
+gh run view --job=<job-id> --repo ishkamiel/ishlib --log
+
+# Show only failed step logs (empty output means all jobs passed)
+gh run view <run-id> --repo ishkamiel/ishlib --log-failed
+```
+
+When investigating a CI failure on a PR, prefer `gh run view --log-failed` first, then drill into a specific job with `--job=<job-id> --log` if needed.
+
 ## Config File Support
 
 The `pyishlib` installer framework supports loading package configuration from **JSON** (`InstallerConfigJSON`) and **TOML** (`InstallerConfigTOML`) files. Both formats use the same Cerberus schema validation. TOML support uses `tomllib` (Python 3.11+ stdlib) with automatic fallback to the `tomli` package for older Python versions.
