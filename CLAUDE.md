@@ -179,27 +179,39 @@ def test_example(shell, tmp_path, ishlib):
 
 Python tests use `unittest.TestCase` classes with `@patch` for mocking. No shared conftest -- each file imports directly from `pyishlib`.
 
-#### Git subprocesses in tests — GIT_DIR isolation
+#### Hermetic subprocess environment — `pytest/conftest.py`
 
-Pre-commit sets `GIT_DIR` (and related vars) to point at the project's own git
-index before invoking pytest. Any test that spawns a git subprocess inheriting
-that env would operate on the real repository instead of its own temp directory,
-silently corrupting the staged index.
+Pre-commit sets `GIT_DIR` and other variables before invoking pytest. Any test
+that spawns a subprocess without an explicit `env=` argument would inherit the
+host's full environment and might corrupt the real repository index, use the
+host's signing keys, or behave differently across machines.
 
 **`pytest/conftest.py` handles this globally.** A session-scoped `autouse`
-fixture strips **all** `GIT_*` variables from `os.environ` at the start of
-every worker process, so subprocess calls in tests inherit a clean environment
-automatically. No per-call env handling is needed in test code.
+fixture replaces `os.environ` wholesale at session start with a minimal,
+deterministic environment:
 
-Tests that need specific identity vars (e.g. `GIT_AUTHOR_NAME`) should set them
-explicitly in their own `env` dict:
+- **Passed through from host**: `PATH`, `HOME`, `TMPDIR`/`TMP`/`TEMP` only.
+- **Synthesised unconditionally**: `GIT_CONFIG_GLOBAL=/dev/null`,
+  `GIT_CONFIG_SYSTEM=/dev/null`, and fixed git identity vars
+  (`GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`,
+  `GIT_COMMITTER_EMAIL`) so commits work without reading any per-user config.
+- **Everything else is stripped** — no `GIT_DIR`, no `PYTHONPATH`, no signing
+  keys, no credential helpers, nothing else from the host.
+
+Each xdist worker gets its own `os.environ` copy, so the fixture runs
+independently in every worker. Subprocesses spawned without an explicit `env=`
+automatically inherit this clean environment.
+
+Tests that need to override a specific variable for a scenario do so explicitly:
 
 ```python
-env = os.environ.copy()   # GIT_* already gone; safe to copy
-env["GIT_AUTHOR_NAME"] = "Test"
-env["GIT_AUTHOR_EMAIL"] = "test@example.com"
-subprocess.run(["git", "commit", ...], env=env, check=True)
+env = os.environ.copy()   # already minimal; safe to copy and extend
+env["MY_VAR"] = "value"
+subprocess.run(["some-tool", ...], env=env, check=True)
 ```
+
+Do **not** add per-test `_scrub_git_env()` helpers or inline `GIT_*` env setup —
+the conftest covers all of it globally.
 
 `CommandRunner.git()` and `GitRepo` methods additionally clear the four
 dir-override vars (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`,

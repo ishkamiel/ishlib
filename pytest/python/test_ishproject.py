@@ -51,11 +51,6 @@ def _make_tempdir() -> tempfile.TemporaryDirectory:
 
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    env = os.environ.copy()
-    env.setdefault("GIT_AUTHOR_NAME", "Test")
-    env.setdefault("GIT_AUTHOR_EMAIL", "test@example.com")
-    env.setdefault("GIT_COMMITTER_NAME", "Test")
-    env.setdefault("GIT_COMMITTER_EMAIL", "test@example.com")
     return subprocess.run(
         [
             "git",
@@ -69,7 +64,6 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
         check=True,
         capture_output=True,
         text=True,
-        env=env,
     )
 
 
@@ -78,30 +72,10 @@ def _init_repo(root: Path) -> None:
     _git("commit", "--allow-empty", "-m", "init", cwd=root)
 
 
-def _scrub_git_env(test: unittest.TestCase) -> None:
-    for var in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
-        original = os.environ.get(var)
-        os.environ[var] = os.devnull
-        if original is None:
-            test.addCleanup(os.environ.pop, var, None)
-        else:
-            test.addCleanup(os.environ.__setitem__, var, original)
-    for var in (
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ):
-        if var not in os.environ:
-            os.environ[var] = "Test" if var.endswith("NAME") else "test@example.com"
-            test.addCleanup(os.environ.pop, var, None)
-
-
 class _ChdirTestCase(unittest.TestCase):
     """Provides a tempdir + chdir helper used by every test below."""
 
     def setUp(self) -> None:
-        _scrub_git_env(self)
         self._tmp = _make_tempdir()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name).resolve()
