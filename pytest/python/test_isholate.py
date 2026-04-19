@@ -7,6 +7,7 @@
 #
 # Tests for the isholate tool (CLI and container lifecycle)
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -1595,7 +1596,7 @@ class TestBaseManagement:
         stored_fp=None,
         container_exists=False,
         rebuild=False,
-        verbose=0,
+        log_level=logging.WARNING,
         quiet=True,
     ):
         """Run ensure_host_base with mocked Incus calls."""
@@ -1638,7 +1639,7 @@ class TestBaseManagement:
                             host_source,
                             None,
                             _FAKE_SHELL,
-                            verbose=verbose,
+                            log_level=log_level,
                             quiet=quiet,
                             rebuild=rebuild,
                         )
