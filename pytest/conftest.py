@@ -40,7 +40,9 @@ import os
 import pytest
 
 # Variables copied verbatim from the host.
-_PASSTHROUGH = frozenset({"PATH", "HOME", "TMPDIR", "TMP", "TEMP"})
+# SYSTEMROOT and USERPROFILE are essential on Windows (system DLLs, home dir);
+# they are simply absent on Linux/macOS so the if-in-os.environ guard is a no-op.
+_PASSTHROUGH = frozenset({"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "USERPROFILE"})
 
 # Variables synthesised unconditionally; these shadow any host value.
 _SYNTHETIC: dict[str, str] = {
