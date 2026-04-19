@@ -1,3 +1,36 @@
+[dependency-groups]
+runtime = [
+  "tomli; python_version < '3.11'",
+]
+
+extras = [
+  "shtab",
+  "cerberus",
+  "jsonschema",
+  "PyYAML",
+  "tomli_w",
+]
+
+test = [
+  "pytest",
+  "pytest-xdist",
+]
+
+docs = [
+  "griffe",
+  "mkdocs",
+  "mkdocs-material",
+]
+
+dev = [
+  {include-group = "runtime"},
+  {include-group = "test"},
+  {include-group = "docs"},
+  {include-group = "extras"},
+  "mypy",
+  "ruff",
+]
+
 [tool.ruff]
 src = ["src"]
 exclude = ["pytest"]

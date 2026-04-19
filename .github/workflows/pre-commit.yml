@@ -23,8 +23,8 @@ jobs:
         sudo apt-get install -y shellcheck dash zsh
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install -U 'pip>=25.1'
+        pip install --group runtime
     - uses: pre-commit/action@v3.0.1
       env:
         SKIP: pytest

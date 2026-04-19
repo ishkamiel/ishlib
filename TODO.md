@@ -56,16 +56,16 @@ them off or delete them as they land.
   Add `git diff --exit-code -- docs/` after the regen so stale docs break
   CI (the CLAUDE.md contract already says generated docs must be
   committed).
-- **Coverage.** Add `pytest-cov` to `requirements-dev.txt`, a
+- **Coverage.** Add `pytest-cov` to the `dev` dependency group in `pyproject.toml`, a
   `[tool.coverage.run]` block to `pyproject.toml`, and a `--cov=pyishlib`
   run in CI (non-blocking at first).
 - **Python conftest.** `pytest/python/` has ~750 mock/patch call sites
   across 31 files with no shared `conftest.py`. Introduce one for the
   most-repeated fixtures (temp home, mock `CommandRunner`, captured
   logger).
-- **Dependency pinning / dependabot.** `requirements*.txt` are unpinned;
-  add minimum version ranges and a `.github/dependabot.yml` for weekly
-  pip + github-actions updates.
+- **Dependency pinning / dependabot.** The `[dependency-groups]` entries in
+  `pyproject.toml` are unpinned; add minimum version ranges and a
+  `.github/dependabot.yml` for weekly pip + github-actions updates.
 - **macOS runner.** Currently only Ubuntu + Windows (Python-only). Add a
   macOS job restricted to `pytest/shell/` under bash/zsh to catch
   BSD-vs-GNU regressions.
