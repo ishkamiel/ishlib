@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from ..container import incus as _incus
+from ..ish_logging import log_level_from_args, log_level_to_cli_flags
 from .claude import (
     _add_claude_mounts,
     _apply_network_restrictions,
@@ -365,7 +366,7 @@ def _host_base_fingerprint(source: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> None:
+def _network_preflight(name: str, *, quiet: bool = False) -> None:
     """Probe outbound IPv4 connectivity inside the container.
 
     Runs before the package manager so that network failures produce
@@ -401,11 +402,7 @@ def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> N
     # Exit 127 means the tool is not installed — skip the check rather than
     # misreporting a connectivity failure.
     if raw_rc == 127:
-        if verbose:
-            print(
-                "isholate: ping not found in image — skipping network pre-flight",
-                file=sys.stderr,
-            )
+        log.debug("ping not found in image — skipping network pre-flight")
         return
 
     if raw_rc != 0:
@@ -466,8 +463,7 @@ def _network_preflight(name: str, *, verbose: int = 0, quiet: bool = False) -> N
         )
         raise RuntimeError("container has no outbound IPv4 connectivity")
 
-    if verbose:
-        print("isholate: network pre-flight ok", file=sys.stderr)
+    log.debug("network pre-flight ok")
 
 
 def _extract_container_ip(addr_output: str) -> str:
@@ -564,7 +560,9 @@ def _add_home_mount(
 # ---------------------------------------------------------------------------
 
 
-def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None:
+def _bootstrap_base(
+    name: str, *, log_level: int = logging.WARNING, quiet: bool = False
+) -> None:
     """Bootstrap a freshly-started container: staging dir, ishlib mount, apt, npm.
 
     Sets up the ``/run/isholate`` staging area, mounts the ishlib checkout,
@@ -585,10 +583,12 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
     container.
 
     Args:
-        name:    Container name.
-        verbose: 0 = quiet apt/npm; 1 = stream output; 2 = also --debug.
-        quiet:   Suppress isholate's own progress messages.
+        name:      Container name.
+        log_level: Terminal log level (``logging.INFO`` and below stream apt /
+                   npm output instead of using their quiet flags).
+        quiet:     Suppress isholate's own progress messages.
     """
+    chatty = log_level <= logging.INFO
     # Create the /run/isholate staging directory.
     _incus._run_checked(
         ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
@@ -611,7 +611,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
         "this can take a minute on first run...",
         quiet=quiet,
     )
-    _network_preflight(name, verbose=verbose, quiet=quiet)
+    _network_preflight(name, quiet=quiet)
 
     # Force apt to use IPv4.
     _incus._run(
@@ -659,11 +659,11 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
             file=sys.stderr,
         )
 
-    apt_update = "apt-get update" if verbose else "apt-get update -qq"
+    apt_update = "apt-get update" if chatty else "apt-get update -qq"
     _base_pkgs = "python3 sudo bubblewrap nodejs npm socat"
     apt_install = (
         f"apt-get install -y --no-install-recommends {_base_pkgs}"
-        if verbose
+        if chatty
         else f"apt-get install -qq -y --no-install-recommends {_base_pkgs}"
     )
     _incus._run_checked(
@@ -686,7 +686,7 @@ def _bootstrap_base(name: str, *, verbose: int = 0, quiet: bool = False) -> None
         stdin=subprocess.DEVNULL,
     )
     _say("installing @anthropic-ai/sandbox-runtime via npm...", quiet=quiet)
-    npm_flags = "" if verbose else "--loglevel=error "
+    npm_flags = "" if chatty else "--loglevel=error "
     _incus._run_checked(
         [
             "incus",
@@ -927,7 +927,7 @@ def _provision(
     host_source: Optional[Path],
     project_overlay: Optional[Path],
     *,
-    verbose: int = 0,
+    log_level: int = logging.WARNING,
     quiet: bool = False,
 ) -> None:
     """Run ishfiles inside the container to bootstrap the user's environment.
@@ -943,17 +943,14 @@ def _provision(
         host_config_dir: Host ``~/.config/ishfiles/`` directory.
         host_source:     Host ishfiles source tree (pass 1).  ``None`` skips pass 1.
         project_overlay: Project ``.ishlib/ishfiles/`` directory (pass 2).  ``None`` skips pass 2.
-        verbose:         Verbosity level.
+        log_level:       Terminal log level; propagated to the in-container
+                         ishfiles invocation as ``--debug``/``-v``/``-q``.
         quiet:           Suppress isholate progress messages.
     """
-    ishfiles_flags: List[str] = []
-    if verbose >= 2:
-        ishfiles_flags.append("--debug")
-    elif verbose >= 1:
-        ishfiles_flags.append("-v")
+    ishfiles_flags: List[str] = list(log_level_to_cli_flags(log_level))
     ishfiles_flags.extend(["--custom-username", username])
 
-    _bootstrap_base(name, verbose=verbose, quiet=quiet)
+    _bootstrap_base(name, log_level=log_level, quiet=quiet)
 
     if host_source is not None:
         _apply_host_ishfiles(
@@ -984,7 +981,7 @@ def ensure_host_base(
     host_config_dir: Optional[Path],
     shell: str,
     *,
-    verbose: int = 0,
+    log_level: int = logging.WARNING,
     quiet: bool = False,
     rebuild: bool = False,
 ) -> str:
@@ -1005,7 +1002,8 @@ def ensure_host_base(
         host_source:     Host ishfiles source tree.
         host_config_dir: Optional ``~/.config/ishfiles/`` directory.
         shell:           Login shell to create the user with.
-        verbose:         Verbosity level.
+        log_level:       Terminal log level; propagated to the in-container
+                         ishfiles invocation as ``--debug``/``-v``/``-q``.
         quiet:           Suppress isholate progress messages.
         rebuild:         Force rebuild even if fingerprint matches.
 
@@ -1127,14 +1125,10 @@ def ensure_host_base(
             _set_stored_uid(name, uid)
 
             # Bootstrap (apt) and apply host ishfiles.
-            ishfiles_flags: List[str] = []
-            if verbose >= 2:
-                ishfiles_flags.append("--debug")
-            elif verbose >= 1:
-                ishfiles_flags.append("-v")
+            ishfiles_flags: List[str] = list(log_level_to_cli_flags(log_level))
             ishfiles_flags.extend(["--custom-username", username])
 
-            _bootstrap_base(name, verbose=verbose, quiet=quiet)
+            _bootstrap_base(name, log_level=log_level, quiet=quiet)
             _apply_host_ishfiles(
                 name,
                 username,
@@ -1170,7 +1164,7 @@ def ensure_project_base(
     project_overlay: Path,
     *,
     project_root: Path,
-    verbose: int = 0,
+    log_level: int = logging.WARNING,
     quiet: bool = False,
     rebuild: bool = False,
 ) -> str:
@@ -1186,7 +1180,8 @@ def ensure_project_base(
         project_overlay:  Project ``.ishlib/ishfiles/`` directory.
         project_root:     Project root directory (the dir containing
                           ``.ishlib/``). Used for stable container naming.
-        verbose:          Verbosity level.
+        log_level:        Terminal log level; propagated to the in-container
+                          ishfiles invocation as ``--debug``/``-v``/``-q``.
         quiet:            Suppress isholate progress messages.
         rebuild:          Force rebuild even if fingerprint matches.
 
@@ -1288,11 +1283,7 @@ def ensure_project_base(
             )
 
             # Apply the project overlay.
-            ishfiles_flags: List[str] = []
-            if verbose >= 2:
-                ishfiles_flags.append("--debug")
-            elif verbose >= 1:
-                ishfiles_flags.append("-v")
+            ishfiles_flags: List[str] = list(log_level_to_cli_flags(log_level))
             ishfiles_flags.extend(["--custom-username", username])
 
             _apply_project_overlay(
@@ -1309,7 +1300,7 @@ def ensure_project_base(
             return name
 
         except (subprocess.CalledProcessError, RuntimeError):
-            if started and verbose >= 1:
+            if started:
                 dev_r = _incus._run(
                     ["incus", "config", "device", "list", name],
                     capture_output=True,
@@ -1317,8 +1308,9 @@ def ensure_project_base(
                     check=False,
                 )
                 if dev_r.returncode == 0 and dev_r.stdout.strip():
-                    _say(f"devices on '{name}' at failure: {dev_r.stdout.strip()}")
-            if started:
+                    log.info(
+                        "devices on '%s' at failure: %s", name, dev_r.stdout.strip()
+                    )
                 _incus._run(["incus", "stop", name, "--force"], check=False)
                 _incus._run(["incus", "delete", name, "--force"], check=False)
             raise
@@ -1334,7 +1326,6 @@ def _launch_ephemeral_from_base(
     args: Any,
     stored_uid: Optional[int],
     *,
-    verbose: int = 0,
     quiet: bool = False,
     username: str,
     home: Path,
@@ -1348,7 +1339,6 @@ def _launch_ephemeral_from_base(
                      claude, command).
         stored_uid:  UID read from the base's metadata; falls back to a live
                      ``id -u`` lookup inside the ephemeral if None.
-        verbose:     Verbosity level.
         quiet:       Suppress isholate progress messages.
         username:    Host username (already inside the base).
         home:        Host user's home directory.
@@ -1452,7 +1442,7 @@ def _launch_one_shot(
     *,
     host_ishfiles_source: Optional[Path],
     project_overlay: Optional[Path],
-    verbose: int,
+    log_level: int,
     quiet: bool,
     username: str,
     home: Path,
@@ -1467,7 +1457,8 @@ def _launch_one_shot(
         args:                 Parsed argparse namespace.
         host_ishfiles_source: Host ishfiles source tree (pass 1), or None.
         project_overlay:      Project overlay directory (pass 2), or None.
-        verbose:              Verbosity level.
+        log_level:            Terminal log level; propagated to the in-container
+                              ishfiles invocation as ``--debug``/``-v``/``-q``.
         quiet:                Suppress isholate progress messages.
         username:             Host username.
         home:                 Host home directory.
@@ -1533,7 +1524,7 @@ def _launch_one_shot(
                 host_config_dir if host_config_dir.is_dir() else None,
                 host_ishfiles_source,
                 project_overlay,
-                verbose=verbose,
+                log_level=log_level,
                 quiet=quiet,
             )
 
@@ -2014,7 +2005,7 @@ def launch_and_exec(
 
     Args:
         args: Parsed argparse namespace with fields: name, image, shell,
-              rw_cwd, ro_cwd, command, verbose, quiet, no_cache,
+              rw_cwd, ro_cwd, command, verbose, debug, quiet, no_cache,
               rebuild_base, rebuild_project_base.
         host_ishfiles_source: Host ishfiles source tree (pass 1).
             ``None`` skips the host-base layer.
@@ -2030,15 +2021,7 @@ def launch_and_exec(
     """
     username, home, cwd = get_host_user_info()
 
-    # Map unified flag shape (--verbose store_true + --debug store_true) onto
-    # the integer verbosity level the container helpers use internally:
-    # 0 = default, 1 = info (-v), 2 = debug (--debug).
-    if bool(getattr(args, "debug", False)):
-        verbose: int = 2
-    elif bool(getattr(args, "verbose", False)):
-        verbose = 1
-    else:
-        verbose = 0
+    log_level = log_level_from_args(args)
     quiet: bool = bool(getattr(args, "quiet", False))
     no_cache: bool = bool(getattr(args, "no_cache", False))
     rebuild_base: bool = bool(getattr(args, "rebuild_base", False))
@@ -2052,7 +2035,7 @@ def launch_and_exec(
             args,
             host_ishfiles_source=host_ishfiles_source,
             project_overlay=project_overlay,
-            verbose=verbose,
+            log_level=log_level,
             quiet=quiet,
             username=username,
             home=home,
@@ -2073,7 +2056,7 @@ def launch_and_exec(
                 host_ishfiles_source,
                 host_config_dir if host_config_dir.is_dir() else None,
                 args.shell,
-                verbose=verbose,
+                log_level=log_level,
                 quiet=quiet,
                 rebuild=rebuild_base,
             )
@@ -2103,7 +2086,7 @@ def launch_and_exec(
                     username,
                     project_overlay,
                     project_root=project_root,
-                    verbose=verbose,
+                    log_level=log_level,
                     quiet=quiet,
                     rebuild=rebuild_project_base,
                 )
@@ -2126,7 +2109,7 @@ def launch_and_exec(
                 args,
                 host_ishfiles_source=None,
                 project_overlay=project_overlay,
-                verbose=verbose,
+                log_level=log_level,
                 quiet=quiet,
                 username=username,
                 home=home,
@@ -2138,7 +2121,6 @@ def launch_and_exec(
             parent_base,
             args,
             stored_uid,
-            verbose=verbose,
             quiet=quiet,
             username=username,
             home=home,
@@ -2150,7 +2132,7 @@ def launch_and_exec(
         args,
         host_ishfiles_source=None,
         project_overlay=None,
-        verbose=verbose,
+        log_level=log_level,
         quiet=quiet,
         username=username,
         home=home,
