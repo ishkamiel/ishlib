@@ -79,7 +79,14 @@ class _ChdirTestCase(unittest.TestCase):
         self._tmp = _make_tempdir()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name).resolve()
-        self._original = Path.cwd()
+        try:
+            self._original = Path.cwd()
+        except OSError:
+            # macOS raises ENOENT when the process CWD was deleted by a prior
+            # test that failed before its CWD-restore cleanup was registered.
+            # Fall back to a path that is guaranteed to exist so the cascade
+            # stops here rather than propagating to every subsequent test.
+            self._original = Path(tempfile.gettempdir()).resolve()
         os.chdir(self.root)
         self.addCleanup(lambda: os.chdir(self._original))
 

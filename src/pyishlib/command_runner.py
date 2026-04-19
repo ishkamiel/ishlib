@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
+# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Helper commands for running commands and common shell tasks."""
 
 import logging
@@ -121,14 +121,19 @@ class CommandRunner:
                 args=command, returncode=0, stdout=b"", stderr=b""
             )
 
+        old_path: Optional[Path] = None
         if work_dir is not None:
-            old_path: Path = Path(os.getcwd())
-            os.chdir(work_dir)
+            try:
+                old_path = Path(os.getcwd())
+            except OSError:
+                pass  # CWD already invalid; skip restoring after work_dir execution
 
         try:
+            if work_dir is not None:
+                os.chdir(work_dir)
             result = subprocess.run(command, **kwargs)
         finally:
-            if work_dir is not None:
+            if old_path is not None:
                 os.chdir(old_path)
         return result
 
