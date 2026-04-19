@@ -659,6 +659,17 @@ Isholate calls `setup_logging` from `ish_logging` (not `ish_comp`). When
 launching ishfiles inside a container it passes `--log-file` and pulls the
 file back to the host after exec so container diagnostics are never lost.
 
+## Commit Discipline
+
+Keep commits small, self-contained, and squash-friendly so the history is clean before merge.
+
+- **One logical change per commit.** A fix for a CI failure, a response to a single review comment, and a new feature are three separate commits — not one.
+- **Each Copilot/review suggestion gets its own commit** unless two suggestions touch the exact same lines for the same reason. Grouping unrelated suggestions makes squashing painful.
+- **CI/test fixes are separate from review-comment fixes.** A commit that both adds `from __future__ import annotations` (CI fix) and removes an unused import (review suggestion) should be two commits.
+- **Name fix commits after what they fix**, not after the process that found the issue. Prefer `"test_launchers: skip exec-bits check on Windows"` over `"address Copilot comment"`.
+
+This discipline lets the author squash each fix into its parent feature commit with a single `fixup` line before merge, without manual conflict resolution.
+
 ## Important Warnings
 
 - **Never edit `ishlib.sh`, `docs/ishlib_shell.md`, or `docs/pyishlib/` directly** - they are generated. Edit sources in `src/` and run `make`.
