@@ -35,10 +35,11 @@ CRITICAL    [!!]
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -165,3 +166,40 @@ def setup_logging(
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(IshLogFormatter())
             pkg_logger.addHandler(fh)
+
+
+# ---------------------------------------------------------------------------
+# Verbosity helpers (single source of truth for flags <-> level)
+# ---------------------------------------------------------------------------
+
+
+def log_level_from_args(args: argparse.Namespace) -> int:
+    """Map the unified ishlib flags (``--debug``/``-v``/``-q``) to a log level.
+
+    Precedence: ``--debug`` > ``-v/--verbose`` > ``-q/--quiet`` > default.
+    Missing attributes are treated as falsy, so this is safe to call on any
+    namespace produced by an argparse parser that may or may not declare the
+    flags (e.g. ``ishproject`` passthrough).
+    """
+    if getattr(args, "debug", False):
+        return logging.DEBUG
+    if getattr(args, "verbose", False):
+        return logging.INFO
+    if getattr(args, "quiet", False):
+        return logging.ERROR
+    return logging.WARNING
+
+
+def log_level_to_cli_flags(log_level: int) -> List[str]:
+    """Inverse of :func:`log_level_from_args`.
+
+    Returns the ishlib CLI flags that, when passed to a child invocation,
+    would reproduce ``log_level``. ``WARNING`` (the default) yields no flags.
+    """
+    if log_level <= logging.DEBUG:
+        return ["--debug"]
+    if log_level <= logging.INFO:
+        return ["-v"]
+    if log_level >= logging.ERROR:
+        return ["-q"]
+    return []

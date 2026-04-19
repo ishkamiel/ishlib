@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -17,7 +18,13 @@ sys.path.insert(
 
 import pytest
 
-from pyishlib.ish_logging import IshLogFormatter, _ScriptStdoutFilter, setup_logging
+from pyishlib.ish_logging import (
+    IshLogFormatter,
+    _ScriptStdoutFilter,
+    log_level_from_args,
+    log_level_to_cli_flags,
+    setup_logging,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +204,83 @@ class TestScriptStdoutFilter:
         f = _ScriptStdoutFilter()
         record = self._make_record("pyishlib.ishfiles.cli")
         assert f.filter(record) is True
+
+
+# ---------------------------------------------------------------------------
+# log_level_from_args / log_level_to_cli_flags
+# ---------------------------------------------------------------------------
+
+
+class TestLogLevelFromArgs:
+    """log_level_from_args maps the unified --debug/-v/-q flags to a level."""
+
+    def _ns(self, *, debug=False, verbose=False, quiet=False):
+        return argparse.Namespace(debug=debug, verbose=verbose, quiet=quiet)
+
+    def test_default_is_warning(self):
+        assert log_level_from_args(self._ns()) == logging.WARNING
+
+    def test_verbose_is_info(self):
+        assert log_level_from_args(self._ns(verbose=True)) == logging.INFO
+
+    def test_debug_is_debug(self):
+        assert log_level_from_args(self._ns(debug=True)) == logging.DEBUG
+
+    def test_quiet_is_error(self):
+        assert log_level_from_args(self._ns(quiet=True)) == logging.ERROR
+
+    def test_debug_wins_over_verbose(self):
+        ns = self._ns(debug=True, verbose=True)
+        assert log_level_from_args(ns) == logging.DEBUG
+
+    def test_verbose_wins_over_quiet(self):
+        ns = self._ns(verbose=True, quiet=True)
+        assert log_level_from_args(ns) == logging.INFO
+
+    def test_missing_attrs_treated_as_falsy(self):
+        # Empty namespace (no flags declared at all) defaults to WARNING.
+        assert log_level_from_args(argparse.Namespace()) == logging.WARNING
+
+
+class TestLogLevelToCliFlags:
+    """log_level_to_cli_flags is the inverse: emit child-process flags."""
+
+    def test_debug_emits_debug(self):
+        assert log_level_to_cli_flags(logging.DEBUG) == ["--debug"]
+
+    def test_info_emits_v(self):
+        assert log_level_to_cli_flags(logging.INFO) == ["-v"]
+
+    def test_warning_emits_nothing(self):
+        assert log_level_to_cli_flags(logging.WARNING) == []
+
+    def test_error_emits_q(self):
+        assert log_level_to_cli_flags(logging.ERROR) == ["-q"]
+
+    def test_critical_emits_q(self):
+        assert log_level_to_cli_flags(logging.CRITICAL) == ["-q"]
+
+
+class TestLogLevelRoundTrip:
+    """Args -> level -> child-flags must reproduce the original intent."""
+
+    @pytest.mark.parametrize(
+        "ns_kwargs, expected_flags",
+        [
+            ({"debug": True}, ["--debug"]),
+            ({"verbose": True}, ["-v"]),
+            ({}, []),
+            ({"quiet": True}, ["-q"]),
+        ],
+    )
+    def test_round_trip(self, ns_kwargs, expected_flags):
+        ns = argparse.Namespace(
+            debug=ns_kwargs.get("debug", False),
+            verbose=ns_kwargs.get("verbose", False),
+            quiet=ns_kwargs.get("quiet", False),
+        )
+        level = log_level_from_args(ns)
+        assert log_level_to_cli_flags(level) == expected_flags
 
 
 if __name__ == "__main__":
