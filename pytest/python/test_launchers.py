@@ -81,6 +81,7 @@ class TestInstallAll(unittest.TestCase):
                 f"{tool.name} was unnecessarily re-written",
             )
 
+    @unittest.skipIf(sys.platform == "win32", "launcher symlink migration is Linux/macOS-only")
     def test_replaces_symlinks(self):
         self.dest.mkdir(parents=True)
         for tool in TOOLS:
