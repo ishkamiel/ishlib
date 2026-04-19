@@ -5,12 +5,11 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from abc import ABC
 from typing import Any, List, Optional, Sequence, Type
 
-from .ish_logging import setup_logging
+from .ish_logging import log_level_from_args, setup_logging
 
 from .cli_command import CliCommand
 
@@ -171,14 +170,14 @@ class BaseCLI(ABC):
         return args
 
     def log_level_from_args(self, args: argparse.Namespace) -> int:
-        """Map parsed CLI flags to a logging level."""
-        if getattr(args, "debug", False):
-            return logging.DEBUG
-        if getattr(args, "verbose", False):
-            return logging.INFO
-        if getattr(args, "quiet", False):
-            return logging.ERROR
-        return logging.WARNING
+        """Map parsed CLI flags to a logging level.
+
+        Delegates to :func:`pyishlib.ish_logging.log_level_from_args` so the
+        booleans-to-level mapping has a single source of truth across all
+        ishlib CLIs.  Subclasses may override for tools with non-standard flag
+        semantics.
+        """
+        return log_level_from_args(args)
 
     def default_argv(self, argv: List[str]) -> List[str]:
         """Transform argv before parsing (e.g. ``[]`` → ``["run"]`` for isholate)."""
