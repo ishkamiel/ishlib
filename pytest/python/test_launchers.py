@@ -61,6 +61,7 @@ class TestInstallAll(unittest.TestCase):
         for tool in TOOLS:
             self.assertTrue((self.dest / tool.name).is_file(), f"{tool.name} not created")
 
+    @unittest.skipIf(sys.platform == "win32", "POSIX execute bits not meaningful on Windows")
     def test_launchers_are_executable(self):
         install_all(dest_dir=self.dest, source_dir=self.source)
         for tool in TOOLS:
