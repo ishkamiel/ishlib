@@ -179,6 +179,33 @@ def test_example(shell, tmp_path, ishlib):
 
 Python tests use `unittest.TestCase` classes with `@patch` for mocking. No shared conftest -- each file imports directly from `pyishlib`.
 
+#### Git subprocesses in tests — GIT_DIR isolation
+
+Pre-commit sets `GIT_DIR` (and related vars) to point at the project's own git
+index before invoking pytest. Any test that spawns a git subprocess inheriting
+that env would operate on the real repository instead of its own temp directory,
+silently corrupting the staged index.
+
+**`pytest/conftest.py` handles this globally.** A session-scoped `autouse`
+fixture strips **all** `GIT_*` variables from `os.environ` at the start of
+every worker process, so subprocess calls in tests inherit a clean environment
+automatically. No per-call env handling is needed in test code.
+
+Tests that need specific identity vars (e.g. `GIT_AUTHOR_NAME`) should set them
+explicitly in their own `env` dict:
+
+```python
+env = os.environ.copy()   # GIT_* already gone; safe to copy
+env["GIT_AUTHOR_NAME"] = "Test"
+env["GIT_AUTHOR_EMAIL"] = "test@example.com"
+subprocess.run(["git", "commit", ...], env=env, check=True)
+```
+
+`CommandRunner.git()` and `GitRepo` methods additionally clear the four
+dir-override vars (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`,
+`GIT_OBJECT_DIRECTORY`) in production code paths so they are safe to call from
+outside pytest as well (e.g. from `ishfiles apply` running under a git hook).
+
 ## Pre-commit Hooks
 
 The repo uses pre-commit with: ruff (lint + format), mypy, markdownlint, typos, license header insertion, and pytest. Shellcheck is exercised via the pytest shell tests rather than a dedicated pre-commit hook.

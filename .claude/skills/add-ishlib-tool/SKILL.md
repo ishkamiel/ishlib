@@ -180,6 +180,13 @@ def run(cfg: IshConfig) -> int:
 
 ## Step 3 — Write tests in `pytest/python/test_<name>.py`
 
+> **GIT_* isolation.** `pytest/conftest.py` strips all `GIT_*` env vars at
+> session start, so git subprocesses in tests inherit a clean environment
+> automatically — no per-call `env=` handling is needed. Tests that need
+> identity vars (e.g. `GIT_AUTHOR_NAME`) set them explicitly in their own env
+> dict built from `os.environ.copy()`. See `CLAUDE.md §Git subprocesses in
+> tests — GIT_DIR isolation`.
+
 ```python
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
