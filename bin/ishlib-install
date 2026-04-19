@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-#
-# ishproject -- project-scoped wrapper around ishfiles entry point.
-# Interpreter selection lives in _ishlib_launch.sh; see CLAUDE.md §Entry scripts.
-
+# Bootstrap: install ishlib tool launchers into ~/.local/bin/.
 set -eu
 
-# Resolve $0 through symlinks so we can find the sibling launcher file.
 _self="$0"
 while [ -L "$_self" ]; do
     _link=$(readlink -- "$_self")
@@ -17,7 +13,7 @@ while [ -L "$_self" ]; do
     esac
 done
 _bin_dir=$(cd -P "$(dirname -- "$_self")" && pwd)
+_repo_src=$(cd -P "$_bin_dir/.." && pwd)/src
 
-# shellcheck source=./_ishlib_launch.sh
-. "$_bin_dir/_ishlib_launch.sh"
-ishlib_launch ishproject pyishlib.ishproject "$_bin_dir" "$@"
+export PYTHONPATH="$_repo_src${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m pyishlib.launchers install --source "$_repo_src" "$@"

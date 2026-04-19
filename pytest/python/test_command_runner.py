@@ -234,7 +234,9 @@ class TestCommandRunnerWhich:
 class TestCommandRunnerSudo:
     def test_run_sudo_aborts_on_user_decline(self):
         runner = CommandRunner()
-        with patch("pyishlib.command_runner.prompt_yes_no_always") as mock_prompt:
+        with patch("pyishlib.command_runner.os.geteuid", return_value=1000), patch(
+            "pyishlib.command_runner.prompt_yes_no_always"
+        ) as mock_prompt:
             mock_prompt.return_value = Choice.NO
             with pytest.raises(UserDeclinedError):
                 runner.run_sudo(["echo", "test"])
@@ -254,7 +256,7 @@ class TestCommandRunnerSudo:
 
     def test_check_sudo_always_sets_flag(self):
         runner = CommandRunner()
-        with patch(
+        with patch("pyishlib.command_runner.os.geteuid", return_value=1000), patch(
             "pyishlib.command_runner.prompt_yes_no_always",
             return_value=Choice.ALWAYS,
         ):

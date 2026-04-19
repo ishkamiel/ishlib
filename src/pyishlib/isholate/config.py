@@ -55,7 +55,7 @@ LOCKS_STATE_DIR = Path(".local") / "state" / "isholate" / "locks"
 def discover_project_overlay(root: Path) -> Optional[Path]:
     """Check *root* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
 
-    Thin wrapper around :meth:`IshlibFolder.discover_ishfiles` kept under
+    Thin wrapper around :meth:`IshlibFolder.discover_tool` kept under
     its historical name for the isholate call sites.
 
     Args:
@@ -64,7 +64,7 @@ def discover_project_overlay(root: Path) -> Optional[Path]:
     Returns:
         Absolute path to the ``.ishlib/ishfiles/`` directory, or ``None``.
     """
-    return IshlibFolder(root).discover_ishfiles()
+    return IshlibFolder(root).discover_tool("ishfiles")
 
 
 def load_project_config(root: Path) -> Dict[str, Any]:
@@ -88,7 +88,7 @@ def load_project_config(root: Path) -> Dict[str, Any]:
     Returns:
         Parsed config dict, possibly empty.
     """
-    config_file = IshlibFolder(root).isholate_dir / ISHOLATE_CONFIG_FILE
+    config_file = IshlibFolder(root).tool_dir("isholate") / ISHOLATE_CONFIG_FILE
     result = load_toml_file(config_file, default={})
     return result if isinstance(result, dict) else {}
 

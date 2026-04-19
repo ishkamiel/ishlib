@@ -1,38 +1,68 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
+"""Tests for generated launcher scripts and bin/ishlib-install."""
 
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
-from . import rel_path, run_check_call
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-_BIN_FILES = [
-    rel_path("bin/ishfiles"),
-    rel_path("bin/isholate"),
-    rel_path("bin/_ishlib_launch.sh"),
-]
+from pyishlib.launchers import install_all  # noqa: E402
+from pyishlib.tools import TOOLS, get as get_tool  # noqa: E402
+
+from . import rel_path, run_check_call  # noqa: E402
+
+_TOOL_NAMES = [t.name for t in TOOLS]
 
 
 def pytest_generate_tests(metafunc):
-    if "bin_file" in metafunc.fixturenames:
-        metafunc.parametrize("bin_file", _BIN_FILES, ids=[f.name for f in _BIN_FILES])
+    if "tool_name" in metafunc.fixturenames:
+        metafunc.parametrize("tool_name", _TOOL_NAMES)
 
 
-def test_shellcheck(bin_file):
-    # Run from the file's parent so that shellcheck resolves relative source= paths.
-    original_cwd = os.getcwd()
-    try:
-        os.chdir(bin_file.parent)
-        run_check_call("shellcheck", "-s", "bash", "-x", bin_file.name)
-    finally:
-        os.chdir(original_cwd)
+def test_bash_syntax(tool_name, tmp_path):
+    """Generated launcher must pass ``bash -n`` syntax check."""
+    dest = tmp_path / "bin"
+    install_all(dest_dir=dest, source_dir=rel_path("src"))
+    run_check_call("bash", "-n", str(dest / tool_name))
 
 
-def test_bash_syntax(bin_file):
-    run_check_call("bash", "-n", str(bin_file))
+def test_shellcheck(tool_name, tmp_path):
+    """Generated launcher must pass shellcheck."""
+    dest = tmp_path / "bin"
+    install_all(dest_dir=dest, source_dir=rel_path("src"))
+    run_check_call("shellcheck", "-s", "bash", str(dest / tool_name))
+
+
+def test_launcher_is_executable(tool_name, tmp_path):
+    """Generated launcher must have executable bits set."""
+    dest = tmp_path / "bin"
+    install_all(dest_dir=dest, source_dir=rel_path("src"))
+    launcher = dest / tool_name
+    assert launcher.exists(), f"{tool_name} launcher not created"
+    mode = launcher.stat().st_mode
+    assert mode & stat.S_IXUSR, f"{tool_name} launcher is not user-executable"
+
+
+def test_launcher_contains_module(tool_name, tmp_path):
+    """Generated launcher must reference the correct Python module."""
+    dest = tmp_path / "bin"
+    install_all(dest_dir=dest, source_dir=rel_path("src"))
+    content = (dest / tool_name).read_text()
+    tool = get_tool(tool_name)
+    assert tool.module in content
+
+
+def test_launcher_shebang(tool_name, tmp_path):
+    """Generated launcher must start with #!/usr/bin/env bash."""
+    dest = tmp_path / "bin"
+    install_all(dest_dir=dest, source_dir=rel_path("src"))
+    first_line = (dest / tool_name).read_text().splitlines()[0]
+    assert first_line == "#!/usr/bin/env bash"
 
 
 def _make_fake_python(tmp_path: Path) -> Path:
@@ -43,19 +73,23 @@ def _make_fake_python(tmp_path: Path) -> Path:
     return fake
 
 
-def test_ishlib_python_override_ishfiles(tmp_path):
+def test_ishlib_python_override(tool_name, tmp_path):
+    """ISHLIB_PYTHON env var must be used as the interpreter."""
+    dest = tmp_path / "bin"
+    install_all(dest_dir=dest, source_dir=rel_path("src"))
     fake_py = _make_fake_python(tmp_path)
     env = {**os.environ, "ISHLIB_PYTHON": str(fake_py)}
     result = subprocess.run(
-        [str(rel_path("bin/ishfiles"))], env=env, capture_output=True, text=True
+        [str(dest / tool_name)], env=env, capture_output=True, text=True
     )
     assert str(fake_py) in result.stdout
 
 
-def test_ishlib_python_override_isholate(tmp_path):
-    fake_py = _make_fake_python(tmp_path)
-    env = {**os.environ, "ISHLIB_PYTHON": str(fake_py)}
-    result = subprocess.run(
-        [str(rel_path("bin/isholate"))], env=env, capture_output=True, text=True
-    )
-    assert str(fake_py) in result.stdout
+def test_ishlib_install_bash_syntax():
+    """bin/ishlib-install must pass ``bash -n`` syntax check."""
+    run_check_call("bash", "-n", str(rel_path("bin/ishlib-install")))
+
+
+def test_ishlib_install_shellcheck():
+    """bin/ishlib-install must pass shellcheck."""
+    run_check_call("shellcheck", "-s", "bash", str(rel_path("bin/ishlib-install")))

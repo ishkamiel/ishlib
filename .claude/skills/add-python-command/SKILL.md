@@ -74,6 +74,14 @@ it forwards a lot of state to `launch_and_exec`).
 
 ### 4. Tests in `pytest/python/test_<tool>.py`
 
+> **Hermetic environment.** `pytest/conftest.py` replaces `os.environ`
+> wholesale at session start, keeping only `PATH`/`HOME`/`TMPDIR` from the
+> host and injecting fixed git identity and `/dev/null` git config vars.
+> Subprocesses spawned without `env=` automatically inherit this clean
+> environment — no per-test env setup needed. To override a var for a specific
+> test, build `env = os.environ.copy()` and extend it. See
+> `CLAUDE.md §Hermetic subprocess environment`.
+
 At minimum:
 
 - **Parser defaults** — a test that `parse_args(["<name>"])` sets the

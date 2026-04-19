@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from ... import completions
+from ... import completions, tools
 from ...ish_config import IshConfig
 
 log = logging.getLogger(__name__)
@@ -111,6 +111,6 @@ def run(cfg: IshConfig) -> int:
         )
         return 0
 
-    print(completions.generate("ishfiles", shell), end="")
-    print(completions.generate("isholate", shell), end="")
+    for tool in tools.all_tools():
+        print(completions.generate(tool.name, shell), end="")
     return 0

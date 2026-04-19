@@ -6,7 +6,7 @@
 
 - **Shell library** (`ishlib.sh`): A compiled, self-documenting POSIX/Bash function library built from modular sources in `src/`
 - **Python library** (`src/pyishlib/`): Installer framework with backends for apt, brew, cargo, dnf, pip, winget, and custom scripts; plus the `ishfiles` CLI for dotfile/package/script management
-- **isholate** (`src/pyishlib/isholate/`, entry point `bin/isholate`): Incus-based isolation containers with host user mirroring for testing `ishfiles` setups without touching the real home directory. Linux-only.
+- **isholate** (`src/pyishlib/isholate/`): Incus-based isolation containers with host user mirroring for testing `ishfiles` setups without touching the real home directory. Linux-only.
 
 ## Repository Structure
 
@@ -26,7 +26,7 @@ pytest/
   python/         # Python unit tests
 t/                # Legacy Perl/TAP tests, run via `prove` by pytest/shell/test_legacy_prove.py
 scripts/          # Build scripts (build_ishlib.py, build_pydocs.py)
-bin/              # Executable entry points (ishfiles, isholate)
+bin/              # Bootstrap entry point (ishlib-install)
 docs/             # Generated MkDocs site pages (do not edit by hand)
   ishlib_shell.md     # Generated shell function reference
   pyishlib/           # Generated Python library reference (per-module pages)
@@ -178,6 +178,45 @@ def test_example(shell, tmp_path, ishlib):
 ### Python Tests (`pytest/python/`)
 
 Python tests use `unittest.TestCase` classes with `@patch` for mocking. No shared conftest -- each file imports directly from `pyishlib`.
+
+#### Hermetic subprocess environment — `pytest/conftest.py`
+
+Pre-commit sets `GIT_DIR` and other variables before invoking pytest. Any test
+that spawns a subprocess without an explicit `env=` argument would inherit the
+host's full environment and might corrupt the real repository index, use the
+host's signing keys, or behave differently across machines.
+
+**`pytest/conftest.py` handles this globally.** A session-scoped `autouse`
+fixture replaces `os.environ` wholesale at session start with a minimal,
+deterministic environment:
+
+- **Passed through from host**: `PATH`, `HOME`, `TMPDIR`/`TMP`/`TEMP` only.
+- **Synthesised unconditionally**: `GIT_CONFIG_GLOBAL=/dev/null`,
+  `GIT_CONFIG_SYSTEM=/dev/null`, and fixed git identity vars
+  (`GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`,
+  `GIT_COMMITTER_EMAIL`) so commits work without reading any per-user config.
+- **Everything else is stripped** — no `GIT_DIR`, no `PYTHONPATH`, no signing
+  keys, no credential helpers, nothing else from the host.
+
+Each xdist worker gets its own `os.environ` copy, so the fixture runs
+independently in every worker. Subprocesses spawned without an explicit `env=`
+automatically inherit this clean environment.
+
+Tests that need to override a specific variable for a scenario do so explicitly:
+
+```python
+env = os.environ.copy()   # already minimal; safe to copy and extend
+env["MY_VAR"] = "value"
+subprocess.run(["some-tool", ...], env=env, check=True)
+```
+
+Do **not** add per-test `_scrub_git_env()` helpers or inline `GIT_*` env setup —
+the conftest covers all of it globally.
+
+`CommandRunner.git()` and `GitRepo` methods additionally clear the four
+dir-override vars (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`,
+`GIT_OBJECT_DIRECTORY`) in production code paths so they are safe to call from
+outside pytest as well (e.g. from `ishfiles apply` running under a git hook).
 
 ## Pre-commit Hooks
 
@@ -331,7 +370,7 @@ Subcommands live in `ishfiles/commands/<name>.py` with `register(subparsers)` an
 
 `apply` runs in six phases (see `ishfiles/commands/apply.py:run`):
 
-- **Phase 0 — Self-links**: create `~/.local/bin` symlinks to `ishfiles` and `isholate` so the tools are on the user's PATH. Best-effort; failures log a warning.
+- **Phase 0 — Launchers**: generate tool launcher scripts into `~/.local/bin` for all registered ishlib tools. Best-effort; failures log a warning.
 - **Phase 1 — Scan**: discover dotfiles and scripts, read `__ISH__` metadata, apply OS/tag filtering, and collect embedded package declarations.
 - **Phase 2 — Merge**: combine metadata-declared packages with the main package list.
 - **Phase 3 — Install**: run the installer pipeline for all packages (main + metadata).
@@ -434,7 +473,7 @@ ignore_on = ["fedora"]
 
 ## isholate Architecture
 
-`isholate` (`src/pyishlib/isholate/`, entry point `bin/isholate`) launches ephemeral Incus containers that mirror the host user so `ishfiles` setups can be tested without touching the real `$HOME`. Linux-only — `cli.main` bails out on non-Linux hosts via `environment.is_linux()`.
+`isholate` (`src/pyishlib/isholate/`) launches ephemeral Incus containers that mirror the host user so `ishfiles` setups can be tested without touching the real `$HOME`. Linux-only — `cli.main` bails out on non-Linux hosts via `environment.is_linux()`.
 
 Key modules:
 
@@ -466,11 +505,35 @@ With `--claude`, isolation combines three layers, all on the host:
 
 First use prompts once for sudo (to install the ipset, iptables chain, and the systemd unit). Subsequent runs pass `_claude_firewall_rules_in_place` and skip sudo entirely; reboots are handled by the systemd unit. The "rules in place" check is deliberately file-based — on-disk content match plus `systemctl is-enabled` — since `ipset list` and `iptables -S` require root on every modern distro and would force a sudo prompt on every run. A manual `iptables -F` after install is re-repaired by the systemd unit on next boot; to recover immediately, re-run the apply script under sudo.
 
+## Tool registry
+
+All ishlib CLI tools are registered in a single source of truth:
+`src/pyishlib/tools.py`. Completions, launcher generation, `ishfiles init`,
+and `IshlibFolder` all read from this registry, so a new tool only needs one
+entry there.
+
+To register a new tool, add one entry to `TOOLS` in `src/pyishlib/tools.py`:
+
+```python
+Tool(
+    name="ishnew",
+    module="pyishlib.ishnew",
+    description="One-line description.",
+    subdir="ishnew",
+),
+```
+
+No other file needs to change. See the `add-ishlib-tool` skill for the full
+scaffolding checklist.
+
 ## Entry scripts
 
-`bin/ishfiles` and `bin/isholate` are thin bash stubs (~20 lines each) that
-source `bin/_ishlib_launch.sh` and call `ishlib_launch`. All interpreter
-selection logic lives in the shared helper.
+`bin/ishlib-install` is a thin bash bootstrap (~15 lines) that resolves
+the repo root, sets `PYTHONPATH`, and delegates to
+`python3 -m pyishlib.launchers install`. It is the **only** file in `bin/`;
+per-tool launcher scripts (`ishfiles`, `isholate`, `ishproject`, …) are
+generated by `pyishlib.launchers` into `~/.local/bin/` and never stored in
+`bin/` directly.
 
 ### Interpreter precedence (first match wins)
 
@@ -496,9 +559,10 @@ is used rather than anything from the host.
 
 ### Adding a future ishlib Python CLI
 
-Copy either 20-line stub, swap in the tool name and `-m` module, and add an
-entry to `_SELF_LINK_NAMES` in `src/pyishlib/ishfiles/commands/apply.py` if
-it should be linked onto the user's PATH.
+Add one entry to `src/pyishlib/tools.py` (see §Tool registry above).
+The launcher generator, shell completions, `ishfiles init`, and
+`IshlibFolder` all pick it up automatically — no other file needs changing.
+Use the `add-ishlib-tool` Claude skill for the full scaffolding checklist.
 
 ## ishfiles Manual Testing Safety
 
@@ -594,6 +658,17 @@ setup_logging(logging.INFO, log_file=path, quiet=False)
 Isholate calls `setup_logging` from `ish_logging` (not `ish_comp`). When
 launching ishfiles inside a container it passes `--log-file` and pulls the
 file back to the host after exec so container diagnostics are never lost.
+
+## Commit Discipline
+
+Keep commits small, self-contained, and squash-friendly so the history is clean before merge.
+
+- **One logical change per commit.** A fix for a CI failure, a response to a single review comment, and a new feature are three separate commits — not one.
+- **Each Copilot/review suggestion gets its own commit** unless two suggestions touch the exact same lines for the same reason. Grouping unrelated suggestions makes squashing painful.
+- **CI/test fixes are separate from review-comment fixes.** A commit that both adds `from __future__ import annotations` (CI fix) and removes an unused import (review suggestion) should be two commits.
+- **Name fix commits after what they fix**, not after the process that found the issue. Prefer `"test_launchers: skip exec-bits check on Windows"` over `"address Copilot comment"`.
+
+This discipline lets the author squash each fix into its parent feature commit with a single `fixup` line before merge, without manual conflict resolution.
 
 ## Important Warnings
 
