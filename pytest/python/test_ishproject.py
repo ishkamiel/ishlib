@@ -18,9 +18,24 @@ sys.path.insert(
 
 from pyishlib.ishproject.cli import build_parser, main as cli_main  # noqa: E402
 from pyishlib.ishproject.config import (  # noqa: E402
-    ISHPROJECT_BRANCH,
-    resolve_project_paths,
+    DEFAULT_PREFIX,
+    DEFAULT_POSTFIX,
+    IshprojectConfig,
 )
+
+DEFAULT_BRANCH = f"{DEFAULT_PREFIX}/{DEFAULT_POSTFIX}"
+# Backward-compat alias: older tests referenced ``ISHPROJECT_BRANCH``.
+ISHPROJECT_BRANCH = DEFAULT_BRANCH
+
+
+def _default_cfg() -> IshprojectConfig:
+    """Build an IshprojectConfig with the ishproject default prefix/postfix."""
+    return IshprojectConfig(
+        defaults={"prefix": DEFAULT_PREFIX, "postfix": DEFAULT_POSTFIX},
+    )
+
+
+_DEFAULT_CFG = _default_cfg()
 
 # The ishproject CLI is exercised end-to-end on the Linux matrix.
 # On the Windows runner every class in this file is skipped: we can
@@ -95,7 +110,15 @@ class TestParser(unittest.TestCase):
     def test_subcommands_registered(self) -> None:
         parser = build_parser()
         extras = {"add": ["x"], "clean-rebase": ["HEAD~0"]}
-        for cmd in ("apply", "add", "clean-rebase", "diff", "init", "merge"):
+        for cmd in (
+            "apply",
+            "add",
+            "branch",
+            "clean-rebase",
+            "diff",
+            "init",
+            "merge",
+        ):
             args = parser.parse_args([cmd, *extras.get(cmd, [])])
             self.assertEqual(args.command, cmd)
 
@@ -113,9 +136,38 @@ class TestParser(unittest.TestCase):
 
 class TestResolvePaths(_ChdirTestCase):
     def test_source_under_ishlib_ishproject(self) -> None:
-        source, target = resolve_project_paths(self.root)
+        source, target = _DEFAULT_CFG.resolve_project_paths(self.root)
         self.assertEqual(source, self.root / ".ishlib" / "ishproject")
         self.assertEqual(target, self.root)
+
+    def test_branch_specific_path_is_suffixed(self) -> None:
+        branch = _DEFAULT_CFG.branch_for("main")
+        source, target = _DEFAULT_CFG.resolve_project_paths(self.root, branch=branch)
+        self.assertEqual(source.parent, self.root / ".ishlib")
+        self.assertTrue(source.name.startswith("ishproject-main-"))
+        # 8-hex-char hash suffix.
+        suffix = source.name[len("ishproject-main-") :]
+        self.assertEqual(len(suffix), 8)
+        self.assertTrue(all(c in "0123456789abcdef" for c in suffix))
+        self.assertEqual(target, self.root)
+
+    def test_branch_with_slashes_is_sanitized(self) -> None:
+        from pyishlib.ishlib_folder import IshlibFolder
+
+        folder = IshlibFolder(self.root)
+        branch = _DEFAULT_CFG.branch_for("feature/x")
+        path = _DEFAULT_CFG.worktree_path(folder, branch)
+        self.assertTrue(path.name.startswith("ishproject-feature_x-"))
+
+    def test_sanitize_collision_is_broken_by_hash(self) -> None:
+        # feature/x and feature_x sanitize to the same segment; the hash
+        # suffix must keep their worktree paths distinct.
+        from pyishlib.ishlib_folder import IshlibFolder
+
+        folder = IshlibFolder(self.root)
+        a = _DEFAULT_CFG.worktree_path(folder, _DEFAULT_CFG.branch_for("feature/x"))
+        b = _DEFAULT_CFG.worktree_path(folder, _DEFAULT_CFG.branch_for("feature_x"))
+        self.assertNotEqual(a, b)
 
 
 class TestApplyPassthrough(_ChdirTestCase):
@@ -351,22 +403,16 @@ class TestMerge(_ChdirTestCase):
         self.assertIn("/.ishlib/", exclude)
         self.assertNotIn("/foo.txt", exclude)
 
-        show = _git(
-            "show", "--name-only", "--pretty=", "HEAD", cwd=self.root
-        ).stdout
+        show = _git("show", "--name-only", "--pretty=", "HEAD", cwd=self.root).stdout
         self.assertIn("foo.txt", show)
-        head_msg = _git(
-            "log", "-1", "--pretty=%s", cwd=self.root
-        ).stdout.strip()
+        head_msg = _git("log", "-1", "--pretty=%s", cwd=self.root).stdout.strip()
         self.assertEqual(head_msg, "ishproject: merge managed files")
 
     def test_merge_custom_message(self) -> None:
         _seed_managed_file(self.root, "foo.txt", "hello\n")
         rc = cli_main(["merge", "-m", "custom subject"])
         self.assertEqual(rc, 0)
-        head_msg = _git(
-            "log", "-1", "--pretty=%s", cwd=self.root
-        ).stdout.strip()
+        head_msg = _git("log", "-1", "--pretty=%s", cwd=self.root).stdout.strip()
         self.assertEqual(head_msg, "custom subject")
 
     def test_merge_no_managed_files_noop(self) -> None:
@@ -403,9 +449,7 @@ class TestMerge(_ChdirTestCase):
                 raise subprocess.CalledProcessError(1, ["git", *cmd])
             return real_git(self, command, work_dir=work_dir, **kwargs)
 
-        with patch.object(
-            command_runner_mod.CommandRunner, "git", fake_git
-        ):
+        with patch.object(command_runner_mod.CommandRunner, "git", fake_git):
             rc = cli_main(["merge"])
 
         self.assertEqual(rc, 1)
@@ -438,9 +482,7 @@ class TestCleanRebase(_ChdirTestCase):
         rc = self._run_clean_rebase()
         self.assertEqual(rc, 0)
 
-        log_out = _git(
-            "log", "--name-only", "--pretty=format:", cwd=self.root
-        ).stdout
+        log_out = _git("log", "--name-only", "--pretty=format:", cwd=self.root).stdout
         self.assertNotIn("foo.txt", log_out)
         self.assertIn("bar.txt", log_out)
 
@@ -471,9 +513,7 @@ class TestCleanRebase(_ChdirTestCase):
         tree = _git("ls-tree", "-r", "--name-only", "HEAD", cwd=self.root).stdout
         self.assertNotIn("foo.txt", tree)
         self.assertEqual((self.root / "foo.txt").read_text(), "B\n")
-        last_msg = _git(
-            "log", "-1", "--pretty=%s", cwd=source
-        ).stdout.strip()
+        last_msg = _git("log", "-1", "--pretty=%s", cwd=source).stdout.strip()
         self.assertTrue(last_msg.startswith("ishproject: sync edits from "))
 
     def test_clean_rebase_no_sync_flag_skips_phase2(self) -> None:
@@ -505,16 +545,12 @@ class TestCleanRebase(_ChdirTestCase):
         _git("commit", "-m", "edit foo", cwd=self.root)
 
         source = self.root / ".ishlib" / "ishproject"
-        pre_count = len(
-            _git("rev-list", "HEAD", cwd=source).stdout.splitlines()
-        )
+        pre_count = len(_git("rev-list", "HEAD", cwd=source).stdout.splitlines())
 
         rc = self._run_clean_rebase()
         self.assertEqual(rc, 0)
 
-        post_count = len(
-            _git("rev-list", "HEAD", cwd=source).stdout.splitlines()
-        )
+        post_count = len(_git("rev-list", "HEAD", cwd=source).stdout.splitlines())
         self.assertEqual(post_count, pre_count + 1)
 
     def test_clean_rebase_upstream_conflict_rolls_back(self) -> None:
@@ -587,12 +623,8 @@ class TestCleanRebase(_ChdirTestCase):
                     capture_output=True,
                 )
 
-            main_head_before = _git(
-                "rev-parse", "HEAD", cwd=self.root
-            ).stdout.strip()
-            source_head_before = _git(
-                "rev-parse", "HEAD", cwd=source
-            ).stdout.strip()
+            main_head_before = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+            source_head_before = _git("rev-parse", "HEAD", cwd=source).stdout.strip()
 
             rc = self._run_clean_rebase()
             self.assertEqual(rc, 1)
@@ -624,9 +656,7 @@ class TestCleanRebase(_ChdirTestCase):
         backup_line = next(
             ln for ln in refs.splitlines() if "clean-rebase-backup-" in ln
         )
-        backup_sha = _git(
-            "rev-parse", backup_line, cwd=self.root
-        ).stdout.strip()
+        backup_sha = _git("rev-parse", backup_line, cwd=self.root).stdout.strip()
         self.assertEqual(backup_sha, head_before)
 
     def test_clean_rebase_refuses_merge_commits(self) -> None:
@@ -699,6 +729,178 @@ class TestCleanRebase(_ChdirTestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(len(captured), 1)
         self.assertIn("--verbose", captured[0])
+
+
+class TestConfigLoad(unittest.TestCase):
+    """Cover load / prompt / save of ~/.config/ishlib/ishproject.toml."""
+
+    def setUp(self) -> None:
+        self._tmp = _make_tempdir()
+        self.addCleanup(self._tmp.cleanup)
+        self.config_path = Path(self._tmp.name) / "ishproject.toml"
+
+    def test_missing_file_noninteractive_returns_defaults(self) -> None:
+        from pyishlib.ishproject.config import load_config
+
+        cfg = load_config(self.config_path, interactive=False)
+        self.assertEqual(cfg.get_opt("prefix"), DEFAULT_PREFIX)
+        self.assertEqual(cfg.get_opt("postfix"), DEFAULT_POSTFIX)
+        self.assertEqual(cfg.get_opt("config_file"), self.config_path)
+        self.assertFalse(self.config_path.is_file())
+
+    def test_existing_file_is_parsed(self) -> None:
+        from pyishlib.ishproject.config import load_config
+
+        self.config_path.write_text(
+            '[ishproject]\nprefix = "myish"\npostfix = "proj"\n',
+            encoding="utf-8",
+        )
+        cfg = load_config(self.config_path, interactive=False)
+        self.assertEqual(cfg.get_opt("prefix"), "myish")
+        self.assertEqual(cfg.get_opt("postfix"), "proj")
+
+    def test_prompt_writes_file(self) -> None:
+        from pyishlib import ish_config as ish_config_mod
+        from pyishlib.ishproject import config as cfg_mod
+
+        with patch.object(
+            ish_config_mod, "prompt_string", side_effect=["my", "dotfiles"]
+        ):
+            cfg = cfg_mod.load_config(self.config_path, interactive=True)
+        self.assertEqual(cfg.get_opt("prefix"), "my")
+        self.assertEqual(cfg.get_opt("postfix"), "dotfiles")
+        self.assertTrue(self.config_path.is_file())
+        text = self.config_path.read_text(encoding="utf-8")
+        self.assertIn('prefix = "my"', text)
+        self.assertIn('postfix = "dotfiles"', text)
+
+    def test_prompt_escapes_toml_unsafe_values(self) -> None:
+        # TOML string-literal hazards: quote, backslash, newline. The
+        # write must escape them so the next load succeeds.
+        from pyishlib import ish_config as ish_config_mod
+        from pyishlib.ishproject import config as cfg_mod
+
+        hazardous_prefix = 'weird"\\name'
+        hazardous_postfix = "has\nnewline"
+        with patch.object(
+            ish_config_mod,
+            "prompt_string",
+            side_effect=[hazardous_prefix, hazardous_postfix],
+        ):
+            cfg_mod.load_config(self.config_path, interactive=True)
+
+        # Round-trip: the value read back matches what the user typed.
+        cfg = cfg_mod.load_config(self.config_path, interactive=False)
+        self.assertEqual(cfg.get_opt("prefix"), hazardous_prefix)
+        self.assertEqual(cfg.get_opt("postfix"), hazardous_postfix)
+
+    def test_write_is_atomic(self) -> None:
+        # After a successful write, no sibling .tmp file should remain.
+        from pyishlib import ish_config as ish_config_mod
+        from pyishlib.ishproject import config as cfg_mod
+
+        with patch.object(ish_config_mod, "prompt_string", side_effect=["a", "b"]):
+            cfg_mod.load_config(self.config_path, interactive=True)
+        tmp = self.config_path.with_name(f".{self.config_path.name}.tmp")
+        self.assertFalse(tmp.exists())
+
+
+class TestResolveBranch(unittest.TestCase):
+    """Unit-test the branch-exists callback dispatch in IshprojectConfig."""
+
+    def setUp(self) -> None:
+        self.cfg = IshprojectConfig(
+            defaults={"prefix": "pre", "postfix": "post"},
+        )
+
+    def test_branch_specific_used_when_present(self) -> None:
+        existing = {"pre/main/post"}
+        name = self.cfg.resolve_branch(lambda b: b in existing, current_branch="main")
+        self.assertEqual(name, "pre/main/post")
+
+    def test_falls_back_when_branch_specific_missing(self) -> None:
+        name = self.cfg.resolve_branch(lambda b: False, current_branch="main")
+        self.assertEqual(name, "pre/post")
+
+    def test_detached_head_uses_default(self) -> None:
+        name = self.cfg.resolve_branch(lambda b: True, current_branch=None)
+        self.assertEqual(name, "pre/post")
+
+
+class TestBranchCommand(_ChdirTestCase):
+    """Integration coverage for `ishproject branch`."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.assertEqual(cli_main(["init", "--create"]), 0)
+
+    def test_branch_requires_repo(self) -> None:
+        with _make_tempdir() as plain:
+            os.chdir(plain)
+            try:
+                rc = cli_main(["branch"])
+            finally:
+                os.chdir(self.root)
+        self.assertEqual(rc, 1)
+
+    def test_branch_creates_orphan_worktree(self) -> None:
+        rc = cli_main(["branch"])
+        self.assertEqual(rc, 0)
+        expected_branch = f"{DEFAULT_PREFIX}/main/{DEFAULT_POSTFIX}"
+        branches = _git("branch", "--list", cwd=self.root).stdout
+        self.assertIn(expected_branch, branches)
+        ishlib_dir = self.root / ".ishlib"
+        matches = [
+            p for p in ishlib_dir.iterdir() if p.name.startswith("ishproject-main-")
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertTrue(matches[0].is_dir())
+
+    def test_branch_detached_head_is_rejected(self) -> None:
+        head = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        _git("checkout", "--detach", head, cwd=self.root)
+        rc = cli_main(["branch"])
+        self.assertEqual(rc, 1)
+
+    def test_branch_idempotent_when_worktree_exists(self) -> None:
+        self.assertEqual(cli_main(["branch"]), 0)
+        # Running twice should not fail.
+        self.assertEqual(cli_main(["branch"]), 0)
+
+
+class TestDynamicBranchResolution(_ChdirTestCase):
+    """End-to-end: apply picks branch-specific worktree when one exists."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.assertEqual(cli_main(["init", "--create"]), 0)
+
+    def test_apply_uses_branch_specific_worktree(self) -> None:
+        self.assertEqual(cli_main(["branch"]), 0)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["apply"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        src_idx = argv.index("--source")
+        src = argv[src_idx + 1]
+        self.assertIn("/.ishlib/ishproject-main-", src)
+
+    def test_apply_uses_default_when_no_branch_variant(self) -> None:
+        # no `ishproject branch` run -> apply should hit the default worktree.
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["apply"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        src_idx = argv.index("--source")
+        self.assertTrue(argv[src_idx + 1].endswith(".ishlib/ishproject"))
 
 
 if __name__ == "__main__":

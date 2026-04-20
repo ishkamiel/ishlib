@@ -14,7 +14,7 @@ from ...git_repo import GitRepo, NotAGitRepoError
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
 from ...ishlib_folder import PROJECT_DIR_NAME
-from ..config import resolve_project_paths
+from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,10 @@ class AddCommand(CliCommand):
         parser.set_defaults(rest=[])
 
     def run(self, args: argparse.Namespace) -> int:
-        source, target = resolve_project_paths(Path.cwd())
+        cfg: IshprojectConfig = args.ishproject_cfg
+        root = Path.cwd()
+        branch = cfg.resolve_active_branch(root)
+        source, target = cfg.resolve_project_paths(root, branch=branch)
         if not source.is_dir():
             log.error(
                 "Project dotfiles directory does not exist: %s "

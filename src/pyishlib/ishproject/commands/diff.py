@@ -12,7 +12,7 @@ from ...cli_command import CliCommand
 from ...cli_passthrough import passthrough_to_cli
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
-from ..config import resolve_project_paths
+from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,10 @@ class DiffCommand(CliCommand):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        source, target = resolve_project_paths(Path.cwd())
+        cfg: IshprojectConfig = args.ishproject_cfg
+        root = Path.cwd()
+        branch = cfg.resolve_active_branch(root)
+        source, target = cfg.resolve_project_paths(root, branch=branch)
         if not source.is_dir():
             log.error(
                 "Project dotfiles directory does not exist: %s "

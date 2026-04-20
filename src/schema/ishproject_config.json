@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "Schema for ~/.config/ishlib/ishproject.toml",
+  "properties": {
+    "ishproject": {
+      "additionalProperties": false,
+      "description": "Core ishproject settings.",
+      "properties": {
+        "postfix": {
+          "description": "Branch-name postfix used when composing ishproject branches (default: 'ishproject').",
+          "type": "string"
+        },
+        "prefix": {
+          "description": "Branch-name prefix used when composing ishproject branches (default: 'ishlib').",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "ishproject configuration",
+  "type": "object"
+}
