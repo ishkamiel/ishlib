@@ -16,4 +16,4 @@ _bin_dir=$(cd -P "$(dirname -- "$_self")" && pwd)
 _repo_src=$(cd -P "$_bin_dir/.." && pwd)/src
 
 export PYTHONPATH="$_repo_src${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m pyishlib.launchers install --source "$_repo_src" "$@"
+exec python3 -m pyishlib.launchers "$@"
