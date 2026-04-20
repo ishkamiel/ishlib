@@ -94,14 +94,21 @@ class _ChdirTestCase(unittest.TestCase):
 class TestParser(unittest.TestCase):
     def test_subcommands_registered(self) -> None:
         parser = build_parser()
-        for cmd in ("apply", "add", "diff", "init"):
-            args = parser.parse_args([cmd, *(["x"] if cmd in ("add",) else [])])
+        extras = {"add": ["x"], "clean-rebase": ["HEAD~0"]}
+        for cmd in ("apply", "add", "clean-rebase", "diff", "init", "merge"):
+            args = parser.parse_args([cmd, *extras.get(cmd, [])])
             self.assertEqual(args.command, cmd)
 
     def test_no_command_returns_2(self) -> None:
         with patch("sys.stdout"):
             rc = cli_main([])
         self.assertEqual(rc, 2)
+
+    def test_clean_rebase_requires_base(self) -> None:
+        parser = build_parser()
+        with patch("sys.stderr"):
+            with self.assertRaises(SystemExit):
+                parser.parse_args(["clean-rebase"])
 
 
 class TestResolvePaths(_ChdirTestCase):
@@ -271,6 +278,427 @@ class TestInit(_ChdirTestCase):
         os.chdir(sub)
         rc = cli_main(["init"])
         self.assertEqual(rc, 1)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for merge / clean-rebase tests
+# ---------------------------------------------------------------------------
+
+
+def _seed_managed_file(root: Path, rel: str, content: str) -> None:
+    """Commit ``rel`` onto ish/ishproject, apply it, and exclude it.
+
+    Mirrors the end state of ``ishproject add`` + ``ishproject apply``
+    without depending on ``ishfiles`` being wired up in the test.
+    """
+    source = root / ".ishlib" / "ishproject"
+    src_file = source / rel
+    src_file.parent.mkdir(parents=True, exist_ok=True)
+    src_file.write_text(content)
+    _git("add", rel, cwd=source)
+    _git("commit", "-m", f"add {rel}", cwd=source)
+    tgt = root / rel
+    tgt.parent.mkdir(parents=True, exist_ok=True)
+    tgt.write_text(content)
+    excl = root / ".git" / "info" / "exclude"
+    excl.parent.mkdir(parents=True, exist_ok=True)
+    with excl.open("a", encoding="utf-8") as fh:
+        fh.write(f"/{rel}\n")
+
+
+def _simulate_apply(argv) -> int:
+    """Stand-in for ishfiles_main used by clean-rebase tests.
+
+    Copies every file tracked in the source worktree into the target
+    tree, which is all that ``ishfiles apply`` needs to do for these
+    tests (no preprocessing, no packages, no scripts).
+    """
+    i = argv.index("--source")
+    source = Path(argv[i + 1])
+    i = argv.index("--target")
+    target = Path(argv[i + 1])
+    result = subprocess.run(
+        ["git", "-C", str(source), "ls-files"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for rel in result.stdout.splitlines():
+        rel = rel.strip()
+        if not rel:
+            continue
+        src_file = source / rel
+        if not src_file.is_file():
+            continue
+        dst_file = target / rel
+        dst_file.parent.mkdir(parents=True, exist_ok=True)
+        dst_file.write_bytes(src_file.read_bytes())
+    return 0
+
+
+class TestMerge(_ChdirTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.assertEqual(cli_main(["init", "--create"]), 0)
+
+    def test_merge_removes_exclude_and_commits(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        rc = cli_main(["merge"])
+        self.assertEqual(rc, 0)
+
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        self.assertIn("/.ishlib/", exclude)
+        self.assertNotIn("/foo.txt", exclude)
+
+        show = _git(
+            "show", "--name-only", "--pretty=", "HEAD", cwd=self.root
+        ).stdout
+        self.assertIn("foo.txt", show)
+        head_msg = _git(
+            "log", "-1", "--pretty=%s", cwd=self.root
+        ).stdout.strip()
+        self.assertEqual(head_msg, "ishproject: merge managed files")
+
+    def test_merge_custom_message(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        rc = cli_main(["merge", "-m", "custom subject"])
+        self.assertEqual(rc, 0)
+        head_msg = _git(
+            "log", "-1", "--pretty=%s", cwd=self.root
+        ).stdout.strip()
+        self.assertEqual(head_msg, "custom subject")
+
+    def test_merge_no_managed_files_noop(self) -> None:
+        # init --create left the source with only the "Initialise" empty
+        # commit; ls-files is empty.
+        pre = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        rc = cli_main(["merge"])
+        self.assertEqual(rc, 0)
+        post = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        self.assertEqual(pre, post)
+
+    def test_merge_must_run_at_repo_root(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        sub = self.root / "sub"
+        sub.mkdir()
+        os.chdir(sub)
+        rc = cli_main(["merge"])
+        self.assertEqual(rc, 1)
+
+    def test_merge_restores_excludes_when_commit_fails(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        excl_path = self.root / ".git" / "info" / "exclude"
+        excl_before = excl_path.read_text(encoding="utf-8")
+        self.assertIn("/foo.txt", excl_before)
+
+        # Force `git commit` to fail by making the commit author invalid.
+        import pyishlib.command_runner as command_runner_mod
+
+        real_git = command_runner_mod.CommandRunner.git
+
+        def fake_git(self, command, work_dir=None, **kwargs):
+            cmd = list(command)
+            if "commit" in cmd and "-m" in cmd:
+                raise subprocess.CalledProcessError(1, ["git", *cmd])
+            return real_git(self, command, work_dir=work_dir, **kwargs)
+
+        with patch.object(
+            command_runner_mod.CommandRunner, "git", fake_git
+        ):
+            rc = cli_main(["merge"])
+
+        self.assertEqual(rc, 1)
+        excl_after = excl_path.read_text(encoding="utf-8")
+        self.assertIn("/foo.txt", excl_after)
+        self.assertIn("/.ishlib/", excl_after)
+
+
+class TestCleanRebase(_ChdirTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.base_sha = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        self.assertEqual(cli_main(["init", "--create"]), 0)
+
+    def _run_clean_rebase(self, *extra: str) -> int:
+        with patch(
+            "pyishlib.ishproject.commands.clean_rebase.ishfiles_main",
+            side_effect=_simulate_apply,
+        ):
+            return cli_main(["clean-rebase", self.base_sha, *extra])
+
+    def test_clean_rebase_strips_files_from_history(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        (self.root / "bar.txt").write_text("bar\n")
+        _git("add", "bar.txt", cwd=self.root)
+        _git("commit", "-m", "add bar", cwd=self.root)
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 0)
+
+        log_out = _git(
+            "log", "--name-only", "--pretty=format:", cwd=self.root
+        ).stdout
+        self.assertNotIn("foo.txt", log_out)
+        self.assertIn("bar.txt", log_out)
+
+    def test_clean_rebase_restores_working_tree(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 0)
+
+        self.assertTrue((self.root / "foo.txt").is_file())
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        self.assertIn("/foo.txt", exclude)
+        self.assertIn("/.ishlib/", exclude)
+
+    def test_clean_rebase_syncs_edits_to_ishproject(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "A\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        (self.root / "foo.txt").write_text("B\n")
+        _git("add", "foo.txt", cwd=self.root)
+        _git("commit", "-m", "edit foo", cwd=self.root)
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 0)
+
+        source = self.root / ".ishlib" / "ishproject"
+        self.assertEqual((source / "foo.txt").read_text(), "B\n")
+        tree = _git("ls-tree", "-r", "--name-only", "HEAD", cwd=self.root).stdout
+        self.assertNotIn("foo.txt", tree)
+        self.assertEqual((self.root / "foo.txt").read_text(), "B\n")
+        last_msg = _git(
+            "log", "-1", "--pretty=%s", cwd=source
+        ).stdout.strip()
+        self.assertTrue(last_msg.startswith("ishproject: sync edits from "))
+
+    def test_clean_rebase_no_sync_flag_skips_phase2(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "A\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        (self.root / "foo.txt").write_text("B\n")
+        _git("add", "foo.txt", cwd=self.root)
+        _git("commit", "-m", "edit foo", cwd=self.root)
+
+        source = self.root / ".ishlib" / "ishproject"
+        source_head_before = _git("rev-parse", "HEAD", cwd=source).stdout.strip()
+
+        rc = self._run_clean_rebase("--no-sync-ishproject")
+        self.assertEqual(rc, 0)
+
+        # ish/ishproject untouched; edits to "B" are lost.
+        self.assertEqual(
+            _git("rev-parse", "HEAD", cwd=source).stdout.strip(),
+            source_head_before,
+        )
+        # _simulate_apply restores from source → "A".
+        self.assertEqual((self.root / "foo.txt").read_text(), "A\n")
+
+    def test_clean_rebase_no_upstream_is_local_only(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "A\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        (self.root / "foo.txt").write_text("B\n")
+        _git("add", "foo.txt", cwd=self.root)
+        _git("commit", "-m", "edit foo", cwd=self.root)
+
+        source = self.root / ".ishlib" / "ishproject"
+        pre_count = len(
+            _git("rev-list", "HEAD", cwd=source).stdout.splitlines()
+        )
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 0)
+
+        post_count = len(
+            _git("rev-list", "HEAD", cwd=source).stdout.splitlines()
+        )
+        self.assertEqual(post_count, pre_count + 1)
+
+    def test_clean_rebase_upstream_conflict_rolls_back(self) -> None:
+        with _make_tempdir() as bare_dir:
+            bare = Path(bare_dir).resolve()
+            subprocess.run(
+                ["git", "init", "--bare", str(bare)],
+                check=True,
+                capture_output=True,
+            )
+            source = self.root / ".ishlib" / "ishproject"
+            _git("remote", "add", "origin", str(bare), cwd=source)
+            _git("push", "-u", "origin", ISHPROJECT_BRANCH, cwd=source)
+
+            _seed_managed_file(self.root, "foo.txt", "A\n")
+            # Push the "A" commit to the bare so the remote has foo.txt.
+            _git("push", cwd=source)
+            self.assertEqual(cli_main(["merge"]), 0)
+
+            (self.root / "foo.txt").write_text("B\n")
+            _git("add", "foo.txt", cwd=self.root)
+            _git("commit", "-m", "edit foo", cwd=self.root)
+
+            # Divergent remote commit that modifies foo.txt to "C".
+            with _make_tempdir() as clone_dir:
+                clone = Path(clone_dir).resolve()
+                subprocess.run(
+                    ["git", "clone", str(bare), str(clone)],
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "commit.gpgsign=false",
+                        "-C",
+                        str(clone),
+                        "checkout",
+                        ISHPROJECT_BRANCH,
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                (clone / "foo.txt").write_text("C\n")
+                subprocess.run(
+                    ["git", "-C", str(clone), "add", "foo.txt"],
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "commit.gpgsign=false",
+                        "-c",
+                        "tag.gpgsign=false",
+                        "-C",
+                        str(clone),
+                        "commit",
+                        "-m",
+                        "remote edit",
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(clone), "push"],
+                    check=True,
+                    capture_output=True,
+                )
+
+            main_head_before = _git(
+                "rev-parse", "HEAD", cwd=self.root
+            ).stdout.strip()
+            source_head_before = _git(
+                "rev-parse", "HEAD", cwd=source
+            ).stdout.strip()
+
+            rc = self._run_clean_rebase()
+            self.assertEqual(rc, 1)
+            self.assertEqual(
+                _git("rev-parse", "HEAD", cwd=self.root).stdout.strip(),
+                main_head_before,
+            )
+            self.assertEqual(
+                _git("rev-parse", "HEAD", cwd=source).stdout.strip(),
+                source_head_before,
+            )
+
+    def test_clean_rebase_creates_backup_ref(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        head_before = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 0)
+
+        refs = _git(
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/ishproject/",
+            cwd=self.root,
+        ).stdout
+        self.assertTrue(any("clean-rebase-backup-" in ln for ln in refs.splitlines()))
+        # Backup ref points at pre-rewrite HEAD.
+        backup_line = next(
+            ln for ln in refs.splitlines() if "clean-rebase-backup-" in ln
+        )
+        backup_sha = _git(
+            "rev-parse", backup_line, cwd=self.root
+        ).stdout.strip()
+        self.assertEqual(backup_sha, head_before)
+
+    def test_clean_rebase_refuses_merge_commits(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        # Create a merge commit in the range.
+        _git("checkout", "-b", "side", cwd=self.root)
+        (self.root / "side.txt").write_text("side")
+        _git("add", "side.txt", cwd=self.root)
+        _git("commit", "-m", "side commit", cwd=self.root)
+        _git("checkout", "main", cwd=self.root)
+        _git(
+            "merge",
+            "--no-ff",
+            "-m",
+            "merge side",
+            "side",
+            cwd=self.root,
+        )
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 1)
+
+    def test_clean_rebase_refuses_dirty_worktree(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        # Dirty, unrelated file.
+        (self.root / "dirty.txt").write_text("dirty")
+        _git("add", "dirty.txt", cwd=self.root)
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 1)
+
+    def test_clean_rebase_refuses_uncommitted_managed_edit(self) -> None:
+        # Uncommitted edits to managed files would be silently wiped by
+        # the reset --hard in phase 3. Refuse up front.
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        (self.root / "foo.txt").write_text("modified\n")
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 1)
+        self.assertEqual((self.root / "foo.txt").read_text(), "modified\n")
+
+    def test_clean_rebase_invalid_base_returns_1(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        with patch(
+            "pyishlib.ishproject.commands.clean_rebase.ishfiles_main",
+            side_effect=_simulate_apply,
+        ):
+            rc = cli_main(["clean-rebase", "definitely-not-a-ref"])
+        self.assertEqual(rc, 1)
+
+    def test_clean_rebase_forwards_common_flags_to_apply(self) -> None:
+        _seed_managed_file(self.root, "foo.txt", "hello\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+
+        captured: list = []
+
+        def capture_apply(argv):
+            captured.append(list(argv))
+            return _simulate_apply(argv)
+
+        with patch(
+            "pyishlib.ishproject.commands.clean_rebase.ishfiles_main",
+            side_effect=capture_apply,
+        ):
+            rc = cli_main(["clean-rebase", "--verbose", self.base_sha])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(captured), 1)
+        self.assertIn("--verbose", captured[0])
 
 
 if __name__ == "__main__":

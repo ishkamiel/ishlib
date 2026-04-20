@@ -15,8 +15,10 @@ from typing import List, Optional
 from ..cli_base import BaseCLI
 from .commands.add import AddCommand
 from .commands.apply import ApplyCommand
+from .commands.clean_rebase import CleanRebaseCommand
 from .commands.diff import DiffCommand
 from .commands.init import InitCommand
+from .commands.merge import MergeCommand
 
 
 class IshprojectCLI(BaseCLI):
@@ -24,7 +26,14 @@ class IshprojectCLI(BaseCLI):
 
     PROG = "ishproject"
     DESCRIPTION = "Apply project-scoped ishfiles dotfiles."
-    COMMANDS = (AddCommand, ApplyCommand, DiffCommand, InitCommand)
+    COMMANDS = (
+        AddCommand,
+        ApplyCommand,
+        CleanRebaseCommand,
+        DiffCommand,
+        InitCommand,
+        MergeCommand,
+    )
     # The passthrough commands (add/apply/diff) delegate flag handling to
     # ishfiles, so unknown tokens must be forwarded through ``args.rest``
     # rather than rejected by the top-level parser.
