@@ -14,7 +14,7 @@ from ...cli_command import CliCommand
 from ...command_runner import CommandRunner
 from ...git_repo import GitRepo, NotAGitRepoError, _clean_git_env
 from ...ish_config import IshConfig
-from ..config import resolve_project_paths
+from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ class MergeCommand(CliCommand):
         )
 
     def run(self, args: argparse.Namespace) -> int:
+        cfg: IshprojectConfig = args.ishproject_cfg
         runner = CommandRunner(cfg=IshConfig(dry_run=args.dry_run))
         root = Path.cwd()
 
@@ -58,7 +59,8 @@ class MergeCommand(CliCommand):
             return 1
         repo.runner = runner
 
-        source, target = resolve_project_paths(root)
+        branch = cfg.resolve_active_branch(root)
+        source, target = cfg.resolve_project_paths(root, branch=branch)
         if not source.is_dir():
             log.error(
                 "Project dotfiles directory does not exist: %s "

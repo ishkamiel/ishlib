@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-"""``ishproject init`` -- bootstrap the default ishproject worktree."""
+"""``ishproject branch`` -- create a per-dev-branch ishproject variant."""
 
 from __future__ import annotations
 
@@ -19,36 +19,26 @@ from ..config import IshprojectConfig
 log = logging.getLogger(__name__)
 
 
-class InitCommand(CliCommand):
-    """Initialise the default ishproject worktree."""
+class BranchCommand(CliCommand):
+    """Create a ``<prefix>/<current>/<postfix>`` ishproject branch + worktree."""
 
-    NAME = "init"
-    HELP = "Initialise the default ishproject worktree under .ishlib/"
+    NAME = "branch"
+    HELP = "Create a per-dev-branch ishproject variant for the current branch"
     DESCRIPTION = (
-        "If cwd is a git-repo root and the default ishproject branch "
-        "(<prefix>/<postfix>, from ~/.config/ishlib/ishproject.toml) "
-        "exists, adds it as a worktree at .ishlib/ishproject. With "
-        "--create, bootstraps an empty orphan branch when none "
-        "exists. Always appends .ishlib/ to .git/info/exclude."
+        "Creates an orphan ishproject branch named "
+        "`<prefix>/<current>/<postfix>` where <current> is the checked-"
+        "out branch in the project repo, plus a worktree for it under "
+        ".ishlib/. Subsequent ishproject commands run on <current> "
+        "will automatically use this branch instead of the default "
+        "`<prefix>/<postfix>` branch."
     )
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--create",
-            action="store_true",
-            default=False,
-            help=(
-                "If the branch does not exist, create an empty orphan "
-                "branch and check it out as the worktree. Without this "
-                "flag, a missing branch is an error."
-            ),
-        )
+        pass
 
     def run(self, args: argparse.Namespace) -> int:
         cfg: IshprojectConfig = args.ishproject_cfg
-        branch = cfg.default_branch
-
         runner = CommandRunner(cfg=IshConfig(dry_run=args.dry_run))
         root = Path.cwd()
 
@@ -56,17 +46,35 @@ class InitCommand(CliCommand):
             repo = GitRepo.discover(root, require_root=True)
         except NotAGitRepoError:
             log.error(
-                "ishproject init must be run from a git repository root: %s",
+                "ishproject branch must be run from a git repository root: %s",
                 root,
             )
             return 1
         repo.runner = runner
 
+        current = repo.current_branch()
+        if not current:
+            log.error(
+                "HEAD is detached; check out a branch before running "
+                "`ishproject branch`."
+            )
+            return 1
+
+        branch = cfg.branch_for(current)
+        if branch == cfg.default_branch:
+            log.error(
+                "Resolved branch %s matches the default; refusing to "
+                "create a per-branch variant that would collide with "
+                "the default worktree.",
+                branch,
+            )
+            return 1
+
         folder = IshlibFolder(root)
         source = cfg.worktree_path(folder, branch)
 
         if source.is_dir():
-            log.info("Project dotfiles already present at %s", source)
+            log.info("Per-branch worktree already present at %s", source)
         elif repo.branch_exists(branch, local_only=True):
             folder.path.mkdir(parents=True, exist_ok=True)
             try:
@@ -74,23 +82,13 @@ class InitCommand(CliCommand):
             except subprocess.CalledProcessError:
                 return 1
             log.info("Created worktree: %s -> branch %s", source, branch)
-        elif repo.branch_exists(branch):
-            log.error(
-                "Branch %s only exists on a remote. Create a local tracking "
-                "branch first, e.g. `git branch %s origin/%s`, then re-run "
-                "`ishproject init`.",
-                branch,
-                branch,
-                branch,
-            )
-            return 1
-        elif args.create:
+        else:
             folder.path.mkdir(parents=True, exist_ok=True)
             try:
                 repo.create_orphan_worktree(
                     source,
                     branch,
-                    message="Initialise ishproject branch",
+                    message=f"Initialise ishproject branch {branch}",
                 )
             except subprocess.CalledProcessError:
                 return 1
@@ -99,14 +97,6 @@ class InitCommand(CliCommand):
                 branch,
                 source,
             )
-        else:
-            log.error(
-                "Branch %s not found. Create it locally or fetch from a "
-                "remote, then re-run `ishproject init` (or pass --create "
-                "to bootstrap an empty orphan branch now).",
-                branch,
-            )
-            return 1
 
         repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
         return 0

@@ -4,7 +4,13 @@
 
 Entry point for the ``ishproject`` tool.  Passthrough subcommands
 (``add``, ``apply``, ``diff``) forward arguments to ishfiles via
-:mod:`pyishlib.cli_passthrough`; ``init`` is a local implementation.
+:mod:`pyishlib.cli_passthrough`; ``init``, ``branch``, ``merge``, and
+``clean-rebase`` are local implementations.
+
+The per-user ishproject config is loaded once at CLI entry via
+:func:`~pyishlib.ishproject.config.load_config` and attached to
+``args.ishproject_cfg`` so every subcommand sees the same resolved
+prefix/postfix without re-prompting.
 """
 
 from __future__ import annotations
@@ -15,10 +21,12 @@ from typing import List, Optional
 from ..cli_base import BaseCLI
 from .commands.add import AddCommand
 from .commands.apply import ApplyCommand
+from .commands.branch import BranchCommand
 from .commands.clean_rebase import CleanRebaseCommand
 from .commands.diff import DiffCommand
 from .commands.init import InitCommand
 from .commands.merge import MergeCommand
+from .config import load_config
 
 
 class IshprojectCLI(BaseCLI):
@@ -29,6 +37,7 @@ class IshprojectCLI(BaseCLI):
     COMMANDS = (
         AddCommand,
         ApplyCommand,
+        BranchCommand,
         CleanRebaseCommand,
         DiffCommand,
         InitCommand,
@@ -38,6 +47,10 @@ class IshprojectCLI(BaseCLI):
     # ishfiles, so unknown tokens must be forwarded through ``args.rest``
     # rather than rejected by the top-level parser.
     COLLECT_UNKNOWN = True
+
+    def resolve_config(self, args: argparse.Namespace) -> argparse.Namespace:
+        args.ishproject_cfg = load_config()
+        return args
 
 
 def build_parser() -> argparse.ArgumentParser:

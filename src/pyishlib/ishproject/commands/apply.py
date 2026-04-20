@@ -12,20 +12,22 @@ from ...cli_command import CliCommand
 from ...cli_passthrough import passthrough_to_cli
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
-from ..config import resolve_project_paths
+from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
 
 
 class ApplyCommand(CliCommand):
-    """Apply project dotfiles from ``.ishlib/ishproject`` to the project root."""
+    """Apply project dotfiles to the project root."""
 
     NAME = "apply"
-    HELP = "Apply project dotfiles from .ishlib/ishproject to the project root"
+    HELP = "Apply project dotfiles from the active ishproject worktree"
     DESCRIPTION = (
         "Thin wrapper around `ishfiles apply` with --source and --target "
-        "pointed at the current project. All remaining arguments are "
-        "forwarded to ishfiles."
+        "pointed at the current project. When the current branch has a "
+        "`<prefix>/<current>/<postfix>` variant it is used; otherwise "
+        "the default `<prefix>/<postfix>` worktree is used. All "
+        "remaining arguments are forwarded to ishfiles."
     )
     ADD_COMMON_FLAGS = False
 
@@ -38,7 +40,11 @@ class ApplyCommand(CliCommand):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        source, target = resolve_project_paths(Path.cwd())
+        cfg: IshprojectConfig = args.ishproject_cfg
+        root = Path.cwd()
+
+        branch = cfg.resolve_active_branch(root)
+        source, target = cfg.resolve_project_paths(root, branch=branch)
         if not source.is_dir():
             log.error(
                 "Project dotfiles directory does not exist: %s "
