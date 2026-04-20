@@ -5,14 +5,16 @@
 
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from .dotfile_context import DotfileContext
 
-from ._compat import load_toml_file
+from ._compat import atomic_write_text, load_toml_file, toml_escape_basic_string
+from .userio import prompt_string
 
 _log = logging.getLogger(__name__)
 
@@ -165,6 +167,70 @@ class IshConfig:
         """
         conf = cls.load_toml(toml_path, schema=schema)
         return cls.from_args(args=args, conf=conf, defaults=defaults)
+
+    # -- bootstrap -------------------------------------------------------------
+
+    @classmethod
+    def bootstrap(
+        cls,
+        config_path: Path,
+        *,
+        section: str,
+        prompts: Sequence[Tuple[str, str, str]],
+        interactive: Optional[bool] = None,
+    ) -> None:
+        """Prompt for missing keys and write a TOML config at *config_path*.
+
+        No-op when *config_path* already exists. Also a no-op on a
+        non-interactive session (stdin is not a tty) with no file, so
+        callers silently fall back to whatever ``defaults`` dict they
+        pass into :meth:`from_toml` / :meth:`from_args`.
+
+        Each entry in *prompts* is ``(key, message, default)``. On an
+        interactive run the user is prompted once per key via
+        :func:`pyishlib.userio.prompt_string`, then the file is written
+        atomically with shape::
+
+            [<section>]
+            <key1> = "<value1>"
+            <key2> = "<value2>"
+
+        Values are escaped per the TOML basic-string grammar so a
+        hazardous input (embedded quote, backslash, newline) produces a
+        file that round-trips cleanly through :meth:`from_toml`.
+
+        Args:
+            config_path: Absolute path of the TOML file to create.
+            section:     Name of the single ``[section]`` table written.
+            prompts:     Ordered ``(key, message, default)`` tuples.
+            interactive: Override TTY detection (mainly for testing).
+        """
+        if config_path.is_file():
+            return
+        if interactive is None:
+            interactive = sys.stdin.isatty()
+        if not interactive:
+            _log.debug(
+                "Non-interactive session and no %s; skipping bootstrap",
+                config_path,
+            )
+            return
+
+        print(
+            f"\nNo config found at {config_path}.\n"
+            f"Enter values for the [{section}] section; "
+            "press Enter to accept the default.\n"
+        )
+        values: Dict[str, str] = {}
+        for key, message, default in prompts:
+            values[key] = prompt_string(message, default=default, name=key)
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        body_lines = [f"[{section}]"]
+        for key, val in values.items():
+            body_lines.append(f'{key} = "{toml_escape_basic_string(val)}"')
+        atomic_write_text(config_path, "\n".join(body_lines) + "\n")
+        print(f"Saved config to {config_path}")
 
     # -- from_args -------------------------------------------------------------
 

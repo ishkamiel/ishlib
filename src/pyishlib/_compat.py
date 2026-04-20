@@ -3,6 +3,7 @@
 """Compatibility shims for optional dependencies."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -75,3 +76,42 @@ def load_toml_file_strict(path: Path) -> Mapping[str, Any]:
             return tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
         raise ValueError(f"Config file is not valid TOML: {exc}") from exc
+
+
+# TOML basic-string escapes per https://toml.io/en/v1.0.0#string.
+# The spec forbids unescaped C0 control characters and requires
+# backslash / double-quote to be escaped in basic strings.
+_TOML_BASIC_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
+def toml_escape_basic_string(value: str) -> str:
+    """Escape *value* for inclusion in a TOML basic string literal.
+
+    Protects a generated config against input that contains quotes,
+    backslashes, newlines, or other C0 control characters; ``tomllib``
+    round-trips the escape sequences back to the original string on the
+    next load.
+    """
+    return "".join(
+        _TOML_BASIC_ESCAPES.get(ch, ch if ord(ch) >= 0x20 else f"\\u{ord(ch):04x}")
+        for ch in value
+    )
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write *text* to *path* atomically via a sibling tmp file.
+
+    Uses ``os.replace`` so a signal or crash mid-write cannot leave
+    *path* containing a truncated / half-populated document.
+    """
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
