@@ -121,44 +121,42 @@ class TestInstallAll(unittest.TestCase):
 
 
 class TestParser(unittest.TestCase):
-    """The launchers CLI uses the unified ishlib flag shape."""
+    """The launchers CLI is a minimal one-shot installer."""
 
     def setUp(self):
         self.parser = _build_parser()
 
-    def test_install_default_flags(self):
-        ns = self.parser.parse_args(["install"])
+    def test_default_flags(self):
+        ns = self.parser.parse_args([])
         self.assertFalse(ns.verbose)
         self.assertFalse(ns.debug)
-        self.assertFalse(ns.quiet)
-        self.assertIsNone(ns.log_file)
-        self.assertFalse(ns.dry_run)
 
-    def test_install_short_verbose(self):
-        ns = self.parser.parse_args(["install", "-v"])
+    def test_short_verbose(self):
+        ns = self.parser.parse_args(["-v"])
         self.assertTrue(ns.verbose)
 
-    def test_install_long_verbose(self):
-        ns = self.parser.parse_args(["install", "--verbose"])
+    def test_long_verbose(self):
+        ns = self.parser.parse_args(["--verbose"])
         self.assertTrue(ns.verbose)
 
-    def test_install_debug(self):
-        ns = self.parser.parse_args(["install", "--debug"])
+    def test_debug(self):
+        ns = self.parser.parse_args(["--debug"])
         self.assertTrue(ns.debug)
 
-    def test_install_quiet(self):
-        ns = self.parser.parse_args(["install", "-q"])
-        self.assertTrue(ns.quiet)
-
-    def test_install_log_file(self):
-        ns = self.parser.parse_args(["install", "--log-file", "/tmp/x.log"])
-        self.assertEqual(ns.log_file, "/tmp/x.log")
-
-    def test_verbose_is_boolean_not_count(self):
-        # The old behaviour was action="count"; -vv would equal 2.  Under the
-        # unified flag shape -v is store_true, so repeating it has no effect.
-        ns = self.parser.parse_args(["install", "-v", "-v"])
-        self.assertEqual(ns.verbose, True)
+    def test_rejects_removed_flags(self):
+        # --dest, --source, -n, -q, --log-file, and the "install" subcommand
+        # were removed when the launcher was trimmed to its minimal surface.
+        for argv in (
+            ["install"],
+            ["--dest", "/tmp"],
+            ["--source", "/tmp"],
+            ["-n"],
+            ["-q"],
+            ["--log-file", "/tmp/x"],
+        ):
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit):
+                    self.parser.parse_args(argv)
 
 
 if __name__ == "__main__":
