@@ -300,5 +300,85 @@ class TestExclude(GitRepoTestCase):
                 repo.ensure_path_excluded(outside_path)
 
 
+class TestListTrackedFiles(GitRepoTestCase):
+    def test_lists_tracked_files_relative_to_worktree(self) -> None:
+        (self.root / "a.txt").write_text("a")
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "b.txt").write_text("b")
+        _git("add", "a.txt", "sub/b.txt", cwd=self.root)
+        _git("commit", "-m", "add files", cwd=self.root)
+
+        repo = GitRepo.discover(self.root)
+        files = sorted(repo.list_tracked_files())
+        self.assertEqual(files, ["a.txt", "sub/b.txt"])
+
+    def test_handles_paths_with_spaces(self) -> None:
+        spaced = self.root / "with space.txt"
+        spaced.write_text("x")
+        _git("add", "with space.txt", cwd=self.root)
+        _git("commit", "-m", "add spaced", cwd=self.root)
+
+        repo = GitRepo.discover(self.root)
+        self.assertIn("with space.txt", repo.list_tracked_files())
+
+    def test_returns_empty_when_nothing_tracked(self) -> None:
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(repo.list_tracked_files(), [])
+
+
+class TestRemoveExclude(GitRepoTestCase):
+    def test_remove_exclude_pattern_drops_line(self) -> None:
+        repo = GitRepo.discover(self.root)
+        repo.ensure_exclude_pattern("/.ishlib/")
+        repo.ensure_exclude_pattern("/foo.txt")
+        self.assertTrue(repo.remove_exclude_pattern("/foo.txt"))
+        body = repo.exclude_file.read_text(encoding="utf-8")
+        self.assertIn("/.ishlib/", body)
+        self.assertNotIn("/foo.txt", body)
+
+    def test_remove_exclude_pattern_missing_is_noop(self) -> None:
+        repo = GitRepo.discover(self.root)
+        repo.ensure_exclude_pattern("/.ishlib/")
+        self.assertFalse(repo.remove_exclude_pattern("/foo.txt"))
+
+    def test_remove_exclude_pattern_no_file_returns_false(self) -> None:
+        repo = GitRepo.discover(self.root)
+        if repo.exclude_file.is_file():
+            repo.exclude_file.unlink()
+        self.assertFalse(repo.remove_exclude_pattern("/foo.txt"))
+
+    def test_remove_exclude_pattern_dry_run_does_not_write(self) -> None:
+        from pyishlib.command_runner import CommandRunner
+        from pyishlib.ish_config import IshConfig
+
+        repo = GitRepo.discover(self.root)
+        repo.ensure_exclude_pattern("/foo.txt")
+        pre = repo.exclude_file.read_text(encoding="utf-8")
+        repo.runner = CommandRunner(cfg=IshConfig(dry_run=True))
+        self.assertTrue(repo.remove_exclude_pattern("/foo.txt"))
+        self.assertEqual(repo.exclude_file.read_text(encoding="utf-8"), pre)
+
+    def test_remove_path_excluded_matches_ensure(self) -> None:
+        repo = GitRepo.discover(self.root)
+        target = self.root / "src" / "foo.txt"
+        target.parent.mkdir(parents=True)
+        target.write_text("content")
+        repo.ensure_path_excluded(target)
+        self.assertTrue(repo.remove_path_excluded(target))
+        self.assertNotIn(
+            "/src/foo.txt",
+            repo.exclude_file.read_text(encoding="utf-8"),
+        )
+
+    def test_remove_exclude_pattern_preserves_trailing_newline(self) -> None:
+        repo = GitRepo.discover(self.root)
+        repo.ensure_exclude_pattern("/a")
+        repo.ensure_exclude_pattern("/b")
+        repo.remove_exclude_pattern("/a")
+        body = repo.exclude_file.read_text(encoding="utf-8")
+        self.assertTrue(body.endswith("\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

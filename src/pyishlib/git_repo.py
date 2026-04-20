@@ -177,6 +177,22 @@ class GitRepo:
                 return True
         return False
 
+    def list_tracked_files(self) -> list:
+        """Return work-tree-relative paths of tracked files.
+
+        Wraps ``git -C <work_tree> ls-files -z`` and splits on NUL.
+        Read-only probe; bypasses ``CommandRunner``'s dry-run simulation
+        so callers can enumerate files under ``--dry-run``.
+        """
+        result = subprocess.run(
+            ["git", "-C", str(self.work_tree), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=_clean_git_env(),
+        )
+        return [p for p in result.stdout.split("\x00") if p]
+
     # ---- worktree / branch ops --------------------------------------------
 
     def add_worktree(
@@ -273,6 +289,53 @@ class GitRepo:
         Raises:
             ValueError: *path* resolves outside the working tree.
         """
+        pattern = self._path_to_exclude_pattern(path)
+        return self.ensure_exclude_pattern(pattern)
+
+    def remove_exclude_pattern(self, pattern: str) -> bool:
+        """Idempotently drop *pattern* from ``info/exclude``.
+
+        Returns ``True`` if the file was (or would be) modified, ``False``
+        if the pattern was absent. Honours ``self.runner.dry_run``.
+        """
+        if not pattern:
+            raise ValueError("pattern must be non-empty")
+
+        if not self.exclude_file.is_file():
+            return False
+
+        existing = self.exclude_file.read_text(encoding="utf-8")
+        lines = existing.splitlines()
+        kept = [ln for ln in lines if ln.strip() != pattern]
+        if len(kept) == len(lines):
+            return False
+
+        if self.runner.dry_run:
+            log.info("dry-run: would remove %s from %s", pattern, self.exclude_file)
+            return True
+
+        trailing_newline = existing.endswith("\n")
+        new_text = "\n".join(kept)
+        if kept and trailing_newline:
+            new_text += "\n"
+        elif not kept:
+            new_text = ""
+        self.exclude_file.write_text(new_text, encoding="utf-8")
+        log.debug("removed exclude pattern: %s", pattern)
+        return True
+
+    def remove_path_excluded(self, path: Path) -> bool:
+        """Drop the exclude entry covering *path* (see :meth:`ensure_path_excluded`)."""
+        pattern = self._path_to_exclude_pattern(path)
+        return self.remove_exclude_pattern(pattern)
+
+    def _path_to_exclude_pattern(self, path: Path) -> str:
+        """Derive the work-tree-relative exclude pattern for *path*.
+
+        Used by both :meth:`ensure_path_excluded` and
+        :meth:`remove_path_excluded` so the byte-for-byte pattern stays
+        consistent across add and remove.
+        """
         resolved = Path(path).resolve()
         try:
             rel = resolved.relative_to(self.work_tree)
@@ -288,4 +351,4 @@ class GitRepo:
         pattern = f"/{rel_str}"
         if resolved.is_dir():
             pattern = f"{pattern}/"
-        return self.ensure_exclude_pattern(pattern)
+        return pattern
