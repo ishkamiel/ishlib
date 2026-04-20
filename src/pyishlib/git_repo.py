@@ -177,6 +177,23 @@ class GitRepo:
                 return True
         return False
 
+    def current_branch(self) -> Optional[str]:
+        """Return the currently checked-out branch name, or ``None`` if detached.
+
+        Runs ``git symbolic-ref --quiet --short HEAD``. A detached HEAD
+        has no symbolic branch, so the method returns ``None`` instead
+        of raising.
+        """
+        result = self._run_ref_query(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return None
+        name = result.stdout.strip()
+        return name or None
+
     def list_tracked_files(self) -> list:
         """Return work-tree-relative paths of tracked files.
 
@@ -233,6 +250,29 @@ class GitRepo:
             ],
             work_dir=work_dir,
         )
+
+    def create_orphan_worktree(
+        self,
+        path: Path,
+        branch: str,
+        *,
+        message: str,
+    ) -> None:
+        """Create orphan *branch* checked out as a worktree at *path*.
+
+        Composes :meth:`add_worktree` (detached), :meth:`checkout_orphan`,
+        a ``git rm -rf .`` to drop the seeded tree, and :meth:`empty_commit`
+        so *branch* starts life with a single empty commit. Honours
+        ``self.runner.dry_run`` via the underlying runner.
+        """
+        self.add_worktree(path, detach=True)
+        self.checkout_orphan(branch, work_dir=path)
+        self.runner.git(
+            ["rm", "-rf", "--quiet", "."],
+            work_dir=path,
+            check=False,
+        )
+        self.empty_commit(message, work_dir=path)
 
     # ---- info/exclude ------------------------------------------------------
 

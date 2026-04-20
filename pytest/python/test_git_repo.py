@@ -226,6 +226,35 @@ class TestWorktreeOps(GitRepoTestCase):
         # Branch now exists locally.
         self.assertTrue(repo.branch_exists("ish/orphan"))
 
+    def test_create_orphan_worktree_composes_the_recipe(self) -> None:
+        repo = GitRepo.discover(self.root)
+        target = self.root / "wt-orphan"
+        repo.create_orphan_worktree(
+            target,
+            "ish/newborn",
+            message="bootstrap",
+        )
+        self.assertTrue(target.is_dir())
+        self.assertTrue(repo.branch_exists("ish/newborn", local_only=True))
+        # Orphan should start with an empty tree: no files tracked.
+        import subprocess as _sp  # keep imports local to this test
+
+        result = _sp.run(
+            ["git", "-C", str(target), "ls-files"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), "")
+        # And exactly one commit on the new branch.
+        rev_list = _sp.run(
+            ["git", "-C", str(target), "rev-list", "--count", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(rev_list.stdout.strip(), "1")
+
 
 class TestExclude(GitRepoTestCase):
     def test_ensure_exclude_pattern_creates_info(self) -> None:
