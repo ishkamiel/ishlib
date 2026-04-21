@@ -283,6 +283,87 @@ class GitRepo:
         )
         return [p for p in result.stdout.split("\x00") if p]
 
+    def status_porcelain(self) -> dict:
+        """Return the working-tree status as ``{relative_path: XY_code}``.
+
+        Runs ``git status --porcelain=v1 -z`` (NUL-delimited) and parses
+        the output. Read-only probe; bypasses ``CommandRunner``'s dry-run
+        simulation so callers always see the true working-tree state.
+
+        For renamed/copied entries the *destination* path is used as the
+        key; the origin path is discarded.  An empty dict is returned when
+        the repository has no uncommitted changes or when git exits
+        non-zero (e.g. a bare repo).
+        """
+        result = self._run_ref_query(
+            ["status", "--porcelain=v1", "-z"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return {}
+
+        entries: dict = {}
+        tokens = result.stdout.split("\x00")
+        skip_next = False
+        for token in tokens:
+            if not token:
+                continue
+            if skip_next:
+                skip_next = False
+                continue
+            if len(token) < 3 or token[2] != " ":
+                continue
+            xy = token[:2]
+            path = token[3:]
+            entries[path] = xy
+            # Rename/copy: next token is the orig path, not a new entry.
+            if xy[0] in ("R", "C"):
+                skip_next = True
+        return entries
+
+    # ---- mutating git ops --------------------------------------------------
+
+    def commit_all(self, message: str) -> "subprocess.CompletedProcess":
+        """Run ``git commit -a -m <message>`` in the working tree.
+
+        Goes through :attr:`runner` so dry-run mode is respected.
+        Returns the ``CompletedProcess`` without raising on non-zero exit
+        (e.g. "nothing to commit"); callers are responsible for checking
+        ``returncode``.
+        """
+        return self.runner.git(
+            ["commit", "-a", "-m", message],
+            work_dir=self.work_tree,
+            check=False,
+        )
+
+    def push(self, *extra_args: str) -> "subprocess.CompletedProcess":
+        """Run ``git push [extra_args]`` in the working tree.
+
+        Goes through :attr:`runner` so dry-run mode is respected.
+        Returns the ``CompletedProcess`` without raising on non-zero exit;
+        callers are responsible for checking ``returncode``.
+        """
+        return self.runner.git(
+            ["push", *extra_args],
+            work_dir=self.work_tree,
+            check=False,
+        )
+
+    def pull_rebase(self) -> "subprocess.CompletedProcess":
+        """Run ``git pull --rebase`` in the working tree.
+
+        Goes through :attr:`runner` so dry-run mode is respected.
+        Returns the ``CompletedProcess`` without raising on non-zero exit;
+        callers are responsible for checking ``returncode``.
+        """
+        return self.runner.git(
+            ["pull", "--rebase"],
+            work_dir=self.work_tree,
+            check=False,
+        )
+
     # ---- worktree / branch ops --------------------------------------------
 
     def add_worktree(

@@ -16,6 +16,7 @@ from ..cli_base import BaseCLI
 from .commands.add import AddCommand
 from .commands.apply import ApplyCommand
 from .commands.cd import CdCommand
+from .commands.commit import CommitCommand
 from .commands.diff import DiffCommand
 from .commands.doctor import DoctorCommand
 from .commands.external import ExternalCommand
@@ -24,7 +25,10 @@ from .commands.init import InitCommand
 from .commands.install import InstallCommand
 from .commands.log import LogCommand
 from .commands.pd import PdCommand
+from .commands.pull import PullCommand
+from .commands.push import PushCommand
 from .commands.runscripts import RunscriptsCommand
+from .commands.status import StatusCommand
 from .config import load_config
 from .data import process_data_template
 
@@ -38,6 +42,7 @@ class IshfilesCLI(BaseCLI):
         AddCommand,
         ApplyCommand,
         CdCommand,
+        CommitCommand,
         DiffCommand,
         DoctorCommand,
         ExternalCommand,
@@ -46,7 +51,10 @@ class IshfilesCLI(BaseCLI):
         InstallCommand,
         LogCommand,
         PdCommand,
+        PullCommand,
+        PushCommand,
         RunscriptsCommand,
+        StatusCommand,
     )
 
     def add_global_args(self, parser: argparse.ArgumentParser) -> None:

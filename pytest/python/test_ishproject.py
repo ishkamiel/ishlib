@@ -115,9 +115,13 @@ class TestParser(unittest.TestCase):
             "add",
             "branch",
             "clean-rebase",
+            "commit",
             "diff",
             "init",
             "merge",
+            "pull",
+            "push",
+            "status",
         ):
             args = parser.parse_args([cmd, *extras.get(cmd, [])])
             self.assertEqual(args.command, cmd)
@@ -315,12 +319,15 @@ class TestInit(_ChdirTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        p = patch(
+        # Patch load_config so tests use the library defaults rather than
+        # reading ~/.config/ishlib/ishproject.toml (which may have a
+        # different prefix/postfix than DEFAULT_PREFIX/DEFAULT_POSTFIX).
+        patcher = patch(
             "pyishlib.ishproject.cli.load_config",
-            return_value=_DEFAULT_CFG,
+            side_effect=_default_cfg,
         )
-        p.start()
-        self.addCleanup(p.stop)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         # Shared bare remote for tests that need one.
         self.bare = _setup_bare_remote(self)
 
@@ -580,12 +587,14 @@ class TestMerge(_ChdirTestCase):
 class TestCleanRebase(_ChdirTestCase):
     def setUp(self) -> None:
         super().setUp()
-        p = patch(
+        # Patch load_config so tests use library defaults regardless of the
+        # user's ~/.config/ishlib/ishproject.toml prefix/postfix values.
+        patcher = patch(
             "pyishlib.ishproject.cli.load_config",
-            return_value=_DEFAULT_CFG,
+            side_effect=_default_cfg,
         )
-        p.start()
-        self.addCleanup(p.stop)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         _init_repo(self.root)
         self.bare = _setup_bare_remote(self)
         self.base_sha = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
@@ -1041,6 +1050,94 @@ class TestDynamicBranchResolution(_ChdirTestCase):
         argv = mock_main.call_args.args[0]
         src_idx = argv.index("--source")
         self.assertTrue(argv[src_idx + 1].endswith(".ishlib/ishproject"))
+
+
+class TestStatusPassthrough(_ChdirTestCase):
+    def test_missing_source_returns_1(self) -> None:
+        with patch("pyishlib.ishproject.commands.status.ishfiles_main") as mock_main:
+            rc = cli_main(["status"])
+        self.assertEqual(rc, 1)
+        mock_main.assert_not_called()
+
+    def test_passthrough_invokes_ishfiles_status(self) -> None:
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--source", argv)
+        self.assertIn("--target", argv)
+        self.assertIn("status", argv)
+        self.assertLess(argv.index("--source"), argv.index("status"))
+
+
+class TestCommitPassthrough(_ChdirTestCase):
+    def test_missing_source_returns_1(self) -> None:
+        with patch("pyishlib.ishproject.commands.commit.ishfiles_main") as mock_main:
+            rc = cli_main(["commit"])
+        self.assertEqual(rc, 1)
+        mock_main.assert_not_called()
+
+    def test_passthrough_invokes_ishfiles_commit(self) -> None:
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["commit", "-m", "my message"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertIn("commit", argv)
+        self.assertIn("-m", argv)
+        self.assertIn("my message", argv)
+        self.assertLess(argv.index("--source"), argv.index("commit"))
+
+
+class TestPushPassthrough(_ChdirTestCase):
+    def test_missing_source_returns_1(self) -> None:
+        with patch("pyishlib.ishproject.commands.push.ishfiles_main") as mock_main:
+            rc = cli_main(["push"])
+        self.assertEqual(rc, 1)
+        mock_main.assert_not_called()
+
+    def test_passthrough_invokes_ishfiles_push(self) -> None:
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        with patch(
+            "pyishlib.ishproject.commands.push.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["push"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertIn("push", argv)
+        self.assertLess(argv.index("--source"), argv.index("push"))
+
+
+class TestPullPassthrough(_ChdirTestCase):
+    def test_missing_source_returns_1(self) -> None:
+        with patch("pyishlib.ishproject.commands.pull.ishfiles_main") as mock_main:
+            rc = cli_main(["pull"])
+        self.assertEqual(rc, 1)
+        mock_main.assert_not_called()
+
+    def test_passthrough_invokes_ishfiles_pull(self) -> None:
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        with patch(
+            "pyishlib.ishproject.commands.pull.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["pull"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertIn("pull", argv)
+        self.assertLess(argv.index("--source"), argv.index("pull"))
 
 
 if __name__ == "__main__":
