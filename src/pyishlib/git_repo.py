@@ -157,15 +157,25 @@ class GitRepo:
             return True
         if local_only:
             return False
+        return len(self.remotes_with_branch(branch)) > 0
 
-        remote = self._run_ref_query(
+    def remotes_with_branch(self, branch: str) -> list:
+        """Return names of remotes that carry *branch*.
+
+        Scans ``refs/remotes/<remote>/<branch>`` and returns the
+        matching remote names in the order ``git for-each-ref``
+        enumerates them. Returns an empty list when no remote carries
+        the branch or when there are no remotes at all.
+        """
+        result = self._run_ref_query(
             ["for-each-ref", "--format=%(refname)", "refs/remotes"],
             capture_output=True,
             text=True,
         )
-        if remote.returncode != 0 or not remote.stdout:
-            return False
-        for line in remote.stdout.splitlines():
+        if result.returncode != 0 or not result.stdout:
+            return []
+        carriers = []
+        for line in result.stdout.splitlines():
             line = line.strip()
             if not line.startswith("refs/remotes/"):
                 continue
@@ -174,8 +184,8 @@ class GitRepo:
             tail = line[len("refs/remotes/") :]
             parts = tail.split("/", 1)
             if len(parts) == 2 and parts[1] == branch:
-                return True
-        return False
+                carriers.append(parts[0])
+        return carriers
 
     def current_branch(self) -> Optional[str]:
         """Return the currently checked-out branch name, or ``None`` if detached.
@@ -193,6 +203,69 @@ class GitRepo:
             return None
         name = result.stdout.strip()
         return name or None
+
+    # ---- remote helpers ----------------------------------------------------
+
+    def list_remotes(self) -> list:
+        """Return names of all configured remotes.
+
+        Runs ``git remote`` via the read-only probe path so dry-run
+        callers still see the real remote list.
+        """
+        result = self._run_ref_query(
+            ["remote"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return []
+        return [r for r in result.stdout.splitlines() if r.strip()]
+
+    def remote_exists(self, name: str) -> bool:
+        """True if *name* is a configured remote in this repo."""
+        return name in self.list_remotes()
+
+    def remote_url(self, name: str) -> Optional[str]:
+        """Return the fetch URL of *name*, or ``None`` if the remote does not exist."""
+        result = self._run_ref_query(
+            ["remote", "get-url", name],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
+
+    def add_remote(self, name: str, url: str) -> None:
+        """Run ``git remote add <name> <url>``.
+
+        Honours ``self.runner.dry_run``.
+        """
+        self.runner.git(["remote", "add", name, url], work_dir=self.work_tree)
+
+    def fetch(self, remote: str, *, refspec: Optional[str] = None) -> None:
+        """Run ``git fetch --quiet <remote> [<refspec>]``.
+
+        Honours ``self.runner.dry_run``. Failures propagate as
+        :exc:`subprocess.CalledProcessError`; callers decide how to
+        report them.
+        """
+        cmd = ["fetch", "--quiet", remote]
+        if refspec is not None:
+            cmd.append(refspec)
+        self.runner.git(cmd, work_dir=self.work_tree)
+
+    def create_tracking_branch(self, branch: str, remote: str) -> None:
+        """Create local *branch* tracking ``<remote>/<branch>``.
+
+        Runs ``git branch --track <branch> <remote>/<branch>``.
+        Explicit ``--track`` survives ``branch.autoSetupMerge=never``.
+        Honours ``self.runner.dry_run``.
+        """
+        self.runner.git(
+            ["branch", "--track", branch, f"{remote}/{branch}"],
+            work_dir=self.work_tree,
+        )
 
     def list_tracked_files(self) -> list:
         """Return work-tree-relative paths of tracked files.

@@ -329,6 +329,107 @@ class TestExclude(GitRepoTestCase):
                 repo.ensure_path_excluded(outside_path)
 
 
+class TestRemotesWithBranch(GitRepoTestCase):
+    def test_empty_when_no_remotes(self) -> None:
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(repo.remotes_with_branch("main"), [])
+
+    def test_returns_carrier_remote(self) -> None:
+        remote_dir = self.root / ".git" / "refs" / "remotes" / "origin"
+        remote_dir.mkdir(parents=True, exist_ok=True)
+        head = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        (remote_dir / "main").write_text(head + "\n")
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(repo.remotes_with_branch("main"), ["origin"])
+
+    def test_returns_multiple_carriers(self) -> None:
+        head = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        for remote in ("origin", "fork"):
+            d = self.root / ".git" / "refs" / "remotes" / remote
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "main").write_text(head + "\n")
+        repo = GitRepo.discover(self.root)
+        self.assertIn("origin", repo.remotes_with_branch("main"))
+        self.assertIn("fork", repo.remotes_with_branch("main"))
+
+    def test_does_not_match_prefix(self) -> None:
+        # refs/remotes/origin/foo/project must NOT match query "project".
+        remote_dir = self.root / ".git" / "refs" / "remotes" / "origin" / "foo"
+        remote_dir.mkdir(parents=True, exist_ok=True)
+        head = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        (remote_dir / "project").write_text(head + "\n")
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(repo.remotes_with_branch("project"), [])
+        self.assertEqual(repo.remotes_with_branch("foo/project"), ["origin"])
+
+
+class TestRemoteOps(unittest.TestCase):
+    """Remote helpers tested against a real bare remote."""
+
+    def setUp(self) -> None:
+        self._tmp = _make_tempdir()
+        self.addCleanup(self._tmp.cleanup)
+        tmp = Path(self._tmp.name).resolve()
+        self.bare = tmp / "bare.git"
+        self.clone = tmp / "clone"
+        seed = tmp / "_seed"
+        self.bare.mkdir()
+        seed.mkdir()
+        _git("init", "--bare", "-b", "main", cwd=self.bare)
+        # Seed the bare repo with one commit so we can clone it.
+        _make_repo(seed)
+        _git("remote", "add", "origin", str(self.bare), cwd=seed)
+        _git("push", "-u", "origin", "main", cwd=seed)
+        _git("clone", str(self.bare), str(self.clone), cwd=tmp)
+        self.seed = seed
+        self.repo = GitRepo.discover(self.clone)
+
+    def test_list_remotes_returns_origin(self) -> None:
+        self.assertIn("origin", self.repo.list_remotes())
+
+    def test_list_remotes_empty_when_none_configured(self) -> None:
+        with _make_tempdir() as plain:
+            plain_path = Path(plain).resolve()
+            _make_repo(plain_path)
+            repo = GitRepo.discover(plain_path)
+            self.assertEqual(repo.list_remotes(), [])
+
+    def test_remote_exists_true(self) -> None:
+        self.assertTrue(self.repo.remote_exists("origin"))
+
+    def test_remote_exists_false(self) -> None:
+        self.assertFalse(self.repo.remote_exists("upstream"))
+
+    def test_remote_url_returns_url(self) -> None:
+        url = self.repo.remote_url("origin")
+        self.assertIsNotNone(url)
+        self.assertIn("bare.git", url)
+
+    def test_remote_url_missing_remote_returns_none(self) -> None:
+        self.assertIsNone(self.repo.remote_url("upstream"))
+
+    def test_add_remote(self) -> None:
+        self.repo.add_remote("alt", str(self.bare))
+        self.assertIn("alt", self.repo.list_remotes())
+
+    def test_fetch(self) -> None:
+        # Push a new branch to the bare remote via the seed clone.
+        seed = self.seed
+        _git("branch", "ish/test", cwd=seed)
+        _git("push", "origin", "ish/test", cwd=seed)
+        # Fetch the clone and verify the remote tracking ref is visible.
+        self.repo.fetch("origin")
+        self.assertIn("origin", self.repo.remotes_with_branch("ish/test"))
+
+    def test_create_tracking_branch(self) -> None:
+        seed = self.seed
+        _git("branch", "ish/track", cwd=seed)
+        _git("push", "origin", "ish/track", cwd=seed)
+        self.repo.fetch("origin")
+        self.repo.create_tracking_branch("ish/track", "origin")
+        self.assertTrue(self.repo.branch_exists("ish/track", local_only=True))
+
+
 class TestListTrackedFiles(GitRepoTestCase):
     def test_lists_tracked_files_relative_to_worktree(self) -> None:
         (self.root / "a.txt").write_text("a")
