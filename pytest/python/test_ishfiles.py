@@ -20,11 +20,7 @@ sys.path.insert(
 
 from pyishlib.dotfile_ignore import DotfileIgnore
 from pyishlib.ishfiles.ignore import build_ignore
-from pyishlib.ishfiles.config import (
-    DEFAULT_SOURCE_DIR,
-    DEFAULT_TARGET_DIR,
-    load_config,
-)
+from pyishlib.ishfiles.config import load_config
 from pyishlib.ishfiles.cli import main as cli_main
 from pyishlib.ishfiles.script_runner import scan_scripts
 
@@ -63,8 +59,8 @@ def _make_args(**overrides):
 class TestLoadConfig:
     def test_defaults(self):
         cfg = load_config(config_file=Path("/nonexistent/config.toml"))
-        assert cfg.get_opt("source") == str(DEFAULT_SOURCE_DIR)
-        assert cfg.get_opt("target") == str(DEFAULT_TARGET_DIR)
+        assert cfg.get_opt("source") == str(Path.home() / ".local" / "share" / "ishfiles")
+        assert cfg.get_opt("target") == str(Path.home())
         assert cfg.dry_run is False
 
     def test_load_with_config_file(self):

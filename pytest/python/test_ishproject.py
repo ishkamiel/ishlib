@@ -312,22 +312,14 @@ def _setup_bare_remote(test_case: unittest.TestCase) -> Path:
 class TestInit(_ChdirTestCase):
     """Tests for ``ishproject init``.
 
-    Every test patches ``load_config`` so the branch name is always the
-    library default (``ishlib/ishproject``) regardless of the local
+    ``conftest.py`` redirects ``$HOME`` to a per-session temp dir so the
+    branch name always resolves to the library default
+    (``ishlib/ishproject``) regardless of the developer's real
     ``~/.config/ishlib/ishproject.toml``.
     """
 
     def setUp(self) -> None:
         super().setUp()
-        # Patch load_config so tests use the library defaults rather than
-        # reading ~/.config/ishlib/ishproject.toml (which may have a
-        # different prefix/postfix than DEFAULT_PREFIX/DEFAULT_POSTFIX).
-        patcher = patch(
-            "pyishlib.ishproject.cli.load_config",
-            side_effect=_default_cfg,
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
         # Shared bare remote for tests that need one.
         self.bare = _setup_bare_remote(self)
 
@@ -587,14 +579,6 @@ class TestMerge(_ChdirTestCase):
 class TestCleanRebase(_ChdirTestCase):
     def setUp(self) -> None:
         super().setUp()
-        # Patch load_config so tests use library defaults regardless of the
-        # user's ~/.config/ishlib/ishproject.toml prefix/postfix values.
-        patcher = patch(
-            "pyishlib.ishproject.cli.load_config",
-            side_effect=_default_cfg,
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
         _init_repo(self.root)
         self.bare = _setup_bare_remote(self)
         self.base_sha = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()

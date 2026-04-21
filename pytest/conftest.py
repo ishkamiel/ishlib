@@ -16,9 +16,15 @@ environment:
 
 ``_PASSTHROUGH`` — a small whitelist of variables copied verbatim from the
 host.  ``PATH`` is the only strictly required entry (to locate git, bash,
-zsh, etc.).  ``HOME`` is kept so shells and git do not warn about a missing
-home directory; ``TMPDIR``/``TMP``/``TEMP`` are kept for portable temp-file
-creation.  Nothing else is copied.
+zsh, etc.).  ``TMPDIR``/``TMP``/``TEMP`` are kept for portable temp-file
+creation.  ``HOME`` is **not** copied; a fresh temporary directory is
+created and assigned to ``HOME`` (and ``XDG_*_HOME``) instead, so
+production code that calls ``Path.home()`` or consults ``HOME`` /
+``XDG_*_HOME`` at runtime after session setup reads from an empty sandbox
+rather than the developer's real dotfiles or
+``~/.config/ishlib/ishproject.toml``.  This makes runtime home-directory
+lookups during tests deterministic regardless of what is in the developer's
+home directory.
 
 ``_SYNTHETIC`` — variables injected unconditionally regardless of the host.
 These point git at ``/dev/null`` configs (so the host ``~/.gitconfig`` and
@@ -40,9 +46,10 @@ import os
 import pytest
 
 # Variables copied verbatim from the host.
-# SYSTEMROOT and USERPROFILE are essential on Windows (system DLLs, home dir);
-# they are simply absent on Linux/macOS so the if-in-os.environ guard is a no-op.
-_PASSTHROUGH = frozenset({"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "USERPROFILE"})
+# HOME and USERPROFILE are intentionally absent: the fixture creates a fresh
+# temp directory and assigns it instead so no real user config leaks in.
+# SYSTEMROOT is essential on Windows (system DLLs); absent on Linux/macOS.
+_PASSTHROUGH = frozenset({"PATH", "TMPDIR", "TMP", "TEMP", "SYSTEMROOT"})
 
 # Variables synthesised unconditionally; these shadow any host value.
 _SYNTHETIC: dict[str, str] = {
@@ -56,9 +63,29 @@ _SYNTHETIC: dict[str, str] = {
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _clean_env() -> None:
-    """Replace os.environ with a minimal hermetic environment."""
+def _clean_env(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Replace os.environ with a minimal hermetic environment.
+
+    ``HOME`` is redirected to a fresh per-worker temporary directory so
+    that any production code path relying on ``Path.home()`` (config
+    loaders, XDG cache resolution, …) operates in an empty sandbox rather
+    than the developer's real home directory.
+    """
+    fake_home = tmp_path_factory.mktemp("hermetic_home")
+    # Pre-seed config files so bootstrap() finds them and never prompts,
+    # even when stdin is a TTY (e.g. during local development).
+    ishproject_cfg = fake_home / ".config" / "ishlib" / "ishproject.toml"
+    ishproject_cfg.parent.mkdir(parents=True, exist_ok=True)
+    ishproject_cfg.write_text(
+        '[ishproject]\nprefix = "ishlib"\npostfix = "ishproject"\n',
+        encoding="utf-8",
+    )
     clean = {k: os.environ[k] for k in _PASSTHROUGH if k in os.environ}
+    clean["HOME"] = str(fake_home)
+    clean["USERPROFILE"] = str(fake_home)
+    clean["XDG_CONFIG_HOME"] = str(fake_home / ".config")
+    clean["XDG_CACHE_HOME"] = str(fake_home / ".cache")
+    clean["XDG_DATA_HOME"] = str(fake_home / ".local" / "share")
     clean.update(_SYNTHETIC)
     os.environ.clear()
     os.environ.update(clean)
