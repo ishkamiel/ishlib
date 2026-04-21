@@ -510,5 +510,181 @@ class TestRemoveExclude(GitRepoTestCase):
         self.assertTrue(body.endswith("\n"))
 
 
+class TestStatus(GitRepoTestCase):
+    def test_clean_repo_returns_empty_dict(self) -> None:
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(repo.status_porcelain(), {})
+
+    def test_modified_tracked_file_detected(self) -> None:
+        (self.root / "a.txt").write_text("original")
+        _git("add", "a.txt", cwd=self.root)
+        _git("commit", "-m", "add a", cwd=self.root)
+        (self.root / "a.txt").write_text("changed")
+        repo = GitRepo.discover(self.root)
+        result = repo.status_porcelain()
+        self.assertIn("a.txt", result)
+
+    def test_untracked_file_detected(self) -> None:
+        (self.root / "new.txt").write_text("hi")
+        repo = GitRepo.discover(self.root)
+        result = repo.status_porcelain()
+        self.assertIn("new.txt", result)
+        self.assertEqual(result["new.txt"], "??")
+
+    def test_staged_new_file_detected(self) -> None:
+        (self.root / "staged.txt").write_text("x")
+        _git("add", "staged.txt", cwd=self.root)
+        repo = GitRepo.discover(self.root)
+        result = repo.status_porcelain()
+        self.assertIn("staged.txt", result)
+
+    def test_renamed_file_uses_destination_path(self) -> None:
+        (self.root / "old.txt").write_text("x")
+        _git("add", "old.txt", cwd=self.root)
+        _git("commit", "-m", "add old", cwd=self.root)
+        _git("mv", "old.txt", "new.txt", cwd=self.root)
+        repo = GitRepo.discover(self.root)
+        result = repo.status_porcelain()
+        self.assertIn("new.txt", result)
+        self.assertNotIn("old.txt", result)
+
+    def test_bypasses_dry_run(self) -> None:
+        from pyishlib.command_runner import CommandRunner
+        from pyishlib.ish_config import IshConfig
+
+        (self.root / "a.txt").write_text("x")
+        repo = GitRepo.discover(self.root)
+        repo.runner = CommandRunner(cfg=IshConfig(dry_run=True))
+        result = repo.status_porcelain()
+        self.assertIn("a.txt", result)
+
+
+class TestCommit(GitRepoTestCase):
+    def test_commit_all_creates_commit(self) -> None:
+        (self.root / "file.txt").write_text("content")
+        _git("add", "file.txt", cwd=self.root)
+        repo = GitRepo.discover(self.root)
+        result = repo.commit_all("test commit message")
+        self.assertEqual(result.returncode, 0)
+        log_out = subprocess.run(
+            ["git", "-C", str(self.root), "log", "--oneline", "-1"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertIn("test commit message", log_out)
+
+    def test_commit_all_stages_tracked_modifications(self) -> None:
+        (self.root / "file.txt").write_text("v1")
+        _git("add", "file.txt", cwd=self.root)
+        _git("commit", "-m", "initial", cwd=self.root)
+        (self.root / "file.txt").write_text("v2")
+        repo = GitRepo.discover(self.root)
+        result = repo.commit_all("update file")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(repo.status_porcelain(), {})
+
+    def test_commit_all_dry_run_does_not_commit(self) -> None:
+        from pyishlib.command_runner import CommandRunner
+        from pyishlib.ish_config import IshConfig
+
+        (self.root / "file.txt").write_text("content")
+        _git("add", "file.txt", cwd=self.root)
+        before = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        repo = GitRepo.discover(self.root)
+        repo.runner = CommandRunner(cfg=IshConfig(dry_run=True))
+        repo.commit_all("should not appear")
+        after = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.assertEqual(before, after)
+
+
+class TestPushPull(unittest.TestCase):
+    """Round-trip push/pull tests using a bare remote repo."""
+
+    def setUp(self) -> None:
+        self._tmp = _make_tempdir()
+        self.addCleanup(self._tmp.cleanup)
+        base = Path(self._tmp.name).resolve()
+
+        self.remote = base / "remote.git"
+        self.clone1 = base / "clone1"
+        self.clone2 = base / "clone2"
+
+        self.remote.mkdir()
+        _git("init", "--bare", "-b", "main", cwd=self.remote)
+
+        self.clone1.mkdir()
+        _git("init", "-b", "main", cwd=self.clone1)
+        _git("commit", "--allow-empty", "-m", "init", cwd=self.clone1)
+        _git(
+            "remote",
+            "add",
+            "origin",
+            str(self.remote),
+            cwd=self.clone1,
+        )
+        _git("push", "-u", "origin", "main", cwd=self.clone1)
+
+        subprocess.run(
+            ["git", "clone", str(self.remote), str(self.clone2)],
+            check=True,
+            capture_output=True,
+        )
+
+    def test_push_sends_commits_to_remote(self) -> None:
+        (self.clone1 / "new.txt").write_text("hello")
+        _git("add", "new.txt", cwd=self.clone1)
+        _git("commit", "-m", "add new", cwd=self.clone1)
+        repo = GitRepo.discover(self.clone1)
+        result = repo.push()
+        self.assertEqual(result.returncode, 0)
+
+        _git("fetch", cwd=self.clone2)
+        log_out = subprocess.run(
+            ["git", "-C", str(self.clone2), "log", "--oneline", "origin/main"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertIn("add new", log_out)
+
+    def test_pull_rebase_fetches_remote_commits(self) -> None:
+        (self.clone2 / "remote.txt").write_text("from remote")
+        _git("add", "remote.txt", cwd=self.clone2)
+        _git("commit", "-m", "remote change", cwd=self.clone2)
+        _git("push", cwd=self.clone2)
+
+        repo = GitRepo.discover(self.clone1)
+        result = repo.pull_rebase()
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue((self.clone1 / "remote.txt").exists())
+
+    def test_push_dry_run_does_not_push(self) -> None:
+        from pyishlib.command_runner import CommandRunner
+        from pyishlib.ish_config import IshConfig
+
+        (self.clone1 / "dry.txt").write_text("dry")
+        _git("add", "dry.txt", cwd=self.clone1)
+        _git("commit", "-m", "dry commit", cwd=self.clone1)
+
+        repo = GitRepo.discover(self.clone1)
+        repo.runner = CommandRunner(cfg=IshConfig(dry_run=True))
+        repo.push()
+
+        _git("fetch", cwd=self.clone2)
+        log_out = subprocess.run(
+            ["git", "-C", str(self.clone2), "log", "--oneline", "origin/main"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertNotIn("dry commit", log_out)
+
+
 if __name__ == "__main__":
     unittest.main()

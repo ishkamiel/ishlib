@@ -2217,5 +2217,263 @@ class TestRunInstallAvailabilityFiltering:
         assert "ulauncher" not in captured.out
 
 
+# ---------------------------------------------------------------------------
+# status subcommand
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(path: Path) -> None:
+    import subprocess
+
+    subprocess.run(
+        ["git", "-c", "init.defaultBranch=main", "init", str(path)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(path),
+         "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false",
+         "commit", "--allow-empty", "-m", "init"],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _git_add_and_commit(path: Path, *files: str) -> None:
+    import subprocess
+
+    subprocess.run(
+        ["git", "-C", str(path), "add", *files],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(path),
+         "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false",
+         "commit", "-m", "add files"],
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git not available")
+class TestStatusCommand:
+    def _run(self, src, tgt, capsys):
+        rc = cli_main(["--source", src, "--target", tgt, "status"])
+        return rc, capsys.readouterr()
+
+    def test_nonexistent_source_returns_1(self, capsys):
+        with tempfile.TemporaryDirectory() as tgt:
+            rc = cli_main(["--source", "/nonexistent", "--target", tgt, "status"])
+        assert rc == 1
+
+    def test_clean_source_matching_target_shows_nothing(self, capsys):
+        """Source committed, target matches: no output."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            content = "export X=1\n"
+            _make_file(Path(src) / "dot_zshrc", content)
+            _git_add_and_commit(Path(src), "dot_zshrc")
+            # Deploy the target directly (matching committed source)
+            _make_file(Path(tgt) / ".zshrc", content)
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert captured.out.strip() == ""
+
+    def test_target_changed_shows_unchanged_annotation(self, capsys):
+        """Source committed, target drifted: (unchanged)."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            _git_add_and_commit(Path(src), "dot_zshrc")
+            _make_file(Path(tgt) / ".zshrc", "export X=1\n")
+            # Drift the deployed copy (source remains committed)
+            (Path(tgt) / ".zshrc").write_text("export X=2\n")
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert "(unchanged)" in captured.out
+        assert "!=" in captured.out
+
+    def test_source_dirty_target_matches_shows_source_dirty(self, capsys):
+        """Source modified but not committed, target matches dirty source: (source dirty)."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            _git_add_and_commit(Path(src), "dot_zshrc")
+            # Modify source without committing
+            dirty_content = "export X=1\n# added\n"
+            (Path(src) / "dot_zshrc").write_text(dirty_content)
+            # Target already matches the dirty source content
+            _make_file(Path(tgt) / ".zshrc", dirty_content)
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert "(source dirty)" in captured.out
+
+    def test_both_dirty_shows_dirty_annotation(self, capsys):
+        """Source modified + target drifted independently: (dirty)."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            _git_add_and_commit(Path(src), "dot_zshrc")
+            _make_file(Path(tgt) / ".zshrc", "export X=1\n")
+            # Drift both independently
+            (Path(tgt) / ".zshrc").write_text("export X=2\n")
+            (Path(src) / "dot_zshrc").write_text("export X=3\n")
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert "(dirty)" in captured.out
+
+    def test_non_dotfile_change_shown_in_other_section(self, capsys):
+        """Dirty non-dotfile path (in ishscripts/) appears under Other source changes."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            _make_file(Path(src) / "ishscripts" / "10_setup.sh", "#!/bin/bash\n")
+            _git_add_and_commit(Path(src), "dot_zshrc", "ishscripts/10_setup.sh")
+            # Modify a non-dotfile tracked file (ishscripts are excluded from dotfile discovery)
+            (Path(src) / "ishscripts" / "10_setup.sh").write_text("#!/bin/bash\n# changed\n")
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert "Other source changes:" in captured.out
+        assert "10_setup.sh" in captured.out
+
+    def test_untracked_non_dotfile_shown_in_other_section(self, capsys):
+        """Untracked file in ishscripts/ appears under Other source changes."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            _git_add_and_commit(Path(src), "dot_zshrc")
+            # Add an untracked file in a directory that ishfiles ignores for dotfiles
+            _make_file(Path(src) / "ishscripts" / "99_new.sh", "#!/bin/bash\n")
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert "Other source changes:" in captured.out
+        assert "ishscripts" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# commit/push/pull subcommands
+# ---------------------------------------------------------------------------
+
+
+def _make_bare_remote(path: Path) -> None:
+    import subprocess
+
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(path)],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _git_remote_add_and_push(repo_path: Path, remote_path: Path) -> None:
+    import subprocess
+
+    subprocess.run(
+        ["git", "-C", str(repo_path), "remote", "add", "origin", str(remote_path)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_path), "push", "-u", "origin", "main"],
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git not available")
+class TestCommitCommand:
+    def test_commit_creates_commit_with_default_message(self, capsys):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            subprocess.run(
+                ["git", "-C", src, "add", "dot_zshrc"], check=True, capture_output=True
+            )
+            rc = cli_main(["--source", src, "--target", tgt, "commit"])
+        assert rc == 0
+
+    def test_commit_with_custom_message(self, capsys):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            subprocess.run(
+                ["git", "-C", src, "add", "dot_zshrc"], check=True, capture_output=True
+            )
+            rc = cli_main(["--source", src, "--target", tgt, "commit", "-m", "my custom msg"])
+        assert rc == 0
+
+    def test_commit_nothing_to_commit_returns_nonzero(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            rc = cli_main(["--source", src, "--target", tgt, "commit"])
+        assert rc != 0
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git not available")
+class TestPushCommand:
+    def test_push_sends_commits(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as base:
+            base_path = Path(base)
+            src = base_path / "src"
+            remote = base_path / "remote.git"
+            tgt = base_path / "tgt"
+            src.mkdir()
+            tgt.mkdir()
+            _init_git_repo(src)
+            _make_bare_remote(remote)
+            _git_remote_add_and_push(src, remote)
+            _make_file(src / "dot_zshrc", "export X=1\n")
+            _git_add_and_commit(src, "dot_zshrc")
+            rc = cli_main(["--source", str(src), "--target", str(tgt), "push"])
+            assert rc == 0
+            log_out = subprocess.run(
+                ["git", "-C", str(remote), "log", "--oneline"],
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "dot_zshrc" in log_out or "add files" in log_out
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git not available")
+class TestPullCommand:
+    def test_pull_rebase_fetches_remote_changes(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as base:
+            base_path = Path(base)
+            src = base_path / "src"
+            clone2 = base_path / "clone2"
+            remote = base_path / "remote.git"
+            tgt = base_path / "tgt"
+            src.mkdir()
+            tgt.mkdir()
+            _init_git_repo(src)
+            _make_bare_remote(remote)
+            _git_remote_add_and_push(src, remote)
+
+            subprocess.run(
+                ["git", "clone", str(remote), str(clone2)],
+                check=True,
+                capture_output=True,
+            )
+            _make_file(clone2 / "remote.txt", "from remote\n")
+            _git_add_and_commit(clone2, "remote.txt")
+            subprocess.run(
+                ["git", "-C", str(clone2), "push"], check=True, capture_output=True
+            )
+
+            rc = cli_main(["--source", str(src), "--target", str(tgt), "pull"])
+            assert rc == 0
+            assert (src / "remote.txt").exists()
+
+
 if __name__ == "__main__":
     pytest.main()

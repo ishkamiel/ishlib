@@ -23,9 +23,13 @@ from .commands.add import AddCommand
 from .commands.apply import ApplyCommand
 from .commands.branch import BranchCommand
 from .commands.clean_rebase import CleanRebaseCommand
+from .commands.commit import CommitCommand
 from .commands.diff import DiffCommand
 from .commands.init import InitCommand
 from .commands.merge import MergeCommand
+from .commands.pull import PullCommand
+from .commands.push import PushCommand
+from .commands.status import StatusCommand
 from .config import load_config
 
 
@@ -39,9 +43,13 @@ class IshprojectCLI(BaseCLI):
         ApplyCommand,
         BranchCommand,
         CleanRebaseCommand,
+        CommitCommand,
         DiffCommand,
         InitCommand,
         MergeCommand,
+        PullCommand,
+        PushCommand,
+        StatusCommand,
     )
     # The passthrough commands (add/apply/diff) delegate flag handling to
     # ishfiles, so unknown tokens must be forwarded through ``args.rest``
