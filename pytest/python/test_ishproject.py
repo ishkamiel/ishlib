@@ -281,7 +281,49 @@ class TestAddPassthrough(_ChdirTestCase):
         mock_main.assert_not_called()
 
 
+def _make_bare(parent: Path) -> Path:
+    """Create an initialised bare git repo at ``parent/bare.git``."""
+    bare = parent / "bare.git"
+    bare.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(bare)],
+        check=True,
+        capture_output=True,
+    )
+    return bare
+
+
+def _setup_bare_remote(test_case: unittest.TestCase) -> Path:
+    """Create an isolated bare repo outside the main working tree.
+
+    Returns the bare path and registers cleanup on *test_case*.
+    Using a separate tempdir keeps the bare repo out of the main working
+    tree so commands like clean-rebase do not see it as untracked files.
+    """
+    bare_tmp = _make_tempdir()
+    test_case.addCleanup(bare_tmp.cleanup)
+    return _make_bare(Path(bare_tmp.name).resolve())
+
+
 class TestInit(_ChdirTestCase):
+    """Tests for ``ishproject init``.
+
+    Every test patches ``load_config`` so the branch name is always the
+    library default (``ishlib/ishproject``) regardless of the local
+    ``~/.config/ishlib/ishproject.toml``.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        p = patch(
+            "pyishlib.ishproject.cli.load_config",
+            return_value=_DEFAULT_CFG,
+        )
+        p.start()
+        self.addCleanup(p.stop)
+        # Shared bare remote for tests that need one.
+        self.bare = _setup_bare_remote(self)
+
     def test_not_a_repo(self) -> None:
         rc = cli_main(["init"])
         self.assertEqual(rc, 1)
@@ -296,23 +338,32 @@ class TestInit(_ChdirTestCase):
         exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/.ishlib/", exclude)
 
-    def test_init_missing_branch(self) -> None:
+    def test_init_missing_branch_without_create_errors(self) -> None:
+        # No branch and no --create → rc=1 (no remote origin configured in
+        # the fresh tempdir repo, and we're non-interactive).
         _init_repo(self.root)
         rc = cli_main(["init"])
         self.assertEqual(rc, 1)
         self.assertFalse((self.root / ".ishlib" / "ishproject").exists())
 
-    def test_init_create_orphan(self) -> None:
+    def test_init_create_pushes_to_configured_remote(self) -> None:
         _init_repo(self.root)
-        rc = cli_main(["init", "--create"])
+        rc = cli_main(["init", "--create", "--remote", str(self.bare)])
         self.assertEqual(rc, 0)
         worktree = self.root / ".ishlib" / "ishproject"
         self.assertTrue(worktree.is_dir())
-        # The orphan branch is now in the local refs.
         branches = _git("branch", "--list", cwd=self.root).stdout
         self.assertIn(ISHPROJECT_BRANCH, branches)
         exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/.ishlib/", exclude)
+        # Branch must have been pushed to the bare remote.
+        remote_refs = subprocess.run(
+            ["git", "ls-remote", "--heads", str(self.bare)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertIn(ISHPROJECT_BRANCH, remote_refs)
 
     def test_init_idempotent(self) -> None:
         _init_repo(self.root)
@@ -330,6 +381,65 @@ class TestInit(_ChdirTestCase):
         os.chdir(sub)
         rc = cli_main(["init"])
         self.assertEqual(rc, 1)
+
+    def test_init_auto_tracks_remote_branch(self) -> None:
+        # Set up: bare remote has the branch; clone has no local branch.
+        _init_repo(self.root)
+        _git("remote", "add", "origin", str(self.bare), cwd=self.root)
+        # Seed the bare with the ishproject branch via a scratch repo.
+        scratch_tmp = _make_tempdir()
+        self.addCleanup(scratch_tmp.cleanup)
+        scratch = Path(scratch_tmp.name).resolve()
+        scratch.mkdir(exist_ok=True)
+        _init_repo(scratch)
+        _git("remote", "add", "origin", str(self.bare), cwd=scratch)
+        _git("branch", ISHPROJECT_BRANCH, cwd=scratch)
+        _git("push", "origin", ISHPROJECT_BRANCH, cwd=scratch)
+        # init should auto-track the remote branch.
+        rc = cli_main(["init"])
+        self.assertEqual(rc, 0)
+        worktree = self.root / ".ishlib" / "ishproject"
+        self.assertTrue(worktree.is_dir())
+        branches = _git("branch", "--list", cwd=self.root).stdout
+        self.assertIn(ISHPROJECT_BRANCH, branches)
+
+    def test_init_remote_flag_url_adds_ishproject_remote(self) -> None:
+        _init_repo(self.root)
+        rc = cli_main(["init", "--create", "--remote", str(self.bare)])
+        self.assertEqual(rc, 0)
+        remotes = _git("remote", cwd=self.root).stdout
+        self.assertIn("ishproject", remotes)
+        url = _git("remote", "get-url", "ishproject", cwd=self.root).stdout.strip()
+        self.assertEqual(url, str(self.bare))
+
+    def test_init_remote_flag_url_idempotent_when_ishproject_same_url(self) -> None:
+        # Running init twice with the same URL must not error on the second run.
+        _init_repo(self.root)
+        self.assertEqual(
+            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
+        )
+        # Second init: source dir already exists → idempotent no-op.
+        self.assertEqual(
+            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
+        )
+
+    def test_init_remote_flag_url_conflict_errors(self) -> None:
+        # Pre-existing `ishproject` remote with a different URL → error.
+        _init_repo(self.root)
+        other_bare = _make_bare(self.root / "other")
+        _git("remote", "add", "ishproject", str(other_bare), cwd=self.root)
+        rc = cli_main(["init", "--create", "--remote", str(self.bare)])
+        self.assertEqual(rc, 1)
+        # No worktree should have been created.
+        self.assertFalse((self.root / ".ishlib" / "ishproject").is_dir())
+
+    def test_init_fetch_failure_aborts(self) -> None:
+        # A remote that doesn't resolve → fetch fails → rc=1, no worktree.
+        _init_repo(self.root)
+        _git("remote", "add", "origin", "/nonexistent/path.git", cwd=self.root)
+        rc = cli_main(["init"])
+        self.assertEqual(rc, 1)
+        self.assertFalse((self.root / ".ishlib" / "ishproject").is_dir())
 
 
 # ---------------------------------------------------------------------------
@@ -391,8 +501,17 @@ def _simulate_apply(argv) -> int:
 class TestMerge(_ChdirTestCase):
     def setUp(self) -> None:
         super().setUp()
+        p = patch(
+            "pyishlib.ishproject.cli.load_config",
+            return_value=_DEFAULT_CFG,
+        )
+        p.start()
+        self.addCleanup(p.stop)
         _init_repo(self.root)
-        self.assertEqual(cli_main(["init", "--create"]), 0)
+        self.bare = _setup_bare_remote(self)
+        self.assertEqual(
+            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
+        )
 
     def test_merge_removes_exclude_and_commits(self) -> None:
         _seed_managed_file(self.root, "foo.txt", "hello\n")
@@ -461,9 +580,18 @@ class TestMerge(_ChdirTestCase):
 class TestCleanRebase(_ChdirTestCase):
     def setUp(self) -> None:
         super().setUp()
+        p = patch(
+            "pyishlib.ishproject.cli.load_config",
+            return_value=_DEFAULT_CFG,
+        )
+        p.start()
+        self.addCleanup(p.stop)
         _init_repo(self.root)
+        self.bare = _setup_bare_remote(self)
         self.base_sha = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
-        self.assertEqual(cli_main(["init", "--create"]), 0)
+        self.assertEqual(
+            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
+        )
 
     def _run_clean_rebase(self, *extra: str) -> int:
         with patch(
@@ -554,88 +682,82 @@ class TestCleanRebase(_ChdirTestCase):
         self.assertEqual(post_count, pre_count + 1)
 
     def test_clean_rebase_upstream_conflict_rolls_back(self) -> None:
-        with _make_tempdir() as bare_dir:
-            bare = Path(bare_dir).resolve()
+        # The ishproject worktree already has an `ishproject` remote pointing
+        # at self.bare (set up by init --create in setUp).  Clone from
+        # self.bare to create a divergent commit on the remote.
+        source = self.root / ".ishlib" / "ishproject"
+
+        _seed_managed_file(self.root, "foo.txt", "A\n")
+        # Push the "A" commit to self.bare.
+        _git("push", "ishproject", ISHPROJECT_BRANCH, cwd=source)
+        self.assertEqual(cli_main(["merge"]), 0)
+
+        (self.root / "foo.txt").write_text("B\n")
+        _git("add", "foo.txt", cwd=self.root)
+        _git("commit", "-m", "edit foo", cwd=self.root)
+
+        # Create a divergent commit on self.bare via a clone.
+        with _make_tempdir() as clone_dir:
+            clone = Path(clone_dir).resolve()
             subprocess.run(
-                ["git", "init", "--bare", str(bare)],
+                ["git", "clone", str(self.bare), str(clone)],
                 check=True,
                 capture_output=True,
             )
-            source = self.root / ".ishlib" / "ishproject"
-            _git("remote", "add", "origin", str(bare), cwd=source)
-            _git("push", "-u", "origin", ISHPROJECT_BRANCH, cwd=source)
-
-            _seed_managed_file(self.root, "foo.txt", "A\n")
-            # Push the "A" commit to the bare so the remote has foo.txt.
-            _git("push", cwd=source)
-            self.assertEqual(cli_main(["merge"]), 0)
-
-            (self.root / "foo.txt").write_text("B\n")
-            _git("add", "foo.txt", cwd=self.root)
-            _git("commit", "-m", "edit foo", cwd=self.root)
-
-            # Divergent remote commit that modifies foo.txt to "C".
-            with _make_tempdir() as clone_dir:
-                clone = Path(clone_dir).resolve()
-                subprocess.run(
-                    ["git", "clone", str(bare), str(clone)],
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    [
-                        "git",
-                        "-c",
-                        "commit.gpgsign=false",
-                        "-C",
-                        str(clone),
-                        "checkout",
-                        ISHPROJECT_BRANCH,
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
-                (clone / "foo.txt").write_text("C\n")
-                subprocess.run(
-                    ["git", "-C", str(clone), "add", "foo.txt"],
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    [
-                        "git",
-                        "-c",
-                        "commit.gpgsign=false",
-                        "-c",
-                        "tag.gpgsign=false",
-                        "-C",
-                        str(clone),
-                        "commit",
-                        "-m",
-                        "remote edit",
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "-C", str(clone), "push"],
-                    check=True,
-                    capture_output=True,
-                )
-
-            main_head_before = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
-            source_head_before = _git("rev-parse", "HEAD", cwd=source).stdout.strip()
-
-            rc = self._run_clean_rebase()
-            self.assertEqual(rc, 1)
-            self.assertEqual(
-                _git("rev-parse", "HEAD", cwd=self.root).stdout.strip(),
-                main_head_before,
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-C",
+                    str(clone),
+                    "checkout",
+                    ISHPROJECT_BRANCH,
+                ],
+                check=True,
+                capture_output=True,
             )
-            self.assertEqual(
-                _git("rev-parse", "HEAD", cwd=source).stdout.strip(),
-                source_head_before,
+            (clone / "foo.txt").write_text("C\n")
+            subprocess.run(
+                ["git", "-C", str(clone), "add", "foo.txt"],
+                check=True,
+                capture_output=True,
             )
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "tag.gpgsign=false",
+                    "-C",
+                    str(clone),
+                    "commit",
+                    "-m",
+                    "remote edit",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(clone), "push"],
+                check=True,
+                capture_output=True,
+            )
+
+        main_head_before = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        source_head_before = _git("rev-parse", "HEAD", cwd=source).stdout.strip()
+
+        rc = self._run_clean_rebase()
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            _git("rev-parse", "HEAD", cwd=self.root).stdout.strip(),
+            main_head_before,
+        )
+        self.assertEqual(
+            _git("rev-parse", "HEAD", cwd=source).stdout.strip(),
+            source_head_before,
+        )
 
     def test_clean_rebase_creates_backup_ref(self) -> None:
         _seed_managed_file(self.root, "foo.txt", "hello\n")
@@ -832,8 +954,17 @@ class TestBranchCommand(_ChdirTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        p = patch(
+            "pyishlib.ishproject.cli.load_config",
+            return_value=_DEFAULT_CFG,
+        )
+        p.start()
+        self.addCleanup(p.stop)
         _init_repo(self.root)
-        self.assertEqual(cli_main(["init", "--create"]), 0)
+        self.bare = _setup_bare_remote(self)
+        self.assertEqual(
+            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
+        )
 
     def test_branch_requires_repo(self) -> None:
         with _make_tempdir() as plain:
@@ -874,8 +1005,17 @@ class TestDynamicBranchResolution(_ChdirTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        p = patch(
+            "pyishlib.ishproject.cli.load_config",
+            return_value=_DEFAULT_CFG,
+        )
+        p.start()
+        self.addCleanup(p.stop)
         _init_repo(self.root)
-        self.assertEqual(cli_main(["init", "--create"]), 0)
+        self.bare = _setup_bare_remote(self)
+        self.assertEqual(
+            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
+        )
 
     def test_apply_uses_branch_specific_worktree(self) -> None:
         self.assertEqual(cli_main(["branch"]), 0)
