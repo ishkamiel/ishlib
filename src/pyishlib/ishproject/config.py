@@ -45,8 +45,6 @@ log = logging.getLogger(__name__)
 DEFAULT_PREFIX = "ishlib"
 DEFAULT_POSTFIX = "ishproject"
 
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "ishlib" / "ishproject.toml"
-
 _SCHEMA: Path = (
     Path(__file__).resolve().parent.parent.parent / "schema" / "ishproject_config.json"
 )
@@ -170,11 +168,16 @@ class IshprojectConfig(IshConfig):
 
 
 def load_config(
-    config_path: Path = DEFAULT_CONFIG_PATH,
+    config_path: Optional[Path] = None,
     *,
     interactive: Optional[bool] = None,
 ) -> IshprojectConfig:
     """Load the ishproject config, prompting to create it if absent.
+
+    *config_path* defaults to ``~/.config/ishlib/ishproject.toml``,
+    evaluated at call time (not at import time) so the value reflects the
+    process's current ``HOME``.  Pass an explicit path to redirect for
+    testing.
 
     When *interactive* is ``None`` the value is derived from
     ``sys.stdin.isatty()``. A non-interactive session with a missing
@@ -185,6 +188,8 @@ def load_config(
     ``cfg.postfix`` resolve to the effective values and
     ``cfg.get_opt("config_file")`` returns *config_path*.
     """
+    if config_path is None:
+        config_path = Path.home() / ".config" / "ishlib" / "ishproject.toml"
     IshprojectConfig.bootstrap(
         config_path,
         section="ishproject",
