@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 from ...cli_command import CliCommand
@@ -20,7 +21,8 @@ def _display_target(dotfile_target: Path, home: Path) -> str:
     """Return a display string for the deployed target path."""
     try:
         rel = dotfile_target.relative_to(home)
-        return f"~/{rel}"
+        prefix = "~" if home == Path.home() else str(home)
+        return f"{prefix}/{rel}"
     except ValueError:
         return str(dotfile_target)
 
@@ -47,6 +49,7 @@ class StatusCommand(CliCommand):
         if not finder.source_dir.is_dir():
             print(
                 f"Source directory does not exist: {finder.source_dir}",
+                file=sys.stderr,
             )
             return 1
 
@@ -76,7 +79,7 @@ class StatusCommand(CliCommand):
                 continue
 
             display = _display_target(dotfile.target, home)
-            source_name = dotfile.rel_path.name
+            source_name = dotfile.rel_path.as_posix()
 
             if source_dirty and target_changed:
                 annotation = "(dirty)"
