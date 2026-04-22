@@ -59,7 +59,13 @@ class StatusCommand(CliCommand):
 
         try:
             repo = GitRepo.discover(finder.source_dir)
-            dirty_paths = repo.status_porcelain()
+            # include_ignored: the dotfiles source is typically an
+            # ishproject worktree where managed files may match the
+            # shared .git/info/exclude (ishproject writes those
+            # patterns so the main worktree stays clean). We still want
+            # to see those files here — they are the user's new/edited
+            # dotfiles, not something to silently hide.
+            dirty_paths = repo.status_porcelain(include_ignored=True)
         except NotAGitRepoError:
             log.warning(
                 "Source directory is not a git repository: %s", finder.source_dir

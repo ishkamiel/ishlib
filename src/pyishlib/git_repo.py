@@ -8,12 +8,6 @@ git directory lives under the parent repo's ``.git/modules/<name>/``
 (and for a linked worktree under ``.git/worktrees/<name>/``). ``git
 rev-parse --git-dir`` resolves the right path in both cases, and
 :class:`GitRepo` owns that resolution.
-
-The exclude helpers additionally wire up ``core.excludesFile`` in
-per-worktree config (``extensions.worktreeConfig=true``) and write
-patterns to ``<git_dir>/info/exclude.worktree`` rather than the shared
-``info/exclude``, so excludes added by :meth:`GitRepo.ensure_exclude_pattern`
-only apply in the worktree that set them.
 """
 
 from __future__ import annotations
@@ -289,7 +283,7 @@ class GitRepo:
         )
         return [p for p in result.stdout.split("\x00") if p]
 
-    def status_porcelain(self) -> dict:
+    def status_porcelain(self, *, include_ignored: bool = False) -> dict:
         """Return the working-tree status as ``{relative_path: XY_code}``.
 
         Runs ``git status --porcelain=v1 -z`` (NUL-delimited) and parses
@@ -300,9 +294,21 @@ class GitRepo:
         key; the origin path is discarded.  An empty dict is returned when
         the repository has no uncommitted changes or when git exits
         non-zero (e.g. a bare repo).
+
+        Args:
+            include_ignored: When true, pass ``--ignored=traditional`` so
+                files excluded by ``.git/info/exclude`` / ``.gitignore``
+                also appear in the output (with ``!!`` as their XY code).
+                Needed when the caller is working inside a worktree where
+                ignore rules from the shared exclude file should be
+                surfaced to the user (e.g. ``ishfiles status`` running in
+                the ishproject worktree).
         """
+        cmd = ["status", "--porcelain=v1", "-z"]
+        if include_ignored:
+            cmd.append("--ignored=traditional")
         result = self._run_ref_query(
-            ["status", "--porcelain=v1", "-z"],
+            cmd,
             capture_output=True,
             text=True,
         )
@@ -442,120 +448,18 @@ class GitRepo:
         return self.git_dir / "info"
 
     @property
-    def worktree_exclude_file(self) -> Path:
-        """Per-worktree excludes file: ``<git_dir>/info/exclude.worktree``.
-
-        The conventional ``info/exclude`` lives in the *common* git dir
-        and is read by every worktree. We write to a distinct filename
-        and wire it up as per-worktree ``core.excludesFile`` (see
-        :meth:`ensure_worktree_excludes_file_configured`) so patterns
-        only apply in the worktree that set them.
-        """
-        return self.info_dir / "exclude.worktree"
-
-    @property
     def exclude_file(self) -> Path:
-        """Excludes file written by :meth:`ensure_exclude_pattern`.
-
-        Resolves to :attr:`worktree_exclude_file` so patterns don't
-        leak into other worktrees via the shared ``info/exclude``.
-        """
-        return self.worktree_exclude_file
-
-    def _read_shared_config(self, key: str) -> Optional[str]:
-        """Return the value of shared-config *key*, or ``None`` if unset.
-
-        Read-only probe; runs even when ``self.runner.dry_run`` is
-        true so callers see the real config state.
-        """
-        result = subprocess.run(
-            ["git", "-C", str(self.work_tree), "config", "--get", key],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=_clean_git_env(),
-        )
-        if result.returncode != 0:
-            return None
-        value = result.stdout.strip()
-        return value or None
-
-    def _read_worktree_config(self, key: str) -> Optional[str]:
-        """Return the value of per-worktree-config *key*, or ``None`` if unset.
-
-        Read-only probe; runs even when ``self.runner.dry_run`` is true.
-        Returns ``None`` when ``extensions.worktreeConfig`` is disabled
-        (git exits non-zero) as well as when the key itself is unset.
-        """
-        result = subprocess.run(
-            ["git", "-C", str(self.work_tree), "config", "--worktree", "--get", key],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=_clean_git_env(),
-        )
-        if result.returncode != 0:
-            return None
-        value = result.stdout.strip()
-        return value or None
-
-    def ensure_worktree_config_enabled(self) -> bool:
-        """Idempotently set ``extensions.worktreeConfig=true`` on the repo.
-
-        Returns ``True`` if the setting was (or would be) changed,
-        ``False`` if it was already ``true``. Honours
-        ``self.runner.dry_run``.
-        """
-        if self._read_shared_config("extensions.worktreeConfig") == "true":
-            return False
-        self.runner.git(
-            ["config", "extensions.worktreeConfig", "true"],
-            work_dir=self.work_tree,
-        )
-        return True
-
-    def ensure_worktree_excludes_file_configured(self) -> bool:
-        """Wire up :attr:`worktree_exclude_file` as this worktree's excludes file.
-
-        Enables ``extensions.worktreeConfig`` and sets per-worktree
-        ``core.excludesFile`` to the absolute path of
-        :attr:`worktree_exclude_file`. Creates the ``info/`` parent
-        directory and an empty excludes file if missing so git does
-        not warn on the first read. Idempotent: returns ``True`` if
-        any on-disk or config change was (or would be) made, ``False``
-        otherwise. Honours ``self.runner.dry_run``.
-        """
-        changed = self.ensure_worktree_config_enabled()
-        desired = str(self.worktree_exclude_file)
-        if self._read_worktree_config("core.excludesFile") != desired:
-            self.runner.git(
-                ["config", "--worktree", "core.excludesFile", desired],
-                work_dir=self.work_tree,
-            )
-            changed = True
-        if self.runner.dry_run:
-            return changed
-        if not self.info_dir.is_dir():
-            self.info_dir.mkdir(parents=True, exist_ok=True)
-            changed = True
-        if not self.worktree_exclude_file.is_file():
-            self.worktree_exclude_file.touch()
-            changed = True
-        return changed
+        """``<git_dir>/info/exclude`` — submodule-correct."""
+        return self.info_dir / "exclude"
 
     def ensure_exclude_pattern(self, pattern: str) -> bool:
-        """Idempotently append *pattern* to the per-worktree excludes file.
+        """Idempotently append *pattern* to ``info/exclude``.
 
-        Ensures the per-worktree ``core.excludesFile`` is configured
-        (see :meth:`ensure_worktree_excludes_file_configured`), then
-        appends *pattern* if not already present. Returns ``True`` if
-        the file was (or would be) modified, ``False`` if the pattern
-        was already present. Honours ``self.runner.dry_run``.
+        Returns ``True`` if the file was (or would be) modified, ``False``
+        if the pattern was already present. Honours ``self.runner.dry_run``.
         """
         if not pattern:
             raise ValueError("pattern must be non-empty")
-
-        self.ensure_worktree_excludes_file_configured()
 
         existing = ""
         if self.exclude_file.is_file():
@@ -580,7 +484,7 @@ class GitRepo:
         return True
 
     def ensure_path_excluded(self, path: Path) -> bool:
-        """Ensure *path* is covered by the per-worktree excludes file.
+        """Ensure *path* is covered by ``info/exclude``.
 
         Resolves *path* to a work-tree-relative pattern anchored with a
         leading slash (e.g. ``/src/foo.txt`` for a file, ``/.ishlib/``
@@ -593,7 +497,7 @@ class GitRepo:
         return self.ensure_exclude_pattern(pattern)
 
     def remove_exclude_pattern(self, pattern: str) -> bool:
-        """Idempotently drop *pattern* from the per-worktree excludes file.
+        """Idempotently drop *pattern* from ``info/exclude``.
 
         Returns ``True`` if the file was (or would be) modified, ``False``
         if the pattern was absent. Honours ``self.runner.dry_run``.

@@ -147,7 +147,7 @@ class TestSubmoduleDiscovery(unittest.TestCase):
             # .git/modules/<name>/. Verify git_dir lands there.
             expected = (parent / ".git" / "modules" / "sub").resolve()
             self.assertEqual(repo.git_dir, expected)
-            self.assertEqual(repo.exclude_file, expected / "info" / "exclude.worktree")
+            self.assertEqual(repo.exclude_file, expected / "info" / "exclude")
 
 
 class TestBranchExists(GitRepoTestCase):
@@ -329,110 +329,36 @@ class TestExclude(GitRepoTestCase):
                 repo.ensure_path_excluded(outside_path)
 
 
-class TestWorktreeExcludesFile(GitRepoTestCase):
-    """Per-worktree `core.excludesFile` wiring.
+class TestStatusPorcelainIgnored(GitRepoTestCase):
+    """`status_porcelain(include_ignored=True)` surfaces ignored files.
 
-    Ensures ishproject's ``ensure_exclude_pattern`` writes to a
-    worktree-private file instead of the shared ``.git/info/exclude``,
-    so patterns do not leak into linked worktrees.
+    In the ishproject worktree, managed dotfiles match the shared
+    `.git/info/exclude` and would otherwise be hidden from status
+    output. Callers in that context pass `include_ignored=True` so
+    those files still show up (with `!!` as their XY code).
     """
 
-    def _git_config(self, *args: str) -> str:
-        result = subprocess.run(
-            ["git", "-C", str(self.root), "config", *args],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip()
-
-    def test_ensure_worktree_config_enabled_sets_extension(self) -> None:
+    def test_default_hides_ignored_files(self) -> None:
         repo = GitRepo.discover(self.root)
-        self.assertTrue(repo.ensure_worktree_config_enabled())
-        self.assertEqual(self._git_config("--get", "extensions.worktreeConfig"), "true")
-        # Second call is a no-op.
-        self.assertFalse(repo.ensure_worktree_config_enabled())
+        repo.ensure_exclude_pattern("/.hidden")
+        (self.root / ".hidden").write_text("x\n")
+        self.assertEqual(repo.status_porcelain(), {})
 
-    def test_ensure_worktree_excludes_file_configured_sets_absolute_path(
-        self,
-    ) -> None:
+    def test_include_ignored_surfaces_ignored_files(self) -> None:
         repo = GitRepo.discover(self.root)
-        self.assertTrue(repo.ensure_worktree_excludes_file_configured())
-        self.assertEqual(
-            self._git_config("--worktree", "--get", "core.excludesFile"),
-            str(repo.worktree_exclude_file),
-        )
-        self.assertTrue(repo.info_dir.is_dir())
-        self.assertTrue(repo.worktree_exclude_file.is_file())
+        repo.ensure_exclude_pattern("/.hidden")
+        (self.root / ".hidden").write_text("x\n")
+        entries = repo.status_porcelain(include_ignored=True)
+        self.assertEqual(entries.get(".hidden"), "!!")
 
-    def test_ensure_worktree_excludes_file_configured_is_idempotent(self) -> None:
+    def test_include_ignored_preserves_non_ignored_entries(self) -> None:
         repo = GitRepo.discover(self.root)
-        self.assertTrue(repo.ensure_worktree_excludes_file_configured())
-        self.assertFalse(repo.ensure_worktree_excludes_file_configured())
-
-    def test_ensure_exclude_pattern_writes_to_worktree_file(self) -> None:
-        repo = GitRepo.discover(self.root)
-        repo.ensure_exclude_pattern("/.ishlib/")
-        self.assertIn(
-            "/.ishlib/",
-            repo.worktree_exclude_file.read_text(encoding="utf-8"),
-        )
-        shared = self.root / ".git" / "info" / "exclude"
-        if shared.is_file():
-            self.assertNotIn(
-                "/.ishlib/",
-                shared.read_text(encoding="utf-8"),
-            )
-
-    def test_ensure_exclude_pattern_dry_run_touches_nothing(self) -> None:
-        from pyishlib.command_runner import CommandRunner
-        from pyishlib.ish_config import IshConfig
-
-        repo = GitRepo.discover(self.root)
-        repo.runner = CommandRunner(cfg=IshConfig(dry_run=True))
-        self.assertTrue(repo.ensure_exclude_pattern("/.ishlib/"))
-        self.assertEqual(self._git_config("--get", "extensions.worktreeConfig"), "")
-        self.assertFalse(repo.worktree_exclude_file.is_file())
-
-    def test_excludes_do_not_leak_into_linked_worktree(self) -> None:
-        """Regression check for the cross-worktree exclude leak.
-
-        Adding a pattern in the main worktree must not silence git
-        status for the same path in a linked worktree.
-        """
-        (self.root / "leaky.txt").write_text("x\n")
-        _git("add", "leaky.txt", cwd=self.root)
-        _git("commit", "-m", "seed leaky", cwd=self.root)
-        linked = self.root.parent / "linked-wt"
-        _git("worktree", "add", str(linked), "-b", "feature/other", cwd=self.root)
-        try:
-            repo = GitRepo.discover(self.root)
-            repo.ensure_path_excluded(self.root / "leaky.txt")
-
-            # Edit the same file in the linked worktree; status must show it.
-            (linked / "leaky.txt").write_text("changed\n")
-            porcelain = subprocess.run(
-                ["git", "-C", str(linked), "status", "--porcelain", "leaky.txt"],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
-            self.assertIn("leaky.txt", porcelain)
-        finally:
-            # Prune the linked worktree so tempdir cleanup doesn't choke.
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(self.root),
-                    "worktree",
-                    "remove",
-                    "--force",
-                    str(linked),
-                ],
-                check=False,
-                capture_output=True,
-            )
+        repo.ensure_exclude_pattern("/.hidden")
+        (self.root / ".hidden").write_text("x\n")
+        (self.root / "visible.txt").write_text("y\n")
+        entries = repo.status_porcelain(include_ignored=True)
+        self.assertEqual(entries.get(".hidden"), "!!")
+        self.assertEqual(entries.get("visible.txt"), "??")
 
 
 class TestRemotesWithBranch(GitRepoTestCase):

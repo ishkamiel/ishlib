@@ -110,7 +110,7 @@ class InitCommand(CliCommand):
         "worktree at .ishlib/ishproject. When the branch is remote-only a "
         "local tracking branch is created automatically. With --create an "
         "empty orphan branch is bootstrapped and pushed to the resolved "
-        "remote. Always appends .ishlib/ to the per-worktree excludes file."
+        "remote. Always appends .ishlib/ to .git/info/exclude."
     )
 
     @classmethod
