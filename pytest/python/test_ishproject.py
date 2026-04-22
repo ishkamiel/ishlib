@@ -1384,6 +1384,26 @@ class TestPrecommitGuardIntegration(_ChdirTestCase):
         self.assertEqual(seen["during"], "1")
         self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
 
+    def test_branch_sets_env_around_orphan_creation(self) -> None:
+        # First set up a working default worktree so the branch command can run.
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
+
+        seen: dict[str, object] = {}
+
+        from pyishlib.git_repo import GitRepo
+
+        def _capture(self, path, branch, *, message):
+            seen["during"] = os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG")
+            raise subprocess.CalledProcessError(1, "git")
+
+        with patch.object(
+            GitRepo, "create_orphan_worktree", autospec=True, side_effect=_capture
+        ):
+            rc = cli_main(["branch"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(seen["during"], "1")
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
 
 if __name__ == "__main__":
     unittest.main()
