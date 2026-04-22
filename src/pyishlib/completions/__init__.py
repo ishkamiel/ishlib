@@ -16,7 +16,7 @@ logs a hint to install ``shtab``).
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Tuple
+from typing import Dict, Tuple
 
 from .. import tools as _tools
 
@@ -30,6 +30,29 @@ except ImportError:
 #: Shells that :func:`generate` can emit for.  Matches what ``shtab``
 #: itself supports at the time of writing.
 SUPPORTED_SHELLS: Tuple[str, ...] = ("bash", "zsh", "tcsh")
+
+#: Completion hint for a "file path" positional/option.  Assign to
+#: ``action.complete`` on the argparse action returned by ``add_argument``;
+#: ``shtab`` picks it up when generating completions.  Pulled from
+#: ``shtab.FILE`` when available so the tokens stay in sync across
+#: ``shtab`` versions; the literal fallback keeps this module importable
+#: (and the attribute harmlessly present on the action) when ``shtab``
+#: is missing.
+if HAS_SHTAB:
+    FILE: Dict[str, str] = dict(shtab.FILE)
+    DIRECTORY: Dict[str, str] = dict(shtab.DIRECTORY)
+else:
+    FILE = {
+        "bash": "_shtab_compgen_files",
+        "zsh": "_files",
+        "tcsh": "f",
+    }
+    #: Completion hint for a directory path.  See :data:`FILE`.
+    DIRECTORY = {
+        "bash": "_shtab_compgen_dirs",
+        "zsh": "_files -/",
+        "tcsh": "d",
+    }
 
 
 def generate(tool: str, shell: str) -> str:

@@ -705,6 +705,14 @@ class TestInitCommand:
         assert "compdef ishfiles" in out
         assert "compdef isholate" in out
 
+    @pytest.mark.skipif(not HAS_SHTAB, reason="shtab not installed")
+    def test_init_bash_add_completes_files(self, capsys):
+        """`ishfiles add <path><tab>` must offer file completion, not the
+        argparse help fallback. shtab records the hint as a COMPGEN entry
+        on the positional's action id."""
+        out = self._run_init(capsys, "--bash")
+        assert "_shtab_ishfiles_add_pos_0_COMPGEN=_shtab_compgen_files" in out
+
     def test_init_bash_without_shtab(self, capsys, caplog, monkeypatch):
         """Without shtab, --bash emits only the wrapper and logs a hint."""
         from pyishlib import completions
