@@ -1357,5 +1357,33 @@ class TestPrecommitHelper(unittest.TestCase):
         self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
 
 
+class TestPrecommitGuardIntegration(_ChdirTestCase):
+    """Every ishproject commit on the ishproject branch is env-guarded."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.bare = _setup_bare_remote(self)
+
+    def test_init_create_sets_env_around_orphan_creation(self) -> None:
+        seen: dict[str, object] = {}
+
+        from pyishlib.git_repo import GitRepo
+
+        def _capture(self, path, branch, *, message):
+            seen["during"] = os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG")
+            # Don't actually create the worktree; the test only observes.
+            # Signal failure so the subsequent push step is skipped cleanly.
+            raise subprocess.CalledProcessError(1, "git")
+
+        with patch.object(
+            GitRepo, "create_orphan_worktree", autospec=True, side_effect=_capture
+        ):
+            rc = cli_main(["init", "--create", "--remote", str(self.bare)])
+        self.assertEqual(rc, 1)
+        self.assertEqual(seen["during"], "1")
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
+
 if __name__ == "__main__":
     unittest.main()

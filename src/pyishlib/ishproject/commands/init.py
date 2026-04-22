@@ -16,6 +16,7 @@ from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
 from ...ishlib_folder import PROJECT_DIR_NAME, IshlibFolder
 from ...userio import prompt_string
+from .._precommit import allow_missing_precommit_config
 from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
@@ -226,11 +227,12 @@ class InitCommand(CliCommand):
         if not runner.dry_run:
             folder.path.mkdir(parents=True, exist_ok=True)
         try:
-            repo.create_orphan_worktree(
-                source,
-                branch,
-                message="Initialise ishproject branch",
-            )
+            with allow_missing_precommit_config():
+                repo.create_orphan_worktree(
+                    source,
+                    branch,
+                    message="Initialise ishproject branch",
+                )
         except subprocess.CalledProcessError:
             return 1
         try:
