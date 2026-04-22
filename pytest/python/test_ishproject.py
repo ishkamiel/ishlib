@@ -1324,5 +1324,38 @@ class TestPullPassthrough(_ChdirTestCase):
         self.assertLess(argv.index("--source"), argv.index("pull"))
 
 
+class TestPrecommitHelper(unittest.TestCase):
+    """Direct tests for ``allow_missing_precommit_config``."""
+
+    def setUp(self) -> None:
+        # The conftest minimal env guarantees the var is unset at start.
+        self.addCleanup(os.environ.pop, "PRE_COMMIT_ALLOW_NO_CONFIG", None)
+
+    def test_sets_and_unsets(self) -> None:
+        from pyishlib.ishproject._precommit import allow_missing_precommit_config
+
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+        with allow_missing_precommit_config():
+            self.assertEqual(os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG"), "1")
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
+    def test_restores_preexisting_value(self) -> None:
+        from pyishlib.ishproject._precommit import allow_missing_precommit_config
+
+        os.environ["PRE_COMMIT_ALLOW_NO_CONFIG"] = "0"
+        with allow_missing_precommit_config():
+            self.assertEqual(os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG"), "1")
+        self.assertEqual(os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG"), "0")
+
+    def test_restores_on_exception(self) -> None:
+        from pyishlib.ishproject._precommit import allow_missing_precommit_config
+
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+        with self.assertRaises(RuntimeError):
+            with allow_missing_precommit_config():
+                raise RuntimeError("boom")
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
+
 if __name__ == "__main__":
     unittest.main()
