@@ -222,6 +222,126 @@ class TestApplyPassthrough(_ChdirTestCase):
         self.assertLess(argv.index("--source"), argv.index("apply"))
 
 
+class TestApplyExcludes(_ChdirTestCase):
+    """Verify ``ishproject apply`` registers applied targets in info/exclude."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.project = self.root / ".ishlib" / "ishproject"
+        self.project.mkdir(parents=True)
+
+    def _exclude_text(self) -> str:
+        p = self.root / ".git" / "info" / "exclude"
+        return p.read_text(encoding="utf-8") if p.is_file() else ""
+
+    def test_apply_adds_ishlib_exclude(self) -> None:
+        (self.project / "dot_bashrc").write_text("export FOO=bar\n")
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ):
+            rc = cli_main(["apply", "-y"])
+        self.assertEqual(rc, 0)
+        self.assertIn("/.ishlib/", self._exclude_text())
+
+    def test_apply_excludes_each_target_file(self) -> None:
+        (self.project / "dot_foo").write_text("foo\n")
+        (self.project / "subdir").mkdir()
+        (self.project / "subdir" / "dot_bar").write_text("bar\n")
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ):
+            rc = cli_main(["apply", "-y"])
+        self.assertEqual(rc, 0)
+        text = self._exclude_text()
+        self.assertIn("/.foo", text)
+        self.assertIn("/subdir/.bar", text)
+
+    def test_apply_idempotent(self) -> None:
+        (self.project / "dot_foo").write_text("foo\n")
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ):
+            self.assertEqual(cli_main(["apply", "-y"]), 0)
+            self.assertEqual(cli_main(["apply", "-y"]), 0)
+        text = self._exclude_text()
+        self.assertEqual(text.count("/.foo"), 1)
+        self.assertEqual(text.count("/.ishlib/"), 1)
+
+    def test_apply_not_a_repo_continues_to_passthrough(self) -> None:
+        # Run `apply` inside a plain directory that is not a git repo.
+        # The exclude helper must skip silently and still forward to
+        # ishfiles -- this is what isholate containers rely on.
+        with _make_tempdir() as plain:
+            plain_path = Path(plain).resolve()
+            (plain_path / ".ishlib" / "ishproject").mkdir(parents=True)
+            (plain_path / ".ishlib" / "ishproject" / "dot_foo").write_text("x")
+            os.chdir(plain_path)
+            try:
+                with patch(
+                    "pyishlib.ishproject.commands.apply.ishfiles_main",
+                    return_value=0,
+                ) as mock_main:
+                    rc = cli_main(["apply", "-y"])
+            finally:
+                os.chdir(self.root)
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+
+    def test_apply_passthrough_argv_unchanged(self) -> None:
+        # Regression guard on top of TestApplyPassthrough: after adding
+        # the pre-exclude step, the forwarded argv shape must still
+        # carry --source/--target and the user's own flags.
+        (self.project / "dot_foo").write_text("x")
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["apply", "-y", "--verbose"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--source", argv)
+        self.assertIn("--target", argv)
+        self.assertIn("apply", argv)
+        self.assertIn("--verbose", argv)
+        self.assertLess(argv.index("--source"), argv.index("apply"))
+
+    def test_apply_dry_run_does_not_modify_exclude(self) -> None:
+        # `--dry-run` is forwarded via argv passthrough (ADD_COMMON_FLAGS
+        # = False on apply), so the helper must parse the composed
+        # ishfiles argv rather than read args.dry_run to honour it.
+        (self.project / "dot_foo").write_text("foo\n")
+        before = self._exclude_text()
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["apply", "-y", "--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(self._exclude_text(), before)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--dry-run", argv)
+
+    def test_apply_restricted_to_positional_files(self) -> None:
+        # `ishproject apply <file>` restricts the apply to that file;
+        # the pre-scan must only exclude the restricted target, not
+        # every file discoverable in the source.
+        (self.project / "dot_foo").write_text("foo\n")
+        (self.project / "dot_bar").write_text("bar\n")
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ):
+            rc = cli_main(["apply", "-y", "dot_foo"])
+        self.assertEqual(rc, 0)
+        text = self._exclude_text()
+        self.assertIn("/.foo", text)
+        self.assertNotIn("/.bar", text)
+
+
 class TestDiffPassthrough(_ChdirTestCase):
     def test_passthrough_invokes_ishfiles(self) -> None:
         (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
@@ -331,8 +451,7 @@ def _simulate_add(argv) -> int:
         # Mirror ``ishfiles add`` reverse-translation semantics: every path
         # component that starts with ``.`` is stored with a ``dot_`` prefix.
         parts = [
-            "dot_" + part[1:] if part.startswith(".") else part
-            for part in rel.parts
+            "dot_" + part[1:] if part.startswith(".") else part for part in rel.parts
         ]
         return Path(*parts)
 
