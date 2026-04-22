@@ -231,9 +231,7 @@ class TestAddPassthrough(_ChdirTestCase):
             rc = cli_main(["add", "src/foo.txt"])
         self.assertEqual(rc, 0)
 
-        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
-            encoding="utf-8"
-        )
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/.ishlib/", exclude)
         self.assertIn("/src/foo.txt", exclude)
 
@@ -286,65 +284,90 @@ class TestAddPassthrough(_ChdirTestCase):
         self.assertEqual(rc, 1)
         mock_main.assert_not_called()
 
-    def test_add_exclude_does_not_leak_to_other_worktree(self) -> None:
-        """Regression: ishproject excludes must be worktree-scoped.
 
-        Before the fix, ``ishproject add`` wrote to ``.git/info/exclude``
-        which lives in the common git dir and is read by every
-        worktree — so editing the same file in a linked dev worktree
-        would be silently ignored.
-        """
-        target_file = self.root / "leaky.txt"
-        target_file.write_text("seed\n")
-        _git("add", "leaky.txt", cwd=self.root)
-        _git("commit", "-m", "seed leaky", cwd=self.root)
+def _simulate_add(argv) -> int:
+    """Stand-in for ``ishfiles_main`` used by ``ishproject add`` tests.
 
-        linked = self.root.parent / "linked-wt"
-        _git("worktree", "add", str(linked), "-b", "feature/other", cwd=self.root)
-        self.addCleanup(
-            lambda: subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(self.root),
-                    "worktree",
-                    "remove",
-                    "--force",
-                    str(linked),
-                ],
-                check=False,
-                capture_output=True,
-            )
-        )
+    Mirrors what ``ishfiles add`` does on the filesystem: for each
+    trailing positional file, copy it from --target into --source
+    (applying the ``dot_`` prefix for hidden files). Returns 0.
+    """
+    i = argv.index("--source")
+    source = Path(argv[i + 1])
+    i = argv.index("--target")
+    target = Path(argv[i + 1])
+    # ishfiles add's pass through positional args after the subcommand.
+    try:
+        add_idx = argv.index("add")
+    except ValueError:
+        return 1
+    files = [a for a in argv[add_idx + 1 :] if not a.startswith("-")]
+    for rel in files:
+        src_file = target / rel
+        if not src_file.is_file():
+            continue
+        # Translation: leading "." becomes "dot_" prefix on the last
+        # component; other components are preserved.
+        parts = list(Path(rel).parts)
+        if parts and parts[-1].startswith("."):
+            parts[-1] = "dot_" + parts[-1][1:]
+        dst_file = source / Path(*parts)
+        dst_file.parent.mkdir(parents=True, exist_ok=True)
+        dst_file.write_bytes(src_file.read_bytes())
+    return 0
+
+
+class TestAddEndToEnd(_ChdirTestCase):
+    """End-to-end: add stays hidden in main but is staged in the ishproject worktree.
+
+    Exercises the full workflow that motivated the feature: a dotfile
+    in the user's working tree must be hidden from `git status` in
+    that worktree (via the shared `.git/info/exclude`) yet remain
+    visible and staged in the ishproject worktree at
+    `.ishlib/ishproject/` so the user can commit it there.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.bare = _setup_bare_remote(self)
+
+    def test_add_hides_in_main_and_stages_in_ishproject_worktree(self) -> None:
+        _init_repo(self.root)
+        rc = cli_main(["init", "--create", "--remote", str(self.bare)])
+        self.assertEqual(rc, 0)
+
+        (self.root / ".my_config").write_text("stuff\n")
 
         with patch(
             "pyishlib.ishproject.commands.add.ishfiles_main",
-            return_value=0,
+            side_effect=_simulate_add,
         ):
-            rc = cli_main(["add", "leaky.txt"])
+            rc = cli_main(["add", ".my_config"])
         self.assertEqual(rc, 0)
 
-        # Main worktree: pattern written to exclude.worktree, shared
-        # info/exclude untouched.
-        self.assertIn(
-            "/leaky.txt",
-            (self.root / ".git" / "info" / "exclude.worktree").read_text(
-                encoding="utf-8"
-            ),
-        )
-        shared = self.root / ".git" / "info" / "exclude"
-        if shared.is_file():
-            self.assertNotIn("/leaky.txt", shared.read_text(encoding="utf-8"))
-
-        # Linked worktree: git status still reports edits to leaky.txt.
-        (linked / "leaky.txt").write_text("modified\n")
-        porcelain = subprocess.run(
-            ["git", "-C", str(linked), "status", "--porcelain", "leaky.txt"],
+        # Shared exclude hides the file in the main worktree.
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        self.assertIn("/.my_config", exclude)
+        main_porcelain = subprocess.run(
+            ["git", "-C", str(self.root), "status", "--porcelain"],
             check=True,
             capture_output=True,
             text=True,
         ).stdout
-        self.assertIn("leaky.txt", porcelain)
+        self.assertNotIn(".my_config", main_porcelain)
+
+        # File was copied into the ishproject worktree with the dot_ prefix.
+        source = self.root / ".ishlib" / "ishproject"
+        self.assertTrue((source / "dot_my_config").is_file())
+
+        # And it is staged (git add --force --all ran in the worktree).
+        staged = subprocess.run(
+            ["git", "-C", str(source), "diff", "--cached", "--name-only"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertIn("dot_my_config", staged)
 
 
 def _make_bare(parent: Path) -> Path:
@@ -396,9 +419,7 @@ class TestInit(_ChdirTestCase):
         self.assertEqual(rc, 0)
         worktree = self.root / ".ishlib" / "ishproject"
         self.assertTrue(worktree.is_dir())
-        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
-            encoding="utf-8"
-        )
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/.ishlib/", exclude)
 
     def test_init_missing_branch_without_create_errors(self) -> None:
@@ -417,9 +438,7 @@ class TestInit(_ChdirTestCase):
         self.assertTrue(worktree.is_dir())
         branches = _git("branch", "--list", cwd=self.root).stdout
         self.assertIn(ISHPROJECT_BRANCH, branches)
-        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
-            encoding="utf-8"
-        )
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/.ishlib/", exclude)
         # Branch must have been pushed to the bare remote.
         remote_refs = subprocess.run(
@@ -435,9 +454,7 @@ class TestInit(_ChdirTestCase):
         _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
         self.assertEqual(cli_main(["init"]), 0)
         self.assertEqual(cli_main(["init"]), 0)
-        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
-            encoding="utf-8"
-        )
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertEqual(exclude.count("/.ishlib/"), 1)
 
     def test_init_must_run_at_repo_root(self) -> None:
@@ -525,11 +542,10 @@ def _seed_managed_file(root: Path, rel: str, content: str) -> None:
     tgt = root / rel
     tgt.parent.mkdir(parents=True, exist_ok=True)
     tgt.write_text(content)
-    # Mirror what `ishproject add` would do: append to the per-worktree
-    # excludes file (not the shared info/exclude, which would leak into
-    # other worktrees). The file and its config are already wired up by
-    # the `init` run in the test setUp.
-    excl = root / ".git" / "info" / "exclude.worktree"
+    # Mirror what `ishproject add` would do: append the per-file
+    # pattern to `.git/info/exclude` so the managed copy is hidden
+    # from `git status` in the main worktree.
+    excl = root / ".git" / "info" / "exclude"
     excl.parent.mkdir(parents=True, exist_ok=True)
     with excl.open("a", encoding="utf-8") as fh:
         fh.write(f"/{rel}\n")
@@ -583,9 +599,7 @@ class TestMerge(_ChdirTestCase):
         rc = cli_main(["merge"])
         self.assertEqual(rc, 0)
 
-        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
-            encoding="utf-8"
-        )
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/.ishlib/", exclude)
         self.assertNotIn("/foo.txt", exclude)
 
@@ -620,7 +634,7 @@ class TestMerge(_ChdirTestCase):
 
     def test_merge_restores_excludes_when_commit_fails(self) -> None:
         _seed_managed_file(self.root, "foo.txt", "hello\n")
-        excl_path = self.root / ".git" / "info" / "exclude.worktree"
+        excl_path = self.root / ".git" / "info" / "exclude"
         excl_before = excl_path.read_text(encoding="utf-8")
         self.assertIn("/foo.txt", excl_before)
 
@@ -681,9 +695,7 @@ class TestCleanRebase(_ChdirTestCase):
         self.assertEqual(rc, 0)
 
         self.assertTrue((self.root / "foo.txt").is_file())
-        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
-            encoding="utf-8"
-        )
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertIn("/foo.txt", exclude)
         self.assertIn("/.ishlib/", exclude)
 

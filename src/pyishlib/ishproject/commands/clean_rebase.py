@@ -36,8 +36,7 @@ class CleanRebaseCommand(CliCommand):
         "files that landed in that range are preserved by committing "
         "them onto `ish/ishproject` (pull --rebase, non-force push). "
         "After the rewrite the files are restored to the working tree "
-        "via `ishfiles apply` and re-added to the per-worktree "
-        "excludes file. The "
+        "via `ishfiles apply` and re-added to `.git/info/exclude`. The "
         "previous HEAD is saved to refs/ishproject/clean-rebase-backup-"
         "<timestamp> before the rewrite. Push with --force-with-lease."
     )
@@ -497,7 +496,10 @@ def _sync_edits_to_ishproject(
             else:
                 dest.write_bytes(head_bytes)
 
-        runner.git(["add", "--", *differing], work_dir=source)
+        # --force overrides the shared .git/info/exclude: the ishproject
+        # worktree shares that file with the main worktree, so managed
+        # paths are ignored here by default.
+        runner.git(["add", "--force", "--", *differing], work_dir=source)
 
         diff_cached = _git(
             source,
