@@ -36,7 +36,8 @@ class CleanRebaseCommand(CliCommand):
         "files that landed in that range are preserved by committing "
         "them onto `ish/ishproject` (pull --rebase, non-force push). "
         "After the rewrite the files are restored to the working tree "
-        "via `ishfiles apply` and re-added to `.git/info/exclude`. The "
+        "via `ishfiles apply` and re-added to the per-worktree "
+        "excludes file. The "
         "previous HEAD is saved to refs/ishproject/clean-rebase-backup-"
         "<timestamp> before the rewrite. Push with --force-with-lease."
     )
