@@ -25,14 +25,15 @@ class MergeCommand(CliCommand):
     NAME = "merge"
     HELP = "Commit the currently-applied ishproject files into the main branch"
     DESCRIPTION = (
-        "Removes per-file `.git/info/exclude` entries for every file "
-        "tracked on the `ish/ishproject` branch, stages them from the "
-        "project root, and creates one commit on the current branch. "
-        "The `/.ishlib/` worktree exclude is left in place so the "
-        "ishproject worktree itself is never committed. Intended for "
-        "temporarily adopting ishproject-managed tool configs into "
-        "main (e.g. before handing the repo to an automated session), "
-        "and paired with `ishproject clean-rebase` to undo afterwards."
+        "Removes per-file entries from the project repo's per-worktree "
+        "excludes file for every file tracked on the `ish/ishproject` "
+        "branch, stages them from the project root, and creates one "
+        "commit on the current branch. The `/.ishlib/` worktree "
+        "exclude is left in place so the ishproject worktree itself "
+        "is never committed. Intended for temporarily adopting "
+        "ishproject-managed tool configs into main (e.g. before "
+        "handing the repo to an automated session), and paired with "
+        "`ishproject clean-rebase` to undo afterwards."
     )
 
     @classmethod
@@ -133,7 +134,7 @@ class MergeCommand(CliCommand):
 
 def _restore_excludes(repo: GitRepo, target: Path, paths: List[str]) -> None:
     """Re-add exclude entries for *paths* so a failed merge doesn't leave
-    `.git/info/exclude` half-modified."""
+    the per-worktree excludes file half-modified."""
     for rel in paths:
         try:
             repo.ensure_path_excluded(target / rel)

@@ -231,7 +231,9 @@ class TestAddPassthrough(_ChdirTestCase):
             rc = cli_main(["add", "src/foo.txt"])
         self.assertEqual(rc, 0)
 
-        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/.ishlib/", exclude)
         self.assertIn("/src/foo.txt", exclude)
 
@@ -284,6 +286,66 @@ class TestAddPassthrough(_ChdirTestCase):
         self.assertEqual(rc, 1)
         mock_main.assert_not_called()
 
+    def test_add_exclude_does_not_leak_to_other_worktree(self) -> None:
+        """Regression: ishproject excludes must be worktree-scoped.
+
+        Before the fix, ``ishproject add`` wrote to ``.git/info/exclude``
+        which lives in the common git dir and is read by every
+        worktree — so editing the same file in a linked dev worktree
+        would be silently ignored.
+        """
+        target_file = self.root / "leaky.txt"
+        target_file.write_text("seed\n")
+        _git("add", "leaky.txt", cwd=self.root)
+        _git("commit", "-m", "seed leaky", cwd=self.root)
+
+        linked = self.root.parent / "linked-wt"
+        _git("worktree", "add", str(linked), "-b", "feature/other", cwd=self.root)
+        self.addCleanup(
+            lambda: subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.root),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(linked),
+                ],
+                check=False,
+                capture_output=True,
+            )
+        )
+
+        with patch(
+            "pyishlib.ishproject.commands.add.ishfiles_main",
+            return_value=0,
+        ):
+            rc = cli_main(["add", "leaky.txt"])
+        self.assertEqual(rc, 0)
+
+        # Main worktree: pattern written to exclude.worktree, shared
+        # info/exclude untouched.
+        self.assertIn(
+            "/leaky.txt",
+            (self.root / ".git" / "info" / "exclude.worktree").read_text(
+                encoding="utf-8"
+            ),
+        )
+        shared = self.root / ".git" / "info" / "exclude"
+        if shared.is_file():
+            self.assertNotIn("/leaky.txt", shared.read_text(encoding="utf-8"))
+
+        # Linked worktree: git status still reports edits to leaky.txt.
+        (linked / "leaky.txt").write_text("modified\n")
+        porcelain = subprocess.run(
+            ["git", "-C", str(linked), "status", "--porcelain", "leaky.txt"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertIn("leaky.txt", porcelain)
+
 
 def _make_bare(parent: Path) -> Path:
     """Create an initialised bare git repo at ``parent/bare.git``."""
@@ -334,7 +396,9 @@ class TestInit(_ChdirTestCase):
         self.assertEqual(rc, 0)
         worktree = self.root / ".ishlib" / "ishproject"
         self.assertTrue(worktree.is_dir())
-        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/.ishlib/", exclude)
 
     def test_init_missing_branch_without_create_errors(self) -> None:
@@ -353,7 +417,9 @@ class TestInit(_ChdirTestCase):
         self.assertTrue(worktree.is_dir())
         branches = _git("branch", "--list", cwd=self.root).stdout
         self.assertIn(ISHPROJECT_BRANCH, branches)
-        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/.ishlib/", exclude)
         # Branch must have been pushed to the bare remote.
         remote_refs = subprocess.run(
@@ -369,7 +435,9 @@ class TestInit(_ChdirTestCase):
         _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
         self.assertEqual(cli_main(["init"]), 0)
         self.assertEqual(cli_main(["init"]), 0)
-        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
+            encoding="utf-8"
+        )
         self.assertEqual(exclude.count("/.ishlib/"), 1)
 
     def test_init_must_run_at_repo_root(self) -> None:
@@ -414,13 +482,9 @@ class TestInit(_ChdirTestCase):
     def test_init_remote_flag_url_idempotent_when_ishproject_same_url(self) -> None:
         # Running init twice with the same URL must not error on the second run.
         _init_repo(self.root)
-        self.assertEqual(
-            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
-        )
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
         # Second init: source dir already exists → idempotent no-op.
-        self.assertEqual(
-            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
-        )
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
 
     def test_init_remote_flag_url_conflict_errors(self) -> None:
         # Pre-existing `ishproject` remote with a different URL → error.
@@ -461,7 +525,11 @@ def _seed_managed_file(root: Path, rel: str, content: str) -> None:
     tgt = root / rel
     tgt.parent.mkdir(parents=True, exist_ok=True)
     tgt.write_text(content)
-    excl = root / ".git" / "info" / "exclude"
+    # Mirror what `ishproject add` would do: append to the per-worktree
+    # excludes file (not the shared info/exclude, which would leak into
+    # other worktrees). The file and its config are already wired up by
+    # the `init` run in the test setUp.
+    excl = root / ".git" / "info" / "exclude.worktree"
     excl.parent.mkdir(parents=True, exist_ok=True)
     with excl.open("a", encoding="utf-8") as fh:
         fh.write(f"/{rel}\n")
@@ -508,16 +576,16 @@ class TestMerge(_ChdirTestCase):
         self.addCleanup(p.stop)
         _init_repo(self.root)
         self.bare = _setup_bare_remote(self)
-        self.assertEqual(
-            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
-        )
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
 
     def test_merge_removes_exclude_and_commits(self) -> None:
         _seed_managed_file(self.root, "foo.txt", "hello\n")
         rc = cli_main(["merge"])
         self.assertEqual(rc, 0)
 
-        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/.ishlib/", exclude)
         self.assertNotIn("/foo.txt", exclude)
 
@@ -552,7 +620,7 @@ class TestMerge(_ChdirTestCase):
 
     def test_merge_restores_excludes_when_commit_fails(self) -> None:
         _seed_managed_file(self.root, "foo.txt", "hello\n")
-        excl_path = self.root / ".git" / "info" / "exclude"
+        excl_path = self.root / ".git" / "info" / "exclude.worktree"
         excl_before = excl_path.read_text(encoding="utf-8")
         self.assertIn("/foo.txt", excl_before)
 
@@ -582,9 +650,7 @@ class TestCleanRebase(_ChdirTestCase):
         _init_repo(self.root)
         self.bare = _setup_bare_remote(self)
         self.base_sha = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
-        self.assertEqual(
-            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
-        )
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
 
     def _run_clean_rebase(self, *extra: str) -> int:
         with patch(
@@ -615,7 +681,9 @@ class TestCleanRebase(_ChdirTestCase):
         self.assertEqual(rc, 0)
 
         self.assertTrue((self.root / "foo.txt").is_file())
-        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        exclude = (self.root / ".git" / "info" / "exclude.worktree").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/foo.txt", exclude)
         self.assertIn("/.ishlib/", exclude)
 
@@ -955,9 +1023,7 @@ class TestBranchCommand(_ChdirTestCase):
         self.addCleanup(p.stop)
         _init_repo(self.root)
         self.bare = _setup_bare_remote(self)
-        self.assertEqual(
-            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
-        )
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
 
     def test_branch_requires_repo(self) -> None:
         with _make_tempdir() as plain:
@@ -1006,9 +1072,7 @@ class TestDynamicBranchResolution(_ChdirTestCase):
         self.addCleanup(p.stop)
         _init_repo(self.root)
         self.bare = _setup_bare_remote(self)
-        self.assertEqual(
-            cli_main(["init", "--create", "--remote", str(self.bare)]), 0
-        )
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
 
     def test_apply_uses_branch_specific_worktree(self) -> None:
         self.assertEqual(cli_main(["branch"]), 0)

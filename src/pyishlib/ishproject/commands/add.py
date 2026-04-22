@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-"""``ishproject add`` -- forward to ``ishfiles add`` and update info/exclude."""
+"""``ishproject add`` -- forward to ``ishfiles add`` and update the worktree excludes."""
 
 from __future__ import annotations
 
@@ -27,8 +27,10 @@ class AddCommand(CliCommand):
     DESCRIPTION = (
         "Thin wrapper around `ishfiles add` with --source and --target "
         "pointed at the current project. Before forwarding, each file "
-        "is added to the project repo's .git/info/exclude so the "
-        "managed copy is not tracked by the project repo."
+        "is added to the project repo's per-worktree excludes file "
+        "(via `core.excludesFile` in worktree-scoped config) so the "
+        "managed copy is not tracked by the project repo and the "
+        "pattern does not leak into other worktrees."
     )
     # Common flags (-v/--debug/-q/-n/--log-file) are forwarded to ishfiles
     # via parse_known_args; they are not declared on this subparser.
