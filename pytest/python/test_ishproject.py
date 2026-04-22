@@ -137,6 +137,28 @@ class TestParser(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 parser.parse_args(["clean-rebase"])
 
+    def test_add_files_positional_has_file_completion_hint(self) -> None:
+        """`ishproject add <path><tab>` must complete file paths.
+
+        shtab consumes the ``complete`` attribute on the argparse action
+        when generating shell completions; without it, bash falls back
+        to displaying the help text instead of real filenames.
+        """
+        import argparse
+
+        from pyishlib.completions import FILE as COMPLETE_FILE
+
+        parser = build_parser()
+        subparsers_action = next(
+            a for a in parser._actions if isinstance(a, argparse._SubParsersAction)
+        )
+        add_sub = subparsers_action.choices["add"]
+        files_action = next(a for a in add_sub._actions if a.dest == "files")
+        self.assertEqual(
+            getattr(files_action, "complete", None),
+            COMPLETE_FILE,
+        )
+
 
 class TestResolvePaths(_ChdirTestCase):
     def test_source_under_ishlib_ishproject(self) -> None:

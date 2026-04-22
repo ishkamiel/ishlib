@@ -10,6 +10,7 @@ import logging
 import shutil
 
 from ...cli_command import CliCommand
+from ...completions import FILE as _COMPLETE_FILE
 from ...ish_config import IshConfig
 from ..applier import make_finder
 
@@ -24,11 +25,12 @@ class AddCommand(CliCommand):
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
+        files_arg = parser.add_argument(
             "files",
             nargs="+",
             help="File(s) to add to the dotfiles repository",
         )
+        files_arg.complete = _COMPLETE_FILE  # type: ignore[attr-defined]
         parser.add_argument(
             "-f",
             "--force",

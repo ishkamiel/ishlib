@@ -12,6 +12,7 @@ from pathlib import Path
 from ...cli_command import CliCommand
 from ...cli_passthrough import passthrough_to_cli
 from ...command_runner import CommandRunner
+from ...completions import FILE as _COMPLETE_FILE
 from ...dotfile_finder import DotfileFinder
 from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
@@ -40,11 +41,12 @@ class AddCommand(CliCommand):
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
+        files_arg = parser.add_argument(
             "files",
             nargs="+",
             help="File(s) to add to the project dotfiles repository.",
         )
+        files_arg.complete = _COMPLETE_FILE  # type: ignore[attr-defined]
         parser.add_argument(
             "-f",
             "--force",
