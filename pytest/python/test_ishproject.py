@@ -311,8 +311,10 @@ def _simulate_add(argv) -> int:
     """Stand-in for ``ishfiles_main`` used by ``ishproject add`` tests.
 
     Mirrors what ``ishfiles add`` does on the filesystem: for each
-    trailing positional file, copy it from --target into --source
-    (applying the ``dot_`` prefix for hidden files). Returns 0.
+    trailing positional arg, copy it from --target into --source
+    (applying the ``dot_`` prefix for hidden path components).
+    Directory args are walked recursively, matching the real CLI's
+    ``git add <dir>``-style semantics. Returns 0.
     """
     i = argv.index("--source")
     source = Path(argv[i + 1])
@@ -323,17 +325,42 @@ def _simulate_add(argv) -> int:
         add_idx = argv.index("add")
     except ValueError:
         return 1
-    files = [a for a in argv[add_idx + 1 :] if not a.startswith("-")]
-    for rel in files:
-        src_file = target / rel
-        if not src_file.is_file():
-            continue
-        # Translation: leading "." becomes "dot_" prefix on the last
-        # component; other components are preserved.
-        parts = list(Path(rel).parts)
-        if parts and parts[-1].startswith("."):
-            parts[-1] = "dot_" + parts[-1][1:]
-        dst_file = source / Path(*parts)
+    args = [a for a in argv[add_idx + 1 :] if not a.startswith("-")]
+
+    def _translate(rel: Path) -> Path:
+        # Mirror ``ishfiles add`` reverse-translation semantics: every path
+        # component that starts with ``.`` is stored with a ``dot_`` prefix.
+        parts = [
+            "dot_" + part[1:] if part.startswith(".") else part
+            for part in rel.parts
+        ]
+        return Path(*parts)
+
+    files: list[tuple[Path, Path]] = []
+    for arg in args:
+        arg_path = Path(arg)
+        src_path = arg_path if arg_path.is_absolute() else target / arg_path
+        if src_path.is_dir():
+            for f in sorted(src_path.rglob("*")):
+                if f.is_file():
+                    try:
+                        rel = f.resolve().relative_to(target.resolve())
+                    except ValueError:
+                        # Mirror the real finder, which rejects absolute
+                        # paths outside --target rather than crashing.
+                        continue
+                    files.append((f, _translate(rel)))
+        elif src_path.is_file():
+            # Determine the relative path against target when possible so we
+            # translate components symmetrically.
+            try:
+                rel = src_path.resolve().relative_to(target.resolve())
+            except ValueError:
+                rel = Path(arg_path.name)
+            files.append((src_path, _translate(rel)))
+
+    for src_file, dst_rel in files:
+        dst_file = source / dst_rel
         dst_file.parent.mkdir(parents=True, exist_ok=True)
         dst_file.write_bytes(src_file.read_bytes())
     return 0
@@ -390,6 +417,49 @@ class TestAddEndToEnd(_ChdirTestCase):
             text=True,
         ).stdout
         self.assertIn("dot_my_config", staged)
+
+    def test_add_directory_recurses_end_to_end(self) -> None:
+        """A directory arg adds every file inside it, hidden in main and
+        staged in the ishproject worktree."""
+        _init_repo(self.root)
+        rc = cli_main(["init", "--create", "--remote", str(self.bare)])
+        self.assertEqual(rc, 0)
+
+        skills = self.root / ".claude" / "skills"
+        (skills / "nested").mkdir(parents=True)
+        (skills / "foo.md").write_text("foo\n")
+        (skills / "bar.md").write_text("bar\n")
+        (skills / "nested" / "baz.md").write_text("baz\n")
+
+        with patch(
+            "pyishlib.ishproject.commands.add.ishfiles_main",
+            side_effect=_simulate_add,
+        ):
+            rc = cli_main(["add", ".claude/skills"])
+        self.assertEqual(rc, 0)
+
+        # The directory is excluded in the main worktree (trailing slash).
+        exclude = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        self.assertIn("/.claude/skills/", exclude)
+
+        # Every walked file was copied into the ishproject worktree.
+        source = self.root / ".ishlib" / "ishproject"
+        self.assertTrue((source / "dot_claude" / "skills" / "foo.md").is_file())
+        self.assertTrue((source / "dot_claude" / "skills" / "bar.md").is_file())
+        self.assertTrue(
+            (source / "dot_claude" / "skills" / "nested" / "baz.md").is_file()
+        )
+
+        # All of them are staged in the ishproject worktree.
+        staged = subprocess.run(
+            ["git", "-C", str(source), "diff", "--cached", "--name-only"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertIn("dot_claude/skills/foo.md", staged)
+        self.assertIn("dot_claude/skills/bar.md", staged)
+        self.assertIn("dot_claude/skills/nested/baz.md", staged)
 
 
 def _make_bare(parent: Path) -> Path:

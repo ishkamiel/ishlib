@@ -7,14 +7,60 @@ from __future__ import annotations
 import argparse
 import filecmp
 import logging
+import os
 import shutil
+from pathlib import Path
+from typing import List, Sequence
 
 from ...cli_command import CliCommand
 from ...completions import FILE as _COMPLETE_FILE
+from ...dotfile_finder import DotfileFinder
 from ...ish_config import IshConfig
 from ..applier import make_finder
 
 log = logging.getLogger(__name__)
+
+
+def _expand_directory_args(
+    files: Sequence[str],
+    finder: DotfileFinder,
+) -> List[str]:
+    """Expand directory arguments into their contained regular files.
+
+    Mirrors ``git add <dir>`` semantics: when an argument resolves to a
+    directory on the target filesystem, it is walked recursively and
+    every regular file inside becomes an individual argument. Arguments
+    that do not resolve to an existing directory pass through unchanged.
+
+    Symlinks are skipped on both sides — walking does not descend into
+    symlinked subdirectories and symlinked files are not included —
+    because ``DotfileFinder`` later resolves arguments via
+    :meth:`Path.resolve`, which would relocate a followed symlink's
+    target outside the intended tree.
+    """
+    expanded: List[str] = []
+    for arg in files:
+        dotfile = finder.get(arg)
+        if dotfile is None or not dotfile.target.is_dir():
+            expanded.append(arg)
+            continue
+        matches: List[Path] = []
+        for dirpath, dirnames, filenames in os.walk(dotfile.target, followlinks=False):
+            dir_path = Path(dirpath)
+            for fname in filenames:
+                fpath = dir_path / fname
+                if fpath.is_symlink() or not fpath.is_file():
+                    continue
+                matches.append(fpath)
+        matches.sort()
+        if not matches:
+            log.warning("Directory is empty, skipping: %s", dotfile.target)
+            continue
+        log.debug(
+            "Expanding directory %s into %d file(s)", dotfile.target, len(matches)
+        )
+        expanded.extend(str(p) for p in matches)
+    return expanded
 
 
 class AddCommand(CliCommand):
@@ -56,7 +102,7 @@ class AddCommand(CliCommand):
         """
         finder = make_finder(cfg)
         force = cfg.get_opt("force", False)
-        files = cfg.get_opt("files", [])
+        files = _expand_directory_args(cfg.get_opt("files", []), finder)
 
         if not finder.source_dir.is_dir():
             log.error("Source directory does not exist: %s", finder.source_dir)

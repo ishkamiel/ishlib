@@ -1091,6 +1091,128 @@ class TestAddCommand:
             assert source_file.exists()
             assert source_file.read_text() == "fish cfg\n"
 
+    def test_add_directory_recurses(self):
+        """Adding a directory recursively adds every file inside (like ``git add``)."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".claude" / "skills" / "foo.md", "foo\n")
+            _make_file(Path(tgt) / ".claude" / "skills" / "bar.md", "bar\n")
+            _make_file(
+                Path(tgt) / ".claude" / "skills" / "nested" / "baz.md", "baz\n"
+            )
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    str(Path(tgt) / ".claude" / "skills"),
+                ]
+            )
+
+            assert ret == 0
+            assert (
+                Path(src) / "dot_claude" / "skills" / "foo.md"
+            ).read_text() == "foo\n"
+            assert (
+                Path(src) / "dot_claude" / "skills" / "bar.md"
+            ).read_text() == "bar\n"
+            assert (
+                Path(src) / "dot_claude" / "skills" / "nested" / "baz.md"
+            ).read_text() == "baz\n"
+
+    def test_add_directory_relative_arg(self):
+        """Directory expansion works for a relative (non-absolute) arg."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".claude" / "skills" / "foo.md", "foo\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", ".claude/skills"]
+            )
+
+            assert ret == 0
+            assert (
+                Path(src) / "dot_claude" / "skills" / "foo.md"
+            ).read_text() == "foo\n"
+
+    def test_add_empty_directory_skipped(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            (Path(tgt) / ".claude" / "skills").mkdir(parents=True)
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    str(Path(tgt) / ".claude" / "skills"),
+                ]
+            )
+
+            assert ret == 0
+            captured = capsys.readouterr()
+            assert "empty" in (captured.out + captured.err).lower()
+            assert not (Path(src) / "dot_claude").exists()
+
+    def test_add_mixed_file_and_directory(self):
+        """Passing both a file and a directory adds all of them."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            target_file = _make_file(Path(tgt) / ".bashrc", "bash\n")
+            _make_file(Path(tgt) / ".claude" / "skills" / "foo.md", "foo\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    str(target_file),
+                    str(Path(tgt) / ".claude" / "skills"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "bash\n"
+            assert (
+                Path(src) / "dot_claude" / "skills" / "foo.md"
+            ).read_text() == "foo\n"
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX-only: symlink creation may require privilege on Windows",
+    )
+    def test_add_directory_skips_symlinks(self):
+        """Directory expansion does not follow symlinks — neither symlinked
+        files nor symlinked subdirectories are pulled in."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            outside = Path(tgt) / "outside.md"
+            outside.write_text("outside\n")
+            outside_dir = Path(tgt) / "outside_dir"
+            outside_dir.mkdir()
+            (outside_dir / "evil.md").write_text("evil\n")
+
+            skills = Path(tgt) / ".claude" / "skills"
+            skills.mkdir(parents=True)
+            (skills / "foo.md").write_text("foo\n")
+            (skills / "link_to_file.md").symlink_to(outside)
+            (skills / "link_to_dir").symlink_to(outside_dir)
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(skills)]
+            )
+
+            assert ret == 0
+            assert (
+                Path(src) / "dot_claude" / "skills" / "foo.md"
+            ).read_text() == "foo\n"
+            assert not (
+                Path(src) / "dot_claude" / "skills" / "link_to_file.md"
+            ).exists()
+            assert not (Path(src) / "dot_claude" / "skills" / "link_to_dir").exists()
+
 
 # ---------------------------------------------------------------------------
 # diff/apply with file arguments
