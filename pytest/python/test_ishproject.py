@@ -1157,6 +1157,38 @@ class TestCommitPassthrough(_ChdirTestCase):
         self.assertIn("my message", argv)
         self.assertLess(argv.index("--source"), argv.index("commit"))
 
+    def test_sets_pre_commit_allow_no_config(self) -> None:
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        seen: dict[str, object] = {}
+
+        def _capture(_argv):
+            seen["during"] = os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG")
+            return 0
+
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            side_effect=_capture,
+        ):
+            rc = cli_main(["commit", "-m", "msg"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(seen["during"], "1")
+        # Restored after the call (unset in the conftest minimal env).
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
+    def test_restores_pre_existing_pre_commit_allow_no_config(self) -> None:
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        os.environ["PRE_COMMIT_ALLOW_NO_CONFIG"] = "0"
+        try:
+            with patch(
+                "pyishlib.ishproject.commands.commit.ishfiles_main",
+                return_value=0,
+            ):
+                rc = cli_main(["commit", "-m", "msg"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG"), "0")
+        finally:
+            os.environ.pop("PRE_COMMIT_ALLOW_NO_CONFIG", None)
+
 
 class TestPushPassthrough(_ChdirTestCase):
     def test_missing_source_returns_1(self) -> None:

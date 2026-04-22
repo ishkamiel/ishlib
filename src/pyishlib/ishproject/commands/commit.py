@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
 from ...cli_command import CliCommand
@@ -50,10 +51,21 @@ class CommitCommand(CliCommand):
                 source,
             )
             return 1
-        return passthrough_to_cli(
-            ishfiles_main,
-            subcommand="commit",
-            remainder=args.rest,
-            global_args=["--source", str(source), "--target", str(target)],
-            target_parser=ishfiles_build_parser(),
-        )
+        # Per-branch project repos rarely ship a .pre-commit-config.yaml, so
+        # any pre-commit hook installed via a git template would abort the
+        # commit.  Tell pre-commit to no-op when the config is missing.
+        prev = os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG")
+        os.environ["PRE_COMMIT_ALLOW_NO_CONFIG"] = "1"
+        try:
+            return passthrough_to_cli(
+                ishfiles_main,
+                subcommand="commit",
+                remainder=args.rest,
+                global_args=["--source", str(source), "--target", str(target)],
+                target_parser=ishfiles_build_parser(),
+            )
+        finally:
+            if prev is None:
+                os.environ.pop("PRE_COMMIT_ALLOW_NO_CONFIG", None)
+            else:
+                os.environ["PRE_COMMIT_ALLOW_NO_CONFIG"] = prev
