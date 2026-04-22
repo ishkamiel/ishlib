@@ -1404,6 +1404,47 @@ class TestPrecommitGuardIntegration(_ChdirTestCase):
         self.assertEqual(seen["during"], "1")
         self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
 
+    def test_clean_rebase_sync_sets_env_around_commit(self) -> None:
+        # Set up a scenario that triggers the phase-2 sync commit.
+        self.assertEqual(cli_main(["init", "--create", "--remote", str(self.bare)]), 0)
+        base_sha = _git("rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        _seed_managed_file(self.root, "foo.txt", "A\n")
+        self.assertEqual(cli_main(["merge"]), 0)
+        (self.root / "foo.txt").write_text("B\n")
+        _git("add", "foo.txt", cwd=self.root)
+        _git("commit", "-m", "edit foo", cwd=self.root)
+
+        # Wrap CommandRunner.git so the flow still runs, but record the env
+        # at every call that includes "commit" in argv.  Only the sync
+        # commit flows through runner.git with "commit"; _rewrite_commit
+        # uses the plumbing "commit-tree" form, which we filter out.
+        from pyishlib.command_runner import CommandRunner
+
+        original_git = CommandRunner.git
+        env_at_commits: list[object] = []
+
+        def _spy(self, command, work_dir=None, **kwargs):
+            cmd_list = list(command)
+            if "commit" in cmd_list and "commit-tree" not in cmd_list:
+                env_at_commits.append(os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG"))
+            return original_git(self, command, work_dir=work_dir, **kwargs)
+
+        with (
+            patch.object(CommandRunner, "git", _spy),
+            patch(
+                "pyishlib.ishproject.commands.clean_rebase.ishfiles_main",
+                side_effect=_simulate_apply,
+            ),
+        ):
+            rc = cli_main(["clean-rebase", base_sha])
+        self.assertEqual(rc, 0)
+        self.assertTrue(env_at_commits, "sync commit never reached runner.git")
+        self.assertTrue(
+            all(v == "1" for v in env_at_commits),
+            f"PRE_COMMIT_ALLOW_NO_CONFIG was not set for every commit: {env_at_commits}",
+        )
+        self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
 
 if __name__ == "__main__":
     unittest.main()

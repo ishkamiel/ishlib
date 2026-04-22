@@ -19,6 +19,7 @@ from ...ish_config import IshConfig
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
 from ...ishlib_folder import PROJECT_DIR_NAME
+from .._precommit import allow_missing_precommit_config
 from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
@@ -512,18 +513,19 @@ def _sync_edits_to_ishproject(
 
         head_sha = _resolve_commit(target, "HEAD")
         short = (head_sha or "")[:12]
-        runner.git(
-            [
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "tag.gpgsign=false",
-                "commit",
-                "-m",
-                f"ishproject: sync edits from {short}",
-            ],
-            work_dir=source,
-        )
+        with allow_missing_precommit_config():
+            runner.git(
+                [
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "tag.gpgsign=false",
+                    "commit",
+                    "-m",
+                    f"ishproject: sync edits from {short}",
+                ],
+                work_dir=source,
+            )
         log.info("Committed %d file(s) onto ish/ishproject", len(differing))
     except subprocess.CalledProcessError as exc:
         log.error("Failed to prepare sync commit on ish/ishproject: %s", exc)
