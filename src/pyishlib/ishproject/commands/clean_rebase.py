@@ -496,9 +496,9 @@ def _sync_edits_to_ishproject(
             else:
                 dest.write_bytes(head_bytes)
 
-        # --force overrides the shared .git/info/exclude: the ishproject
-        # worktree shares that file with the main worktree, so managed
-        # paths are ignored here by default.
+        # Use --force so managed paths are staged even though local
+        # exclude rules (from the shared .git/info/exclude) would
+        # otherwise cause git add to skip them here.
         runner.git(["add", "--force", "--", *differing], work_dir=source)
 
         diff_cached = _git(

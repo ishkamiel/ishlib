@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 from pathlib import Path
 
 from ...cli_command import CliCommand
 from ...cli_passthrough import passthrough_to_cli
 from ...command_runner import CommandRunner
+from ...dotfile_finder import DotfileFinder
 from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
@@ -95,23 +97,37 @@ class AddCommand(CliCommand):
 
         # Stage the just-copied files inside the ishproject worktree.
         # `--force` overrides the shared .git/info/exclude patterns
-        # written above; `--all` catches files regardless of any
-        # dot_/executable_ prefix translation ishfiles applied.
+        # written above. Only the paths we know ishfiles just produced
+        # are staged, so unrelated edits in the worktree are left alone.
         # `require_root=True`: only stage when `source` is itself a
         # worktree root. If it is a bare directory inside another
         # repo (e.g. in unit tests that mkdir the path instead of
-        # wiring up a real worktree) we skip to avoid accidentally
-        # staging unrelated files in the outer repo.
+        # wiring up a real worktree) we skip.
         try:
             source_repo = GitRepo.discover(source, require_root=True)
         except NotAGitRepoError:
             return 0
+
+        finder = DotfileFinder(
+            IshConfig(defaults={"source": str(source), "target": str(target)})
+        )
+        rel_paths = [str(p) for p in finder.get_rel_paths(args.files)]
+        if not rel_paths:
+            return 0
+
         source_repo.runner = CommandRunner(
             cfg=IshConfig(dry_run=getattr(args, "dry_run", False))
         )
-        source_repo.runner.git(
-            ["add", "--force", "--all"],
-            work_dir=source,
-            check=False,
-        )
+        try:
+            source_repo.runner.git(
+                ["add", "--force", "--", *rel_paths],
+                work_dir=source,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            log.warning(
+                "git add failed in project worktree (%s); files copied but not staged.",
+                exc,
+            )
+            return 0
         return 0
