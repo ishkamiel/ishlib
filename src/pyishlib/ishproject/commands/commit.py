@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from pathlib import Path
 
 from ...cli_command import CliCommand
 from ...cli_passthrough import passthrough_to_cli
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
+from .._precommit import allow_missing_precommit_config
 from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
@@ -51,12 +51,7 @@ class CommitCommand(CliCommand):
                 source,
             )
             return 1
-        # Per-branch project repos rarely ship a .pre-commit-config.yaml, so
-        # any pre-commit hook installed via a git template would abort the
-        # commit.  Tell pre-commit to no-op when the config is missing.
-        prev = os.environ.get("PRE_COMMIT_ALLOW_NO_CONFIG")
-        os.environ["PRE_COMMIT_ALLOW_NO_CONFIG"] = "1"
-        try:
+        with allow_missing_precommit_config():
             return passthrough_to_cli(
                 ishfiles_main,
                 subcommand="commit",
@@ -64,8 +59,3 @@ class CommitCommand(CliCommand):
                 global_args=["--source", str(source), "--target", str(target)],
                 target_parser=ishfiles_build_parser(),
             )
-        finally:
-            if prev is None:
-                os.environ.pop("PRE_COMMIT_ALLOW_NO_CONFIG", None)
-            else:
-                os.environ["PRE_COMMIT_ALLOW_NO_CONFIG"] = prev
