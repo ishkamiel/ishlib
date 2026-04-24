@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from ...cli_command import CliCommand
 from ...cli_passthrough import passthrough_to_cli
@@ -91,6 +91,45 @@ def _update_project_excludes(source: Path, target: Path, rest: Iterable[str]) ->
             log.warning("could not exclude %s: %s", df.target, exc)
 
 
+def run_project_apply(
+    cfg: IshprojectConfig,
+    *,
+    rest: Iterable[str] = (),
+    root: Optional[Path] = None,
+    branch: Optional[str] = None,
+) -> int:
+    """Run the ishfiles apply pipeline for an ishproject worktree.
+
+    Shared entry point used by ``ApplyCommand`` and by
+    ``InitCommand --apply``. Resolves ``(source, target)`` for the
+    active branch, registers applied targets in the project repo's
+    ``.git/info/exclude``, then forwards to ``ishfiles apply`` via
+    :func:`passthrough_to_cli`. Returns 1 with a clear error when the
+    worktree is missing; otherwise returns the ishfiles exit code.
+    """
+    resolved_root = root if root is not None else Path.cwd()
+    resolved_branch = branch or cfg.resolve_active_branch(resolved_root)
+    source, target = cfg.resolve_project_paths(resolved_root, branch=resolved_branch)
+    if not source.is_dir():
+        log.error(
+            "Project dotfiles directory does not exist: %s "
+            "(run `ishproject init` first)",
+            source,
+        )
+        return 1
+
+    rest_list = list(rest)
+    _update_project_excludes(source, target, rest_list)
+
+    return passthrough_to_cli(
+        ishfiles_main,
+        subcommand="apply",
+        remainder=rest_list,
+        global_args=["--source", str(source), "--target", str(target)],
+        target_parser=ishfiles_build_parser(),
+    )
+
+
 class ApplyCommand(CliCommand):
     """Apply project dotfiles to the project root."""
 
@@ -117,25 +156,4 @@ class ApplyCommand(CliCommand):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
-        root = Path.cwd()
-
-        branch = cfg.resolve_active_branch(root)
-        source, target = cfg.resolve_project_paths(root, branch=branch)
-        if not source.is_dir():
-            log.error(
-                "Project dotfiles directory does not exist: %s "
-                "(run `ishproject init` first)",
-                source,
-            )
-            return 1
-
-        _update_project_excludes(source, target, args.rest)
-
-        return passthrough_to_cli(
-            ishfiles_main,
-            subcommand="apply",
-            remainder=args.rest,
-            global_args=["--source", str(source), "--target", str(target)],
-            target_parser=ishfiles_build_parser(),
-        )
+        return run_project_apply(args.ishproject_cfg, rest=args.rest)

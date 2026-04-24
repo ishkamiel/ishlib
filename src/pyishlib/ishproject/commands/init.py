@@ -9,6 +9,7 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
+from typing import List
 
 from ...cli_command import CliCommand
 from ...command_runner import CommandRunner
@@ -18,6 +19,7 @@ from ...ishlib_folder import PROJECT_DIR_NAME, IshlibFolder
 from ...userio import prompt_string
 from .._precommit import allow_missing_precommit_config
 from ..config import IshprojectConfig
+from .apply import run_project_apply
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +139,39 @@ class InitCommand(CliCommand):
                 "non-interactive sessions when no `origin` remote is configured."
             ),
         )
+        parser.add_argument(
+            "--apply",
+            action="store_true",
+            default=False,
+            help=(
+                "After initialising the worktree, run `ishproject apply` so "
+                "any dotfiles already present on the branch are installed "
+                "into the project. No-op when the worktree is empty."
+            ),
+        )
+
+    def _finish(
+        self,
+        args: argparse.Namespace,
+        cfg: IshprojectConfig,
+        branch: str,
+        root: Path,
+    ) -> int:
+        if not args.apply:
+            return 0
+        source, _target = cfg.resolve_project_paths(root, branch=branch)
+        if not source.is_dir():
+            # Dry-run path: init did not materialise the worktree.
+            log.info("Skipping --apply: worktree not created (dry-run)")
+            return 0
+        rest: List[str] = []
+        if args.dry_run:
+            rest.append("--dry-run")
+        if args.verbose:
+            rest.append("--verbose")
+        if args.quiet:
+            rest.append("--quiet")
+        return run_project_apply(cfg, rest=rest, root=root, branch=branch)
 
     def run(self, args: argparse.Namespace) -> int:
         cfg: IshprojectConfig = args.ishproject_cfg
@@ -161,7 +196,7 @@ class InitCommand(CliCommand):
         if source.is_dir():
             log.info("Project dotfiles already present at %s", source)
             repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-            return 0
+            return self._finish(args, cfg, branch, root)
 
         # Local branch already exists — wire it up directly; no remote needed.
         if repo.branch_exists(branch, local_only=True):
@@ -173,7 +208,7 @@ class InitCommand(CliCommand):
                 return 1
             log.info("Created worktree: %s -> branch %s", source, branch)
             repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-            return 0
+            return self._finish(args, cfg, branch, root)
 
         # From here a remote is needed: fetch to refresh refs, then decide.
         try:
@@ -212,7 +247,7 @@ class InitCommand(CliCommand):
                 source,
             )
             repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-            return 0
+            return self._finish(args, cfg, branch, root)
 
         if not args.create:
             log.error(
@@ -258,4 +293,4 @@ class InitCommand(CliCommand):
             source,
         )
         repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-        return 0
+        return self._finish(args, cfg, branch, root)
