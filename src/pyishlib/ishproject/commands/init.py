@@ -171,6 +171,11 @@ class InitCommand(CliCommand):
             rest.append("--verbose")
         if args.quiet:
             rest.append("--quiet")
+        if getattr(args, "debug", False):
+            rest.append("--debug")
+        log_file = getattr(args, "log_file", None)
+        if log_file:
+            rest.extend(["--log-file", str(log_file)])
         return run_project_apply(cfg, rest=rest, root=root, branch=branch)
 
     def run(self, args: argparse.Namespace) -> int:

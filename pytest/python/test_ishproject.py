@@ -812,6 +812,24 @@ class TestInit(_ChdirTestCase):
             self.assertEqual(cli_main(["init", "--apply"]), 0)
         self.assertEqual(mock_main.call_count, 2)
 
+    def test_init_apply_forwards_debug_and_log_file(self) -> None:
+        # --debug / --log-file on init must also flow into the nested
+        # ishfiles apply invocation so its setup_logging() keeps the
+        # same verbosity and file sink.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        log_path = self.root / "init-apply.log"
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["init", "--apply", "--debug", "--log-file", str(log_path)])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--debug", argv)
+        self.assertIn("--log-file", argv)
+        self.assertIn(str(log_path), argv)
+
 
 # ---------------------------------------------------------------------------
 # Helpers for merge / clean-rebase tests
