@@ -148,19 +148,3 @@ class ApplyCommand(CliCommand):
                 repo.ensure_path_excluded(df.target)
             except ValueError as exc:
                 log.warning("could not exclude %s: %s", df.target, exc)
-
-
-def run_project_apply(
-    cfg: IshprojectConfig,
-    *,
-    rest: Iterable[str] = (),
-    root: Optional[Path] = None,
-    branch: Optional[str] = None,
-) -> int:
-    """Run the ishfiles apply pipeline for an ishproject worktree.
-
-    Module-level shim for external callers (notably ``InitCommand
-    --apply``) that want the same behaviour as ``ApplyCommand.run``
-    without constructing the command themselves.
-    """
-    return ApplyCommand().run_project_apply(cfg, rest=rest, root=root, branch=branch)
