@@ -188,9 +188,9 @@ class RunCommand(CliCommand):
             ),
         )
 
-    def run(self, args: argparse.Namespace) -> int:
+    def run(self) -> int:
         _username, home, cwd = get_host_user_info()
-        return _run_subcommand(args, home, cwd)
+        return _run_subcommand(self.cfg, home, cwd)
 
 
 def _run_subcommand(args: argparse.Namespace, home: Path, cwd: Path) -> int:

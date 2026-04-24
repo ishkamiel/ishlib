@@ -41,11 +41,11 @@ class PurgeCommand(CliCommand):
             help="Alias of --bases (delete everything isholate created)",
         )
 
-    def run(self, args: argparse.Namespace) -> int:
+    def run(self) -> int:
         username, _home, _cwd = get_host_user_info()
-        include_bases = args.bases or args.bases_alias
+        include_bases = self.cfg.bases or self.cfg.bases_alias
         return purge_containers(
             username,
-            quiet=args.quiet,
+            quiet=self.cfg.quiet,
             include_bases=include_bases,
         )

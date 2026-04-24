@@ -17,7 +17,6 @@ import importlib.util
 from typing import List, NamedTuple
 
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 
 
 class _OptionalDep(NamedTuple):
@@ -96,7 +95,7 @@ class DoctorCommand(CliCommand):
         "tab-completion scripts from `ishfiles init --bash/--zsh`)."
     )
 
-    def run(self, cfg: IshConfig) -> int:  # noqa: ARG002
+    def run(self) -> int:
         problems = 0
         name_w = max(len(d.distribution) for d in OPTIONAL_DEPS)
 

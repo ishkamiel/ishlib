@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ...cli_command import CliCommand
-from ...cli_passthrough import passthrough_to_cli
 from ...command_runner import CommandRunner
 from ...git_repo import GitRepo, NotAGitRepoError, _clean_git_env
 from ...ish_config import IshConfig
@@ -42,6 +41,14 @@ class CleanRebaseCommand(CliCommand):
         "<timestamp> before the rewrite. Push with --force-with-lease."
     )
 
+    @staticmethod
+    def TARGET_MAIN(argv):
+        return ishfiles_main(argv)
+
+    @staticmethod
+    def TARGET_BUILD_PARSER():
+        return ishfiles_build_parser()
+
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -58,9 +65,9 @@ class CleanRebaseCommand(CliCommand):
             ),
         )
 
-    def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
-        runner = CommandRunner(cfg=IshConfig(dry_run=args.dry_run))
+    def run(self) -> int:
+        cfg: IshprojectConfig = self.cfg.ishproject_cfg
+        runner = CommandRunner(cfg=IshConfig(dry_run=self.cfg.dry_run))
         root = Path.cwd()
 
         try:
@@ -94,13 +101,13 @@ class CleanRebaseCommand(CliCommand):
             return 0
 
         # ---- Phase 1: safety + setup -----------------------------------
-        base_sha = _resolve_commit(target, args.base)
+        base_sha = _resolve_commit(target, self.cfg.base)
         if base_sha is None:
-            log.error("Base %r is not a valid commit-ish", args.base)
+            log.error("Base %r is not a valid commit-ish", self.cfg.base)
             return 1
 
         if not _is_ancestor(target, base_sha, "HEAD"):
-            log.error("Base %s is not an ancestor of HEAD", args.base)
+            log.error("Base %s is not an ancestor of HEAD", self.cfg.base)
             return 1
 
         if _worktree_has_uncommitted_changes(target):
@@ -116,7 +123,7 @@ class CleanRebaseCommand(CliCommand):
             log.error(
                 "Range %s..HEAD contains %d merge commit(s); linearise "
                 "first or rewrite them manually.",
-                args.base,
+                self.cfg.base,
                 len(merges),
             )
             return 1
@@ -138,7 +145,7 @@ class CleanRebaseCommand(CliCommand):
         log.info("Saved backup ref: %s -> %s", backup_ref, head_sha[:12])
 
         # ---- Phase 2: preserve edits on ish/ishproject -----------------
-        if not args.no_sync_ishproject:
+        if not self.cfg.no_sync_ishproject:
             rc = _sync_edits_to_ishproject(
                 target=target, source=source, managed=managed, runner=runner
             )
@@ -147,7 +154,7 @@ class CleanRebaseCommand(CliCommand):
 
         # ---- Phase 3: rewrite main history -----------------------------
         commits = _rev_list_reverse(target, base_sha, "HEAD")
-        log.info("Rewriting %d commit(s) from %s..HEAD", len(commits), args.base)
+        log.info("Rewriting %d commit(s) from %s..HEAD", len(commits), self.cfg.base)
 
         try:
             runner.git(
@@ -192,23 +199,15 @@ class CleanRebaseCommand(CliCommand):
                 )
                 return 1
 
-        # Restore managed files to the working tree. Propagate the
-        # common flags so `--dry-run`, `--verbose`, and `--quiet` on
-        # clean-rebase also govern the inner `ishfiles apply` — in
-        # particular dry-run stays side-effect free.
-        apply_remainder: List[str] = []
-        if getattr(args, "dry_run", False):
-            apply_remainder.append("--dry-run")
-        if getattr(args, "verbose", False):
-            apply_remainder.append("--verbose")
-        if getattr(args, "quiet", False):
-            apply_remainder.append("--quiet")
-        apply_rc = passthrough_to_cli(
-            ishfiles_main,
-            subcommand="apply",
-            remainder=apply_remainder,
+        # Restore managed files to the working tree. Common flags on
+        # this command (``--dry-run``, ``-v``, ``-q``, ``--debug``,
+        # ``--log-file``) are forwarded by :meth:`passthrough` via
+        # ``forward_explicit_globals``, so dry-run stays side-effect
+        # free and logging verbosity matches.
+        apply_rc = self.passthrough(
+            "apply",
+            (),
             global_args=["--source", str(source), "--target", str(target)],
-            target_parser=ishfiles_build_parser(),
         )
         if apply_rc != 0:
             log.warning(

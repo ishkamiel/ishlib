@@ -43,10 +43,10 @@ class StopCommand(CliCommand):
             ),
         )
 
-    def run(self, args: argparse.Namespace) -> int:
+    def run(self) -> int:
         username, _home, _cwd = get_host_user_info()
         return stop_containers(
             username,
-            names=list(args.names) if args.names else None,
-            include_bases=args.include_bases,
+            names=list(self.cfg.names) if self.cfg.names else None,
+            include_bases=self.cfg.include_bases,
         )

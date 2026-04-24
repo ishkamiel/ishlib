@@ -10,7 +10,6 @@ import subprocess
 from pathlib import Path
 
 from ...cli_command import CliCommand
-from ...cli_passthrough import passthrough_to_cli
 from ...command_runner import CommandRunner
 from ...completions import FILE as _COMPLETE_FILE
 from ...dotfile_finder import DotfileFinder
@@ -19,7 +18,6 @@ from ...ish_config import IshConfig
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
 from ...ishlib_folder import PROJECT_DIR_NAME
-from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
 
@@ -35,9 +33,14 @@ class AddCommand(CliCommand):
         "is added to the project repo's .git/info/exclude so the "
         "managed copy is not tracked by the project repo."
     )
-    # Common flags (-v/--debug/-q/-n/--log-file) are forwarded to ishfiles
-    # via parse_known_args; they are not declared on this subparser.
-    ADD_COMMON_FLAGS = False
+
+    @staticmethod
+    def TARGET_MAIN(argv):
+        return ishfiles_main(argv)
+
+    @staticmethod
+    def TARGET_BUILD_PARSER():
+        return ishfiles_build_parser()
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -56,8 +59,8 @@ class AddCommand(CliCommand):
         )
         parser.set_defaults(rest=[])
 
-    def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
+    def run(self) -> int:
+        cfg = self.cfg.ishproject_cfg
         root = Path.cwd()
         branch = cfg.resolve_active_branch(root)
         source, target = cfg.resolve_project_paths(root, branch=branch)
@@ -76,23 +79,21 @@ class AddCommand(CliCommand):
             return 1
 
         repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-        for f in args.files:
+        for f in self.cfg.files:
             try:
                 repo.ensure_path_excluded(Path(f))
             except ValueError as exc:
                 log.error("%s", exc)
                 return 1
 
-        remainder = list(args.rest)
-        if args.force:
+        remainder = list(self.cfg.rest)
+        if self.cfg.force:
             remainder.append("--force")
-        remainder.extend(args.files)
-        rc = passthrough_to_cli(
-            ishfiles_main,
-            subcommand="add",
-            remainder=remainder,
+        remainder.extend(self.cfg.files)
+        rc = self.passthrough(
+            "add",
+            remainder,
             global_args=["--source", str(source), "--target", str(target)],
-            target_parser=ishfiles_build_parser(),
         )
         if rc != 0:
             return rc
@@ -113,12 +114,12 @@ class AddCommand(CliCommand):
         finder = DotfileFinder(
             IshConfig(defaults={"source": str(source), "target": str(target)})
         )
-        rel_paths = [str(p) for p in finder.get_rel_paths(args.files)]
+        rel_paths = [str(p) for p in finder.get_rel_paths(self.cfg.files)]
         if not rel_paths:
             return 0
 
         source_repo.runner = CommandRunner(
-            cfg=IshConfig(dry_run=getattr(args, "dry_run", False))
+            cfg=IshConfig(dry_run=getattr(self.cfg, "dry_run", False))
         )
         try:
             source_repo.runner.git(

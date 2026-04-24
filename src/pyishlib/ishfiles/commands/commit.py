@@ -9,7 +9,6 @@ import sys
 
 from ...cli_command import CliCommand
 from ...git_repo import GitRepo, NotAGitRepoError
-from ...ish_config import IshConfig
 from ..applier import make_finder
 
 _DEFAULT_MESSAGE = "Update ishfiles"
@@ -36,8 +35,8 @@ class CommitCommand(CliCommand):
             help=f"Commit message (default: {_DEFAULT_MESSAGE!r})",
         )
 
-    def run(self, cfg: IshConfig) -> int:
-        finder = make_finder(cfg)
+    def run(self) -> int:
+        finder = make_finder(self.cfg)
 
         if not finder.source_dir.is_dir():
             print(
@@ -55,6 +54,6 @@ class CommitCommand(CliCommand):
             )
             return 1
 
-        message = cfg.get_opt("message", _DEFAULT_MESSAGE)
+        message = self.cfg.get_opt("message", _DEFAULT_MESSAGE)
         result = repo.commit_all(message)
         return result.returncode

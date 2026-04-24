@@ -9,7 +9,6 @@ import logging
 
 from ... import completions, tools
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 
 log = logging.getLogger(__name__)
 
@@ -64,8 +63,8 @@ class InitCommand(CliCommand):
         )
         parser.set_defaults(shell=None)
 
-    def run(self, cfg: IshConfig) -> int:
-        shell = cfg.get_opt("shell", None)
+    def run(self) -> int:
+        shell = self.cfg.get_opt("shell", None)
 
         print(_POSIX_SNIPPET, end="")
 

@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 from ..applier import make_finder
 
 
@@ -28,9 +27,9 @@ class GitCommand(CliCommand):
             help="Arguments passed directly to git",
         )
 
-    def run(self, cfg: IshConfig) -> int:
+    def run(self) -> int:
         """Execute a git command in the dotfiles source directory."""
-        finder = make_finder(cfg)
+        finder = make_finder(self.cfg)
 
         if not finder.source_dir.is_dir():
             print(
@@ -38,7 +37,7 @@ class GitCommand(CliCommand):
             )
             return 1
 
-        git_args = cfg.get_opt("git_args", [])
+        git_args = self.cfg.get_opt("git_args", [])
         translated = [finder.translate_arg(a) for a in git_args]
         cmd = ["git"] + translated
 

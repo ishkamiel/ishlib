@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 from ..installer_helper import run_install
 
 
@@ -26,6 +25,6 @@ class InstallCommand(CliCommand):
             help="Restrict to specific package names (default: all)",
         )
 
-    def run(self, cfg: IshConfig) -> int:
-        packages = cfg.get_opt("packages") or None
-        return run_install(cfg, packages=packages)
+    def run(self) -> int:
+        packages = self.cfg.get_opt("packages") or None
+        return run_install(self.cfg, packages=packages)

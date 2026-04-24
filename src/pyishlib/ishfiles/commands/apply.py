@@ -110,20 +110,20 @@ class ApplyCommand(CliCommand):
             help=argparse.SUPPRESS,
         )
 
-    def run(self, cfg: IshConfig) -> int:
+    def run(self) -> int:
         """Execute the apply pipeline."""
-        dotfiles_only = cfg.get_opt("dotfiles_only", default=False)
-        force_scripts_arg = cfg.get_opt("force_scripts")
+        dotfiles_only = self.cfg.get_opt("dotfiles_only", default=False)
+        force_scripts_arg = self.cfg.get_opt("force_scripts")
         force_scripts = force_scripts_arg
 
         log.info("Phase 0: Installing tool launchers in ~/.local/bin")
-        _install_launchers(cfg)
+        _install_launchers(self.cfg)
         had_errors = False
 
-        finder = make_finder(cfg)
-        applier = make_applier(cfg, finder=finder)
+        finder = make_finder(self.cfg)
+        applier = make_applier(self.cfg, finder=finder)
 
-        files = cfg.get_opt("files") or None
+        files = self.cfg.get_opt("files") or None
         rel_files = finder.get_rel_paths(files) if files else None
 
         log.info("Phase 1: Scanning dotfiles and scripts for metadata")
@@ -132,7 +132,7 @@ class ApplyCommand(CliCommand):
         dotfiles, dotfile_pkgs = applier.scan(dotfiles)
 
         if not dotfiles_only:
-            script_paths, script_pkgs = scan_scripts(cfg)
+            script_paths, script_pkgs = scan_scripts(self.cfg)
         else:
             script_paths, script_pkgs = [], []
 
@@ -141,7 +141,7 @@ class ApplyCommand(CliCommand):
             log.info("Collected %d package(s) from file metadata", len(extra_packages))
 
         if not dotfiles_only:
-            ret = run_install(cfg, extra_packages=extra_packages)
+            ret = run_install(self.cfg, extra_packages=extra_packages)
             if ret != 0:
                 return ret
 
@@ -150,8 +150,8 @@ class ApplyCommand(CliCommand):
         applier.print_changes(changes)
 
         if changes:
-            if not cfg.dry_run:
-                yes = cfg.get_opt("yes", default=False)
+            if not self.cfg.dry_run:
+                yes = self.cfg.get_opt("yes", default=False)
                 if not yes:
                     choice = prompt_yes_no_always(f"Apply {len(changes)} change(s)?")
                     if choice.no:
@@ -164,28 +164,28 @@ class ApplyCommand(CliCommand):
 
         if not dotfiles_only:
             log.info("Phase 4b: Applying externals")
-            ext_ret = apply_externals_stage(cfg)
+            ext_ret = apply_externals_stage(self.cfg)
             if ext_ret != 0:
                 log.warning("Some externals failed to fetch; continuing with scripts")
                 had_errors = True
 
         if not dotfiles_only and script_paths:
-            with ScriptLogger(cfg) as slog:
-                state = ScriptState.from_cfg(cfg)
+            with ScriptLogger(self.cfg) as slog:
+                state = ScriptState.from_cfg(self.cfg)
                 ret = run_scanned_scripts(
-                    cfg,
+                    self.cfg,
                     script_paths,
                     script_logger=slog,
                     script_state=state,
                     force_scripts=force_scripts,
                 )
-                _print_log_summary(slog, cfg)
+                _print_log_summary(slog, self.cfg)
             if ret != 0:
                 return ret
 
         if not dotfiles_only:
             log.info("Phase 6: Setting default login shell")
-            sh_ret = apply_default_shell_stage(cfg)
+            sh_ret = apply_default_shell_stage(self.cfg)
             if sh_ret != 0:
                 had_errors = True
 

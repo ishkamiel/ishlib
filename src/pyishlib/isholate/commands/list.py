@@ -38,11 +38,11 @@ class ListCommand(CliCommand):
             help="Hide persistent base containers (shown by default)",
         )
 
-    def run(self, args: argparse.Namespace) -> int:
+    def run(self) -> int:
         username, _home, _cwd = get_host_user_info()
         return list_containers(
             username,
-            all_users=args.all_users,
-            running_only=args.running,
-            include_bases=not args.no_bases,
+            all_users=self.cfg.all_users,
+            running_only=self.cfg.running,
+            include_bases=not self.cfg.no_bases,
         )

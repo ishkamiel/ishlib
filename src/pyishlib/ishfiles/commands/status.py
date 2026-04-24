@@ -11,7 +11,6 @@ from pathlib import Path
 
 from ...cli_command import CliCommand
 from ...git_repo import GitRepo, NotAGitRepoError
-from ...ish_config import IshConfig
 from ..applier import make_applier, make_finder
 
 log = logging.getLogger(__name__)
@@ -43,8 +42,8 @@ class StatusCommand(CliCommand):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         pass
 
-    def run(self, cfg: IshConfig) -> int:
-        finder = make_finder(cfg)
+    def run(self) -> int:
+        finder = make_finder(self.cfg)
 
         if not finder.source_dir.is_dir():
             print(
@@ -53,7 +52,7 @@ class StatusCommand(CliCommand):
             )
             return 1
 
-        applier = make_applier(cfg, finder=finder)
+        applier = make_applier(self.cfg, finder=finder)
         dotfiles = applier.discover()
         dotfiles = applier.prepare(dotfiles)
 

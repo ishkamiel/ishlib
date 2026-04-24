@@ -9,10 +9,8 @@ import logging
 from pathlib import Path
 
 from ...cli_command import CliCommand
-from ...cli_passthrough import passthrough_to_cli
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
-from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +25,14 @@ class PullCommand(CliCommand):
         "pointed at the current project.  All remaining arguments are "
         "forwarded to ishfiles."
     )
-    ADD_COMMON_FLAGS = False
+
+    @staticmethod
+    def TARGET_MAIN(argv):
+        return ishfiles_main(argv)
+
+    @staticmethod
+    def TARGET_BUILD_PARSER():
+        return ishfiles_build_parser()
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -37,8 +42,8 @@ class PullCommand(CliCommand):
             help="Arguments forwarded to `ishfiles pull`.",
         )
 
-    def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
+    def run(self) -> int:
+        cfg = self.cfg.ishproject_cfg
         root = Path.cwd()
 
         branch = cfg.resolve_active_branch(root)
@@ -50,10 +55,8 @@ class PullCommand(CliCommand):
                 source,
             )
             return 1
-        return passthrough_to_cli(
-            ishfiles_main,
-            subcommand="pull",
-            remainder=args.rest,
+        return self.passthrough(
+            "pull",
+            self.cfg.rest,
             global_args=["--source", str(source), "--target", str(target)],
-            target_parser=ishfiles_build_parser(),
         )

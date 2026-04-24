@@ -94,7 +94,7 @@ class AddCommand(CliCommand):
             help="Do not stage added files with 'git add' in the dotfiles repo",
         )
 
-    def run(self, cfg: IshConfig) -> int:
+    def run(self) -> int:
         """Execute the add command.
 
         For each file argument:
@@ -109,9 +109,9 @@ class AddCommand(CliCommand):
         Returns:
             0 on success, 1 if any file could not be added.
         """
-        finder = make_finder(cfg)
-        force = cfg.get_opt("force", False)
-        files = _expand_directory_args(cfg.get_opt("files", []), finder)
+        finder = make_finder(self.cfg)
+        force = self.cfg.get_opt("force", False)
+        files = _expand_directory_args(self.cfg.get_opt("files", []), finder)
 
         if not finder.source_dir.is_dir():
             log.error("Source directory does not exist: %s", finder.source_dir)
@@ -157,7 +157,7 @@ class AddCommand(CliCommand):
 
             dotfile.source.parent.mkdir(parents=True, exist_ok=True)
 
-            if cfg.dry_run:
+            if self.cfg.dry_run:
                 log.info("Would add: %s -> %s", dotfile.target, dotfile.source)
             else:
                 shutil.copy2(str(dotfile.target), str(dotfile.source))
@@ -166,11 +166,11 @@ class AddCommand(CliCommand):
             staged_paths.append(dotfile.source)
             added += 1
 
-        if added and not cfg.dry_run:
+        if added and not self.cfg.dry_run:
             log.info("Added %d file(s).", added)
 
-        if staged_paths and cfg.get_opt("git_add", True):
-            self._stage_in_git(cfg, finder.source_dir, staged_paths)
+        if staged_paths and self.cfg.get_opt("git_add", True):
+            self._stage_in_git(self.cfg, finder.source_dir, staged_paths)
 
         return 1 if errors else 0
 
