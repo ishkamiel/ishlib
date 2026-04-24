@@ -732,6 +732,104 @@ class TestInit(_ChdirTestCase):
         self.assertEqual(rc, 1)
         self.assertFalse((self.root / ".ishlib" / "ishproject").is_dir())
 
+    def test_init_default_does_not_apply(self) -> None:
+        # Without --apply, ishfiles_main must not be invoked.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["init"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_not_called()
+
+    def test_init_apply_forwards_to_ishfiles(self) -> None:
+        # --apply on a seeded local branch forwards to ishfiles apply
+        # with --source / --target pointing at the worktree.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["init", "--apply"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--source", argv)
+        self.assertIn("--target", argv)
+        self.assertIn("apply", argv)
+        worktree = str(self.root / ".ishlib" / "ishproject")
+        self.assertIn(worktree, argv)
+
+    def test_init_apply_on_orphan_create(self) -> None:
+        # --create + --apply on a fresh repo: worktree is empty, but the
+        # apply passthrough still fires (it's a no-op at the ishfiles
+        # layer, not ishproject's concern).
+        _init_repo(self.root)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["init", "--create", "--remote", str(self.bare), "--apply"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+
+    def test_init_apply_dry_run_skips(self) -> None:
+        # Dry-run init does not create the worktree, so --apply is skipped.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["init", "--apply", "--dry-run"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_not_called()
+
+    def test_init_apply_failure_propagates(self) -> None:
+        # Non-zero exit from ishfiles apply must bubble out of init.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=2,
+        ):
+            rc = cli_main(["init", "--apply"])
+        self.assertEqual(rc, 2)
+
+    def test_init_apply_idempotent_reruns(self) -> None:
+        # Second init --apply hits the "already initialised" path and
+        # must still dispatch to apply.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            self.assertEqual(cli_main(["init", "--apply"]), 0)
+            self.assertEqual(cli_main(["init", "--apply"]), 0)
+        self.assertEqual(mock_main.call_count, 2)
+
+    def test_init_apply_forwards_debug_and_log_file(self) -> None:
+        # --debug / --log-file on init must also flow into the nested
+        # ishfiles apply invocation so its setup_logging() keeps the
+        # same verbosity and file sink.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        log_path = self.root / "init-apply.log"
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["init", "--apply", "--debug", "--log-file", str(log_path)])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--debug", argv)
+        self.assertIn("--log-file", argv)
+        self.assertIn(str(log_path), argv)
+
 
 # ---------------------------------------------------------------------------
 # Helpers for merge / clean-rebase tests
