@@ -20,7 +20,7 @@ from ...ishlib_folder import PROJECT_DIR_NAME, IshlibFolder
 from ...userio import prompt_string
 from .._precommit import allow_missing_precommit_config
 from ..config import IshprojectConfig
-from .apply import run_project_apply
+from .apply import ApplyCommand
 
 log = logging.getLogger(__name__)
 
@@ -352,25 +352,17 @@ class InitCommand(CliCommand):
         """Forward to ``ishfiles apply`` on the freshly-initialised worktree.
 
         Called only when ``--apply`` was set and the init step succeeded.
-        Forwards ``-n/-v/-q/--debug/--log-file`` so the nested
-        ``setup_logging()`` keeps the same verbosity and file sink.
-        Skipped with a log message when the worktree does not exist
-        (e.g. ``--dry-run`` did not materialise it).
+        The nested ``ApplyCommand`` inherits *init*'s parsed args as its
+        ``self.cfg``, so ``forward_explicit_globals`` reconstructs
+        ``-n/-v/-q/--debug/--log-file`` from init's ``_ish_explicit`` set
+        and the nested ``setup_logging()`` keeps the same verbosity and
+        file sink.  Skipped with a log message when the worktree does
+        not exist (e.g. ``--dry-run`` did not materialise it).
         """
         source, _target = cfg.resolve_project_paths(root, branch=branch)
         if not source.is_dir():
             log.info("Skipping --apply: worktree not created (dry-run)")
             return 0
-        rest: List[str] = []
-        if args.dry_run:
-            rest.append("--dry-run")
-        if args.verbose:
-            rest.append("--verbose")
-        if args.quiet:
-            rest.append("--quiet")
-        if getattr(args, "debug", False):
-            rest.append("--debug")
-        log_file = getattr(args, "log_file", None)
-        if log_file:
-            rest.extend(["--log-file", str(log_file)])
-        return run_project_apply(cfg, rest=rest, root=root, branch=branch)
+        apply_cmd = ApplyCommand()
+        apply_cmd.cfg = args
+        return apply_cmd.run_project_apply(cfg, rest=(), root=root, branch=branch)
