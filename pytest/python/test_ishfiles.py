@@ -6,6 +6,7 @@
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -1212,6 +1213,119 @@ class TestAddCommand:
                 Path(src) / "dot_claude" / "skills" / "link_to_file.md"
             ).exists()
             assert not (Path(src) / "dot_claude" / "skills" / "link_to_dir").exists()
+
+    # ---- git staging behavior --------------------------------------------
+
+    @staticmethod
+    def _git_init(path: str) -> None:
+        subprocess.run(
+            ["git", "init", "-q", "-b", "main", path],
+            check=True,
+        )
+
+    @staticmethod
+    def _staged_files(src: str) -> list:
+        result = subprocess.run(
+            ["git", "-C", src, "diff", "--cached", "--name-only"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return [ln for ln in result.stdout.splitlines() if ln]
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_stages_in_git_repo(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            self._git_init(src)
+            _make_file(Path(tgt) / ".bashrc", "my config\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").exists()
+            assert self._staged_files(src) == ["dot_bashrc"]
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_no_git_add_flag(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            self._git_init(src)
+            _make_file(Path(tgt) / ".bashrc", "my config\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "--no-git-add",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").exists()
+            assert self._staged_files(src) == []
+
+    def test_add_source_not_git_repo(self):
+        """Non-git source: add still succeeds, staging is a silent no-op."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(tgt) / ".bashrc", "my config\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "my config\n"
+            assert not (Path(src) / ".git").exists()
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_dry_run_does_not_stage(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            self._git_init(src)
+            _make_file(Path(tgt) / ".bashrc", "my config\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "--dry-run",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert not (Path(src) / "dot_bashrc").exists()
+            assert self._staged_files(src) == []
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_force_stages(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            self._git_init(src)
+            _make_file(Path(tgt) / ".bashrc", "new content\n")
+            _make_file(Path(src) / "dot_bashrc", "old content\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "--force",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "new content\n"
+            assert self._staged_files(src) == ["dot_bashrc"]
 
 
 # ---------------------------------------------------------------------------
