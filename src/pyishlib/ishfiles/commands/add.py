@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import List, Sequence
 
 from ...cli_command import CliCommand
+from ...command_runner import CommandRunner
 from ...completions import FILE as _COMPLETE_FILE
 from ...dotfile_finder import DotfileFinder
+from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
 from ..applier import make_finder
 
@@ -84,6 +86,13 @@ class AddCommand(CliCommand):
             default=False,
             help="Overwrite dirty files in the dotfiles repository",
         )
+        parser.add_argument(
+            "--no-git-add",
+            dest="git_add",
+            action="store_false",
+            default=True,
+            help="Do not stage added files with 'git add' in the dotfiles repo",
+        )
 
     def run(self, cfg: IshConfig) -> int:
         """Execute the add command.
@@ -110,6 +119,7 @@ class AddCommand(CliCommand):
 
         errors = 0
         added = 0
+        staged_paths: List[Path] = []
 
         for file_arg in files:
             dotfile = finder.get(file_arg)
@@ -153,9 +163,42 @@ class AddCommand(CliCommand):
                 shutil.copy2(str(dotfile.target), str(dotfile.source))
                 log.info("Added: %s -> %s", dotfile.translated, dotfile.rel_path)
 
+            staged_paths.append(dotfile.source)
             added += 1
 
         if added and not cfg.dry_run:
             log.info("Added %d file(s).", added)
 
+        if staged_paths and cfg.get_opt("git_add", True):
+            self._stage_in_git(cfg, finder.source_dir, staged_paths)
+
         return 1 if errors else 0
+
+    @staticmethod
+    def _stage_in_git(
+        cfg: IshConfig,
+        source_dir: Path,
+        paths: Sequence[Path],
+    ) -> None:
+        """Stage *paths* in the dotfiles source repo via :meth:`GitRepo.stage`.
+
+        A soft no-op when *source_dir* is not a git working tree.
+        Failures from ``git add`` are logged as warnings; the ``add``
+        command's return code reflects only the copy step, since staging
+        is a convenience layered on top.
+        """
+        try:
+            repo = GitRepo.discover(source_dir)
+        except NotAGitRepoError:
+            log.debug(
+                "Source is not a git repository, skipping staging: %s", source_dir
+            )
+            return
+
+        repo.runner = CommandRunner(cfg)
+        result = repo.stage(paths)
+        if result.returncode != 0:
+            log.warning(
+                "git add returned non-zero exit code %d; files were copied but not staged",
+                result.returncode,
+            )

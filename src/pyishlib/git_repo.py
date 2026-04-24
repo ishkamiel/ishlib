@@ -16,7 +16,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from .command_runner import CommandRunner
 
@@ -335,6 +335,43 @@ class GitRepo:
         return entries
 
     # ---- mutating git ops --------------------------------------------------
+
+    def stage(self, paths: Iterable[Path]) -> subprocess.CompletedProcess:
+        """Run ``git add -- <paths>`` in the working tree.
+
+        Each path is converted to a work-tree-relative pathspec so the
+        call is invariant to symlinks in the caller's source path that
+        would not match the resolved :attr:`work_tree`. Paths that
+        resolve outside the work tree are logged and skipped. When no
+        paths remain, returns a synthetic success without spawning git.
+
+        Goes through :attr:`runner` so dry-run mode is respected.
+        Returns the ``CompletedProcess`` without raising on non-zero
+        exit; callers are responsible for checking ``returncode``.
+        """
+        pathspecs: list = []
+        for path in paths:
+            try:
+                rel = Path(path).resolve().relative_to(self.work_tree)
+            except ValueError:
+                log.warning(
+                    "Skipping git add for path outside work tree %s: %s",
+                    self.work_tree,
+                    path,
+                )
+                continue
+            pathspecs.append(str(rel))
+
+        if not pathspecs:
+            return subprocess.CompletedProcess(
+                args=["git", "add"], returncode=0, stdout=b"", stderr=b""
+            )
+
+        return self.runner.git(
+            ["add", "--", *pathspecs],
+            work_dir=self.work_tree,
+            check=False,
+        )
 
     def commit_all(self, message: str) -> "subprocess.CompletedProcess":
         """Run ``git commit -a -m <message>`` in the working tree.
