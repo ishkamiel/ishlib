@@ -605,6 +605,59 @@ def _setup_bare_remote(test_case: unittest.TestCase) -> Path:
     return _make_bare(Path(bare_tmp.name).resolve())
 
 
+def _bare_workspace(test_case: unittest.TestCase) -> Path:
+    """Return a fresh tempdir for staging submodule bare repos."""
+    tmp = _make_tempdir()
+    test_case.addCleanup(tmp.cleanup)
+    return Path(tmp.name).resolve()
+
+
+def _make_submodule_source(workspace: Path, name: str) -> Path:
+    """Return a bare repo at ``workspace/<name>-bare.git`` seeded with one commit.
+
+    Needed for ``git submodule add`` (the source must have at least one
+    commit on the default branch) and so that ``ishproject init --create``
+    inside the submodule can push its orphan branch back.
+    """
+    bare = workspace / f"{name}-bare.git"
+    bare.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(bare)],
+        check=True,
+        capture_output=True,
+    )
+    scratch = workspace / f"{name}-scratch"
+    scratch.mkdir()
+    _init_repo(scratch)
+    _git("remote", "add", "origin", str(bare), cwd=scratch)
+    _git("push", "origin", "main", cwd=scratch)
+    return bare
+
+
+def _add_submodule(parent: Path, url: Path, sub_path: str) -> None:
+    """Run ``git submodule add <url> <sub_path>`` in *parent* and commit."""
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "protocol.file.allow=always",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+            "submodule",
+            "add",
+            str(url),
+            sub_path,
+        ],
+        cwd=str(parent),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git("commit", "-m", f"add submodule {sub_path}", cwd=parent)
+
+
 class TestInit(_ChdirTestCase):
     """Tests for ``ishproject init``.
 
@@ -829,6 +882,199 @@ class TestInit(_ChdirTestCase):
         self.assertIn("--debug", argv)
         self.assertIn("--log-file", argv)
         self.assertIn(str(log_path), argv)
+    # ---- --recurse-submodules ---------------------------------------------
+
+    def test_init_no_recurse_skips_submodule(self) -> None:
+        _init_repo(self.root)
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+
+        rc = cli_main(["init", "--create", "--remote", str(self.bare)])
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
+        self.assertFalse(
+            (self.root / "child" / ".ishlib" / "ishproject").exists()
+        )
+
+    def test_init_recurse_submodules_inits_child(self) -> None:
+        _init_repo(self.root)
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+
+        rc = cli_main(
+            [
+                "init",
+                "--create",
+                "--remote",
+                str(self.bare),
+                "--recurse-submodules",
+            ]
+        )
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
+        self.assertTrue(
+            (self.root / "child" / ".ishlib" / "ishproject").is_dir()
+        )
+        # Submodule's real git dir lives under the parent's .git/modules/.
+        sub_exclude = (
+            self.root / ".git" / "modules" / "child" / "info" / "exclude"
+        )
+        self.assertTrue(sub_exclude.is_file())
+        self.assertIn("/.ishlib/", sub_exclude.read_text(encoding="utf-8"))
+
+    def test_init_recurse_remote_not_propagated(self) -> None:
+        # Parent pushes to self.bare; submodule must push to ITS OWN bare,
+        # not the parent's bare.
+        _init_repo(self.root)
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+
+        rc = cli_main(
+            [
+                "init",
+                "--create",
+                "--remote",
+                str(self.bare),
+                "--recurse-submodules",
+            ]
+        )
+        self.assertEqual(rc, 0)
+
+        parent_refs = subprocess.run(
+            ["git", "ls-remote", "--heads", str(self.bare)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        child_refs = subprocess.run(
+            ["git", "ls-remote", "--heads", str(child_bare)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        # The ishproject branch landed on the child's own bare …
+        self.assertIn(ISHPROJECT_BRANCH, child_refs)
+        # … not the parent's. ls-remote on self.bare should have the
+        # branch (parent's), so assert it did NOT leak to child from
+        # parent's bare: the child's bare is a separate file, so we
+        # check the *child* bare has the branch AND the child has no
+        # "ishproject" remote pointing at self.bare (--remote was not
+        # forwarded).
+        self.assertIn(ISHPROJECT_BRANCH, parent_refs)
+        child_wt = self.root / "child"
+        child_remotes = _git("remote", cwd=child_wt).stdout.split()
+        self.assertNotIn("ishproject", child_remotes)
+
+    def test_init_recurse_nested_submodules(self) -> None:
+        _init_repo(self.root)
+        workspace = _bare_workspace(self)
+        grandchild_bare = _make_submodule_source(workspace, "grandchild")
+        child_bare = _make_submodule_source(workspace, "child")
+
+        # Register grandchild as a submodule inside child-bare by working
+        # through a scratch clone and pushing back.
+        child_scratch = workspace / "child-nest-scratch"
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "protocol.file.allow=always",
+                "clone",
+                str(child_bare),
+                str(child_scratch),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        _add_submodule(child_scratch, grandchild_bare, "grandchild")
+        _git("push", "origin", "main", cwd=child_scratch)
+
+        _add_submodule(self.root, child_bare, "child")
+        # `submodule add` initialises the first level only; recurse into
+        # nested submodules explicitly.
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "update",
+                "--init",
+                "--recursive",
+            ],
+            cwd=str(self.root),
+            check=True,
+            capture_output=True,
+        )
+
+        rc = cli_main(
+            [
+                "init",
+                "--create",
+                "--remote",
+                str(self.bare),
+                "--recurse-submodules",
+            ]
+        )
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
+        self.assertTrue(
+            (self.root / "child" / ".ishlib" / "ishproject").is_dir()
+        )
+        self.assertTrue(
+            (
+                self.root
+                / "child"
+                / "grandchild"
+                / ".ishlib"
+                / "ishproject"
+            ).is_dir()
+        )
+
+    def test_init_recurse_continues_past_submodule_failure(self) -> None:
+        # Two submodules. The first has its origin URL pointed at a
+        # nonexistent path so its fetch fails; the second is healthy.
+        # The failure must not prevent the second from being initialised.
+        _init_repo(self.root)
+        workspace = _bare_workspace(self)
+        broken_bare = _make_submodule_source(workspace, "broken")
+        healthy_bare = _make_submodule_source(workspace, "healthy")
+        _add_submodule(self.root, broken_bare, "broken")
+        _add_submodule(self.root, healthy_bare, "healthy")
+
+        # Break the first submodule's origin by repointing it at a dead
+        # path. `ishproject init --create` on it will still try to fetch
+        # (because --create falls through to the remote path) and abort.
+        _git(
+            "remote",
+            "set-url",
+            "origin",
+            "/nonexistent/path.git",
+            cwd=self.root / "broken",
+        )
+
+        rc = cli_main(
+            [
+                "init",
+                "--create",
+                "--remote",
+                str(self.bare),
+                "--recurse-submodules",
+            ]
+        )
+        self.assertEqual(rc, 1)
+        # Parent and the healthy submodule still got inited.
+        self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
+        self.assertTrue(
+            (self.root / "healthy" / ".ishlib" / "ishproject").is_dir()
+        )
+        # The broken submodule did not.
+        self.assertFalse(
+            (self.root / "broken" / ".ishlib" / "ishproject").exists()
+        )
 
 
 # ---------------------------------------------------------------------------
