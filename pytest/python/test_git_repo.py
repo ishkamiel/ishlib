@@ -150,6 +150,42 @@ class TestSubmoduleDiscovery(unittest.TestCase):
             self.assertEqual(repo.exclude_file, expected / "info" / "exclude")
 
 
+class TestListSubmodules(GitRepoTestCase):
+    """Cover ``GitRepo.list_submodules`` for repos with and without submodules."""
+
+    def test_no_submodules_returns_empty(self) -> None:
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(repo.list_submodules(), [])
+
+    def test_lists_initialised_submodule(self) -> None:
+        child_tmp = _make_tempdir()
+        self.addCleanup(child_tmp.cleanup)
+        child = Path(child_tmp.name).resolve()
+        _make_repo(child)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "protocol.file.allow=always",
+                "-c",
+                "commit.gpgsign=false",
+                "submodule",
+                "add",
+                str(child),
+                "sub",
+            ],
+            cwd=str(self.root),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        _git("commit", "-m", "add sub", cwd=self.root)
+
+        repo = GitRepo.discover(self.root)
+        paths = repo.list_submodules()
+        self.assertEqual(paths, [(self.root / "sub").resolve()])
+
+
 class TestBranchExists(GitRepoTestCase):
     def test_local_branch_present(self) -> None:
         _git("branch", "feature/x", cwd=self.root)

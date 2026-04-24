@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import copy
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,61 +23,6 @@ from ..config import IshprojectConfig
 from .apply import run_project_apply
 
 log = logging.getLogger(__name__)
-
-_GIT_DIR_VARS = (
-    "GIT_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_WORK_TREE",
-    "GIT_OBJECT_DIRECTORY",
-)
-
-
-def _clean_git_env() -> dict:
-    env = os.environ.copy()
-    for var in _GIT_DIR_VARS:
-        env.pop(var, None)
-    return env
-
-
-def _enumerate_submodules(root: Path) -> List[Path]:
-    """Return absolute paths of every initialised submodule under *root*.
-
-    Uses ``git submodule foreach --recursive --quiet`` so nested
-    submodules are included and uninitialised submodules are silently
-    skipped (``foreach`` already excludes them).
-    """
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(root),
-            "submodule",
-            "foreach",
-            "--recursive",
-            "--quiet",
-            'printf "%s\\n" "$toplevel/$sm_path"',
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=_clean_git_env(),
-    )
-    if result.returncode != 0:
-        log.error(
-            "Failed to enumerate submodules under %s: %s",
-            root,
-            result.stderr.strip(),
-        )
-        return []
-    paths: List[Path] = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        p = Path(line)
-        if p.is_dir():
-            paths.append(p)
-    return paths
 
 
 class _RemoteError(Exception):
@@ -232,18 +176,18 @@ class InitCommand(CliCommand):
         if rc != 0:
             failures.append(str(root))
 
+        try:
+            repo = GitRepo.discover(root, require_root=True)
+        except NotAGitRepoError:
+            return 1 if failures else rc
+
         child_args = copy.copy(args)
         child_args.remote = None
         child_args.recurse_submodules = False
 
-        saved = Path.cwd()
-        for sub in _enumerate_submodules(root):
+        for sub in repo.list_submodules(recursive=True):
             log.info("ishproject init in submodule %s", sub)
-            os.chdir(sub)
-            try:
-                sub_rc = self._init_one(child_args, cfg, branch, sub)
-            finally:
-                os.chdir(saved)
+            sub_rc = self._init_one(child_args, cfg, branch, sub)
             if sub_rc != 0:
                 failures.append(str(sub))
 
