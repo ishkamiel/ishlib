@@ -348,6 +348,22 @@ class IshConfig:
             f"'{type(self).__name__}' object has no attribute '{name}'"
         )
 
+    def is_explicit(self, name: str) -> bool:
+        """Return True iff *name* was set on the command line by the user.
+
+        Backed by the ``_ish_explicit`` set populated by the wrapped argparse
+        actions in :func:`pyishlib.cli_base._explicit_action`.  Values that
+        come from TOML config, :meth:`set_constant`, or :meth:`set_default`
+        are NOT explicit by this definition — "explicit" means argv-sourced.
+
+        Duck-typed on ``self.args``: works for any object with an
+        ``_ish_explicit`` attribute (e.g. a plain :class:`argparse.Namespace`
+        populated by a tool that has not adopted :class:`IshConfig`).
+        """
+        if self.args is None:
+            return False
+        return name in getattr(self.args, "_ish_explicit", ())
+
     def get_opt(self, name: str, default: Any = _MISSING) -> Any:
         """Look up *name* with constants -> args -> conf -> defaults -> *default* priority.
 

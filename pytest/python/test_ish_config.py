@@ -105,5 +105,59 @@ class TestBootstrap(unittest.TestCase):
         self.assertTrue(nested.is_file())
 
 
+class TestIsExplicit(unittest.TestCase):
+    """Cover :meth:`IshConfig.is_explicit`."""
+
+    def test_false_when_args_none(self) -> None:
+        cfg = IshConfig()
+        self.assertFalse(cfg.is_explicit("verbose"))
+
+    def test_false_when_attr_present_but_not_tracked(self) -> None:
+        """Values from TOML / defaults are not 'explicit' even if readable."""
+        from types import SimpleNamespace
+
+        # No _ish_explicit attribute — simulates a plain Namespace or a
+        # TOML-sourced conf masquerading as args.
+        ns = SimpleNamespace(verbose=True)
+        cfg = IshConfig(args=ns)
+        self.assertFalse(cfg.is_explicit("verbose"))
+
+    def test_true_when_dest_in_explicit_set(self) -> None:
+        from types import SimpleNamespace
+
+        ns = SimpleNamespace(verbose=True, _ish_explicit={"verbose"})
+        cfg = IshConfig(args=ns)
+        self.assertTrue(cfg.is_explicit("verbose"))
+        self.assertFalse(cfg.is_explicit("dry_run"))
+
+    def test_parser_with_explicit_actions_populates_set(self) -> None:
+        """End-to-end: wrapping actions via _explicit_action records dests."""
+        import argparse
+
+        from pyishlib.cli_base import (
+            _ExplicitStore,
+            _ExplicitStoreTrue,
+        )
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-v", "--verbose", action=_ExplicitStoreTrue, default=False)
+        parser.add_argument("-n", "--dry-run", action=_ExplicitStoreTrue, default=False)
+        parser.add_argument("--log-file", action=_ExplicitStore, default=None)
+
+        # Nothing typed
+        args = parser.parse_args([])
+        cfg = IshConfig(args=args)
+        self.assertFalse(cfg.is_explicit("verbose"))
+        self.assertFalse(cfg.is_explicit("dry_run"))
+        self.assertFalse(cfg.is_explicit("log_file"))
+
+        # User typed -v and --log-file
+        args = parser.parse_args(["-v", "--log-file", "/tmp/x.log"])
+        cfg = IshConfig(args=args)
+        self.assertTrue(cfg.is_explicit("verbose"))
+        self.assertFalse(cfg.is_explicit("dry_run"))
+        self.assertTrue(cfg.is_explicit("log_file"))
+
+
 if __name__ == "__main__":
     unittest.main()

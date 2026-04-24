@@ -14,6 +14,112 @@ from .ish_logging import log_level_from_args, setup_logging
 from .cli_command import CliCommand
 
 
+def _mark_explicit(ns: argparse.Namespace, dest: str) -> None:
+    """Record that *dest* was explicitly supplied on the command line.
+
+    Backs :meth:`pyishlib.ish_config.IshConfig.is_explicit`.  The set
+    is created lazily on first write so a Namespace built without going
+    through the wrapped actions simply has no ``_ish_explicit`` attribute
+    and ``is_explicit`` returns False for every name.
+    """
+    explicit = getattr(ns, "_ish_explicit", None)
+    if explicit is None:
+        explicit = set()
+        setattr(ns, "_ish_explicit", explicit)
+    explicit.add(dest)
+
+
+# Public argparse Actions that mirror the standard ``store`` / ``store_true``
+# / ``store_false`` / ``count`` / ``append`` behaviours and additionally
+# call :func:`_mark_explicit` so :meth:`IshConfig.is_explicit` can
+# distinguish argv-typed flags from defaulted ones.  Subclassing
+# :class:`argparse.Action` directly avoids depending on argparse's
+# private ``_Store*Action`` internals.
+
+
+class _ExplicitStore(argparse.Action):
+    """``store``-equivalent action that marks its dest as explicit."""
+
+    def __call__(self, parser, ns, values, option_string=None):
+        setattr(ns, self.dest, values)
+        _mark_explicit(ns, self.dest)
+
+
+class _ExplicitStoreTrue(argparse.Action):
+    """``store_true``-equivalent action that marks its dest as explicit."""
+
+    def __init__(
+        self, option_strings, dest, nargs=0, const=True, default=False, **kwargs
+    ):
+        if nargs != 0:
+            raise ValueError("nargs for store_true actions must be 0")
+        super().__init__(
+            option_strings,
+            dest,
+            nargs=0,
+            const=const,
+            default=default,
+            **kwargs,
+        )
+
+    def __call__(self, parser, ns, values, option_string=None):
+        setattr(ns, self.dest, self.const)
+        _mark_explicit(ns, self.dest)
+
+
+class _ExplicitStoreFalse(argparse.Action):
+    """``store_false``-equivalent action that marks its dest as explicit."""
+
+    def __init__(
+        self, option_strings, dest, nargs=0, const=False, default=True, **kwargs
+    ):
+        if nargs != 0:
+            raise ValueError("nargs for store_false actions must be 0")
+        super().__init__(
+            option_strings,
+            dest,
+            nargs=0,
+            const=const,
+            default=default,
+            **kwargs,
+        )
+
+    def __call__(self, parser, ns, values, option_string=None):
+        setattr(ns, self.dest, self.const)
+        _mark_explicit(ns, self.dest)
+
+
+class _ExplicitCount(argparse.Action):
+    """``count``-equivalent action that marks its dest as explicit."""
+
+    def __init__(self, option_strings, dest, nargs=0, default=None, **kwargs):
+        if nargs != 0:
+            raise ValueError("nargs for count actions must be 0")
+        super().__init__(
+            option_strings,
+            dest,
+            nargs=0,
+            default=default,
+            **kwargs,
+        )
+
+    def __call__(self, parser, ns, values, option_string=None):
+        current = getattr(ns, self.dest, None)
+        setattr(ns, self.dest, 1 if current is None else current + 1)
+        _mark_explicit(ns, self.dest)
+
+
+class _ExplicitAppend(argparse.Action):
+    """``append``-equivalent action that marks its dest as explicit."""
+
+    def __call__(self, parser, ns, values, option_string=None):
+        current = getattr(ns, self.dest, None)
+        items = [] if current is None else list(current)
+        items.append(values)
+        setattr(ns, self.dest, items)
+        _mark_explicit(ns, self.dest)
+
+
 class BaseCLI(ABC):
     """Template-method base for ishlib CLI tools.
 
@@ -127,27 +233,27 @@ class BaseCLI(ABC):
         parser.add_argument(
             "-v",
             "--verbose",
-            action="store_true",
+            action=_ExplicitStoreTrue,
             default=False,
             help="Enable verbose output",
         )
         parser.add_argument(
             "--debug",
-            action="store_true",
+            action=_ExplicitStoreTrue,
             default=False,
             help="Enable debug output",
         )
         parser.add_argument(
             "-q",
             "--quiet",
-            action="store_true",
+            action=_ExplicitStoreTrue,
             default=False,
             help="Suppress non-essential output",
         )
         parser.add_argument(
             "-n",
             "--dry-run",
-            action="store_true",
+            action=_ExplicitStoreTrue,
             default=False,
             help="Show what would be done without making changes",
         )
@@ -155,6 +261,7 @@ class BaseCLI(ABC):
             "--log-file",
             metavar="FILE",
             default=None,
+            action=_ExplicitStore,
             help=(
                 "Append all log output (DEBUG and above) to this file, "
                 "regardless of terminal verbosity."

@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 from typing import Any, List, Optional
 
-from ..cli_base import BaseCLI
+from ..cli_base import BaseCLI, _ExplicitStore
 from .commands.add import AddCommand
 from .commands.apply import ApplyCommand
 from .commands.cd import CdCommand
@@ -62,6 +62,7 @@ class IshfilesCLI(BaseCLI):
             "--home",
             metavar="DIR",
             default=None,
+            action=_ExplicitStore,
             help=(
                 "Override home directory for all default paths "
                 "(source, target, config). Individual -s/-t/-c still override."
@@ -72,6 +73,7 @@ class IshfilesCLI(BaseCLI):
             "--source",
             metavar="DIR",
             default=None,
+            action=_ExplicitStore,
             help="Path to the ishfiles source folder (default: ~/.local/share/ishfiles)",
         )
         parser.add_argument(
@@ -79,6 +81,7 @@ class IshfilesCLI(BaseCLI):
             "--target",
             metavar="DIR",
             default=None,
+            action=_ExplicitStore,
             help="Target directory for dotfile installation (default: $HOME)",
         )
         parser.add_argument(
@@ -86,12 +89,14 @@ class IshfilesCLI(BaseCLI):
             "--config",
             metavar="FILE",
             default=None,
+            action=_ExplicitStore,
             help="Path to the config file (default: ~/.config/ishfiles/config.toml)",
         )
         parser.add_argument(
             "--custom-username",
             metavar="NAME",
             default=None,
+            action=_ExplicitStore,
             help=(
                 "Target user for user-scoped operations (e.g. chsh). "
                 "Also exposed to scripts as ${__ish_username}. "
