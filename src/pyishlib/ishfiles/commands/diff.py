@@ -12,7 +12,6 @@ from pathlib import Path
 from ...cli_command import CliCommand
 from ...diff import print_diff, print_new_file, print_binary_diff
 from ...dotfile import DotFile, ChangeType
-from ...ish_config import IshConfig
 from ...json_merge import canonical_json
 from ..applier import make_applier, make_finder
 
@@ -92,16 +91,16 @@ class DiffCommand(CliCommand):
             help="Show only the names of changed files, not the diff",
         )
 
-    def run(self, cfg: IshConfig) -> int:
-        finder = make_finder(cfg)
-        applier = make_applier(cfg, finder=finder)
+    def run(self) -> int:
+        finder = make_finder(self.cfg)
+        applier = make_applier(self.cfg, finder=finder)
 
-        files = cfg.get_opt("files") or None
+        files = self.cfg.get_opt("files") or None
         rel_files = finder.get_rel_paths(files) if files else None
 
         dotfiles = applier.discover(files=rel_files)
         if not dotfiles:
-            if not cfg.quiet:
+            if not self.cfg.quiet:
                 print("No dotfiles found.")
             return 0
 
@@ -109,11 +108,11 @@ class DiffCommand(CliCommand):
         changes = applier.get_changes(dotfiles)
 
         if not changes:
-            if not cfg.quiet:
+            if not self.cfg.quiet:
                 print("Everything is up to date.")
             return 0
 
-        name_only = cfg.get_opt("name_only", default=False)
+        name_only = self.cfg.get_opt("name_only", default=False)
         for dotfile in changes:
             if name_only:
                 print(dotfile.target)

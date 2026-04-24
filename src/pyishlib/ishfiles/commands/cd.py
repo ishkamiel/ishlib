@@ -9,7 +9,6 @@ import shlex
 import sys
 
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 from ..applier import make_finder
 
 
@@ -22,9 +21,9 @@ class CdCommand(CliCommand):
         "Change into the ishfiles source directory by spawning a new shell there."
     )
 
-    def run(self, cfg: IshConfig) -> int:
+    def run(self) -> int:
         """Exec a new interactive shell in the dotfiles source directory."""
-        finder = make_finder(cfg)
+        finder = make_finder(self.cfg)
         source_dir = finder.source_dir
 
         if not source_dir.is_dir():
@@ -37,7 +36,7 @@ class CdCommand(CliCommand):
         shell_str = os.environ.get("SHELL", "sh")
         shell_argv = shlex.split(shell_str) or ["sh"]
 
-        if cfg.dry_run:
+        if self.cfg.dry_run:
             print(f"cd {source_dir}", file=sys.stderr)
             print(f"exec {shell_str}", file=sys.stderr)
             return 0

@@ -162,14 +162,14 @@ class InitCommand(CliCommand):
             ),
         )
 
-    def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
+    def run(self) -> int:
+        cfg: IshprojectConfig = self.cfg.ishproject_cfg
         branch = cfg.default_branch
         root = Path.cwd()
 
-        rc = self._init_one(args, cfg, branch, root)
+        rc = self._init_one(self.cfg, cfg, branch, root)
 
-        if not getattr(args, "recurse_submodules", False):
+        if not getattr(self.cfg, "recurse_submodules", False):
             return rc
 
         failures: List[str] = []
@@ -181,7 +181,7 @@ class InitCommand(CliCommand):
         except NotAGitRepoError:
             return 1 if failures else rc
 
-        child_args = copy.copy(args)
+        child_args = copy.copy(self.cfg)
         child_args.remote = None
         child_args.recurse_submodules = False
 

@@ -9,7 +9,6 @@ import sys
 
 from ...cli_command import CliCommand
 from ...git_repo import GitRepo, NotAGitRepoError
-from ...ish_config import IshConfig
 from ..applier import make_finder
 
 
@@ -27,8 +26,8 @@ class PushCommand(CliCommand):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         pass
 
-    def run(self, cfg: IshConfig) -> int:
-        finder = make_finder(cfg)
+    def run(self) -> int:
+        finder = make_finder(self.cfg)
 
         if not finder.source_dir.is_dir():
             print(

@@ -193,7 +193,7 @@ class ExternalCommand(CliCommand):
         )
         pl.set_defaults(func=lambda cfg: run_list(cfg))
 
-    def run(self, cfg: IshConfig) -> int:
+    def run(self) -> int:
         """Fallback when no sub-subcommand is given (argparse enforces required=True)."""
         log.warning("Usage: ishfiles external <apply|update|list>")
         return 2

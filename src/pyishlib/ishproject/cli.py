@@ -3,9 +3,10 @@
 """Command-line interface for ishproject.
 
 Entry point for the ``ishproject`` tool.  Passthrough subcommands
-(``add``, ``apply``, ``diff``) forward arguments to ishfiles via
-:mod:`pyishlib.cli_passthrough`; ``init``, ``branch``, ``merge``, and
-``clean-rebase`` are local implementations.
+(``add``, ``apply``, ``diff``, ``commit``, ``pull``, ``push``,
+``status``, ``clean-rebase``) forward arguments to ishfiles via
+:meth:`~pyishlib.cli_command.CliCommand.passthrough`; ``init``,
+``branch``, and ``merge`` are local implementations.
 
 The per-user ishproject config is loaded once at CLI entry via
 :func:`~pyishlib.ishproject.config.load_config` and attached to

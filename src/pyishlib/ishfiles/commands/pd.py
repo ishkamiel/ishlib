@@ -7,7 +7,6 @@ from __future__ import annotations
 import sys
 
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 from ..applier import make_finder
 
 
@@ -22,8 +21,8 @@ class PdCommand(CliCommand):
         "the path before cd-ing into it."
     )
 
-    def run(self, cfg: IshConfig) -> int:
-        finder = make_finder(cfg)
+    def run(self) -> int:
+        finder = make_finder(self.cfg)
         source_dir = finder.source_dir
 
         print(source_dir)

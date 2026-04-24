@@ -8,7 +8,6 @@ import argparse
 import logging
 
 from ...cli_command import CliCommand
-from ...ish_config import IshConfig
 from ..script_logger import ScriptLogger
 from ..script_runner import run_scripts
 from ..script_state import ScriptState
@@ -42,14 +41,14 @@ class RunscriptsCommand(CliCommand):
             ),
         )
 
-    def run(self, cfg: IshConfig) -> int:
-        scripts = cfg.get_opt("scripts") or None
-        force_scripts = cfg.get_opt("force_scripts")
+    def run(self) -> int:
+        scripts = self.cfg.get_opt("scripts") or None
+        force_scripts = self.cfg.get_opt("force_scripts")
 
-        with ScriptLogger(cfg) as slog:
-            state = ScriptState.from_cfg(cfg)
+        with ScriptLogger(self.cfg) as slog:
+            state = ScriptState.from_cfg(self.cfg)
             ret = run_scripts(
-                cfg,
+                self.cfg,
                 scripts=scripts,
                 script_logger=slog,
                 script_state=state,

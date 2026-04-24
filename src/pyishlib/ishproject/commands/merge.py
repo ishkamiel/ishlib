@@ -44,9 +44,9 @@ class MergeCommand(CliCommand):
             help=("Commit message for the merge commit (default: %(default)s)."),
         )
 
-    def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
-        runner = CommandRunner(cfg=IshConfig(dry_run=args.dry_run))
+    def run(self) -> int:
+        cfg: IshprojectConfig = self.cfg.ishproject_cfg
+        runner = CommandRunner(cfg=IshConfig(dry_run=self.cfg.dry_run))
         root = Path.cwd()
 
         try:
@@ -118,7 +118,7 @@ class MergeCommand(CliCommand):
                     "tag.gpgsign=false",
                     "commit",
                     "-m",
-                    args.message,
+                    self.cfg.message,
                 ],
                 work_dir=target,
             )

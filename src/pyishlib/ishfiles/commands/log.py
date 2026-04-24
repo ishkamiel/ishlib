@@ -63,12 +63,12 @@ class LogCommand(CliCommand):
             help="Print the path to the most recent log",
         )
 
-    def run(self, cfg: IshConfig) -> int:
-        logs = _get_logs(cfg)
+    def run(self) -> int:
+        logs = _get_logs(self.cfg)
 
-        list_mode = cfg.get_opt("log_list") or False
-        path_mode = cfg.get_opt("log_path") or False
-        n = cfg.get_opt("log_n") or 1
+        list_mode = self.cfg.get_opt("log_list") or False
+        path_mode = self.cfg.get_opt("log_path") or False
+        n = self.cfg.get_opt("log_n") or 1
 
         if not logs:
             print("No run logs found.")
