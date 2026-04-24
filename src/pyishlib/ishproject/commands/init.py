@@ -150,40 +150,35 @@ class InitCommand(CliCommand):
             ),
         )
 
-    def _finish(
+    def run(self, args: argparse.Namespace) -> int:
+        cfg: IshprojectConfig = args.ishproject_cfg
+        branch = cfg.default_branch
+        root = Path.cwd()
+
+        rc = self._init_project_worktree(args, cfg, branch, root)
+        if rc != 0:
+            return rc
+
+        if args.apply:
+            return self._apply_project_dotfiles(args, cfg, branch, root)
+
+        return 0
+
+    def _init_project_worktree(
         self,
         args: argparse.Namespace,
         cfg: IshprojectConfig,
         branch: str,
         root: Path,
     ) -> int:
-        if not args.apply:
-            return 0
-        source, _target = cfg.resolve_project_paths(root, branch=branch)
-        if not source.is_dir():
-            # Dry-run path: init did not materialise the worktree.
-            log.info("Skipping --apply: worktree not created (dry-run)")
-            return 0
-        rest: List[str] = []
-        if args.dry_run:
-            rest.append("--dry-run")
-        if args.verbose:
-            rest.append("--verbose")
-        if args.quiet:
-            rest.append("--quiet")
-        if getattr(args, "debug", False):
-            rest.append("--debug")
-        log_file = getattr(args, "log_file", None)
-        if log_file:
-            rest.extend(["--log-file", str(log_file)])
-        return run_project_apply(cfg, rest=rest, root=root, branch=branch)
+        """Ensure the ishproject worktree exists at ``.ishlib/ishproject``.
 
-    def run(self, args: argparse.Namespace) -> int:
-        cfg: IshprojectConfig = args.ishproject_cfg
-        branch = cfg.default_branch
-
+        Idempotent: a no-op when the worktree is already present. Otherwise
+        wires up the branch via one of three paths (local branch, remote
+        tracking, or ``--create`` orphan) and appends ``/.ishlib/`` to the
+        project repo's exclude. Returns 0 on success, 1 on failure.
+        """
         runner = CommandRunner(cfg=IshConfig(dry_run=args.dry_run))
-        root = Path.cwd()
 
         try:
             repo = GitRepo.discover(root, require_root=True)
@@ -201,7 +196,7 @@ class InitCommand(CliCommand):
         if source.is_dir():
             log.info("Project dotfiles already present at %s", source)
             repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-            return self._finish(args, cfg, branch, root)
+            return 0
 
         # Local branch already exists — wire it up directly; no remote needed.
         if repo.branch_exists(branch, local_only=True):
@@ -213,7 +208,7 @@ class InitCommand(CliCommand):
                 return 1
             log.info("Created worktree: %s -> branch %s", source, branch)
             repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-            return self._finish(args, cfg, branch, root)
+            return 0
 
         # From here a remote is needed: fetch to refresh refs, then decide.
         try:
@@ -252,7 +247,7 @@ class InitCommand(CliCommand):
                 source,
             )
             repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-            return self._finish(args, cfg, branch, root)
+            return 0
 
         if not args.create:
             log.error(
@@ -298,4 +293,37 @@ class InitCommand(CliCommand):
             source,
         )
         repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-        return self._finish(args, cfg, branch, root)
+        return 0
+
+    def _apply_project_dotfiles(
+        self,
+        args: argparse.Namespace,
+        cfg: IshprojectConfig,
+        branch: str,
+        root: Path,
+    ) -> int:
+        """Forward to ``ishfiles apply`` on the freshly-initialised worktree.
+
+        Called only when ``--apply`` was set and the init step succeeded.
+        Forwards ``-n/-v/-q/--debug/--log-file`` so the nested
+        ``setup_logging()`` keeps the same verbosity and file sink.
+        Skipped with a log message when the worktree does not exist
+        (e.g. ``--dry-run`` did not materialise it).
+        """
+        source, _target = cfg.resolve_project_paths(root, branch=branch)
+        if not source.is_dir():
+            log.info("Skipping --apply: worktree not created (dry-run)")
+            return 0
+        rest: List[str] = []
+        if args.dry_run:
+            rest.append("--dry-run")
+        if args.verbose:
+            rest.append("--verbose")
+        if args.quiet:
+            rest.append("--quiet")
+        if getattr(args, "debug", False):
+            rest.append("--debug")
+        log_file = getattr(args, "log_file", None)
+        if log_file:
+            rest.extend(["--log-file", str(log_file)])
+        return run_project_apply(cfg, rest=rest, root=root, branch=branch)
