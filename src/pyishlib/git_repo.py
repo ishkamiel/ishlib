@@ -283,6 +283,39 @@ class GitRepo:
         )
         return [p for p in result.stdout.split("\x00") if p]
 
+    def list_submodules(self, *, recursive: bool = True) -> list:
+        """Return absolute paths of every initialised submodule.
+
+        Wraps ``git submodule foreach [--recursive] --quiet``. Uninitialised
+        submodules are silently skipped (``foreach`` already excludes them);
+        with ``recursive=True`` nested submodules are traversed too.
+        Read-only probe; bypasses ``CommandRunner``'s dry-run simulation
+        so enumeration works under ``--dry-run``. Returns an empty list
+        when the repo has no submodules or when ``git submodule foreach``
+        fails for any reason.
+        """
+        cmd = ["submodule", "foreach"]
+        if recursive:
+            cmd.append("--recursive")
+        cmd.extend(["--quiet", 'printf "%s\\n" "$toplevel/$sm_path"'])
+        result = self._run_ref_query(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            log.warning(
+                "Failed to enumerate submodules under %s: %s",
+                self.work_tree,
+                (result.stderr or "").strip(),
+            )
+            return []
+        paths = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            p = Path(line)
+            if p.is_dir():
+                paths.append(p)
+        return paths
+
     def status_porcelain(self, *, include_ignored: bool = False) -> dict:
         """Return the working-tree status as ``{relative_path: XY_code}``.
 
