@@ -16,7 +16,6 @@ sys.path.insert(
 )
 
 from pyishlib.ishfiles.externals_config import (
-    ExternalSpec,
     load_externals,
     parse_refresh_period,
 )

@@ -9,7 +9,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
@@ -18,7 +17,6 @@ sys.path.insert(
 from pyishlib.ishfiles.script_runner import find_scripts, scan_scripts, run_scanned_scripts
 from pyishlib.ishfiles.script_state import ScriptState
 from pyishlib.ish_config import IshConfig
-from pyishlib.dotfile_context import DotfileContext
 
 
 def _make_cfg(source: str, target: str = None, data_template: dict = None, verbose: bool = False):

@@ -14,7 +14,6 @@ All tests in this module are skipped:
 from __future__ import annotations
 
 import importlib.util
-import os
 import subprocess
 import sys
 import tempfile

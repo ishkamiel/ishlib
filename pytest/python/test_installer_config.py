@@ -13,9 +13,9 @@ sys.path.insert(
 )
 
 try:
-    import cerberus
-    import jsonschema
-    import yaml
+    import cerberus  # noqa: F401
+    import jsonschema  # noqa: F401
+    import yaml  # noqa: F401
 
     HAS_VALIDATION_DEPS = True
 except ImportError:
