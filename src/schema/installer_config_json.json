@@ -16,6 +16,9 @@
         "cmd": {
           "type": "string"
         },
+        "command_version": {
+          "type": "string"
+        },
         "custom": {
           "type": "string"
         },
@@ -27,6 +30,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "min_version": {
+          "type": "string"
         },
         "only_on": {
           "items": {

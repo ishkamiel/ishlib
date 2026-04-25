@@ -109,6 +109,24 @@ class TestValidatePackages:
         assert err is not None
         assert "test.toml" in err
 
+    def test_valid_min_version_and_command_version(self):
+        packages = {
+            "ripgrep": {
+                "cmd": "rg",
+                "min_version": "13.0.0",
+                "command_version": "rg --version",
+            }
+        }
+        assert validate_packages(packages) is None
+
+    def test_invalid_min_version_type(self):
+        err = validate_packages({"foo": {"min_version": 1.23}})
+        assert err is not None
+
+    def test_invalid_command_version_type(self):
+        err = validate_packages({"foo": {"command_version": ["rg", "--version"]}})
+        assert err is not None
+
 
 # ---------------------------------------------------------------------------
 # validate_metadata
