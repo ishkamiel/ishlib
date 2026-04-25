@@ -4,7 +4,7 @@ runtime = [
 ]
 
 extras = [
-  "shtab",
+  "shtab>=1.8.0",
   "cerberus",
   "jsonschema",
   "PyYAML",
