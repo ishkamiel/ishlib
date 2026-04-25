@@ -2684,6 +2684,44 @@ class TestStatusCommand:
         assert "Other source changes:" in captured.out
         assert "ishscripts" in captured.out
 
+    def test_ignored_file_not_shown_by_default(self, capsys):
+        """Git-ignored paths do not appear in Other source changes by default."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            # *.secret is gitignored; file is in the reserved ishscripts/ dir so
+            # ishfiles never treats it as a managed dotfile.  A tracked sibling
+            # is committed so git reports the secret file individually (not
+            # collapsing the whole dir as !! ishscripts/).
+            _make_file(Path(src) / ".gitignore", "*.secret\n")
+            _make_file(Path(src) / "ishscripts" / "10_setup.sh", "#!/bin/bash\n")
+            _git_add_and_commit(
+                Path(src), "dot_zshrc", ".gitignore", "ishscripts/10_setup.sh"
+            )
+            _make_file(Path(src) / "ishscripts" / "setup.secret", "token=x\n")
+            rc, captured = self._run(src, tgt, capsys)
+        assert rc == 0
+        assert "setup.secret" not in captured.out
+
+    def test_include_ignored_flag_surfaces_ignored_entries(self, capsys):
+        """--include-ignored makes git-ignored paths appear under Other source changes."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _init_git_repo(Path(src))
+            _make_file(Path(src) / "dot_zshrc", "export X=1\n")
+            _make_file(Path(src) / ".gitignore", "*.secret\n")
+            _make_file(Path(src) / "ishscripts" / "10_setup.sh", "#!/bin/bash\n")
+            _git_add_and_commit(
+                Path(src), "dot_zshrc", ".gitignore", "ishscripts/10_setup.sh"
+            )
+            _make_file(Path(src) / "ishscripts" / "setup.secret", "token=x\n")
+            rc = cli_main(
+                ["--source", src, "--target", tgt, "status", "--include-ignored"]
+            )
+            captured = capsys.readouterr()
+        assert rc == 0
+        assert "Other source changes:" in captured.out
+        assert "setup.secret" in captured.out
+
 
 # ---------------------------------------------------------------------------
 # commit/push/pull subcommands

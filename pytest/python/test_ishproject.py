@@ -1671,6 +1671,8 @@ class TestStatusPassthrough(_ChdirTestCase):
         self.assertIn("--target", argv)
         self.assertIn("status", argv)
         self.assertLess(argv.index("--source"), argv.index("status"))
+        self.assertIn("--include-ignored", argv)
+        self.assertGreater(argv.index("--include-ignored"), argv.index("status"))
 
 
 class TestCommitPassthrough(_ChdirTestCase):
