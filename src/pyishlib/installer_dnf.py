@@ -8,6 +8,7 @@ from subprocess import CalledProcessError
 from typing import Any, Optional, Sequence
 
 from .installer_base import InstallerBase
+from .version_check import meets_min_version
 
 log = logging.getLogger(__name__)
 
@@ -30,21 +31,41 @@ class InstallerDnf(InstallerBase):
         return True
 
     def is_pkg_installed(self, pkg: dict) -> bool:
-        """Check if a dnf package is installed via rpm -q"""
+        """Check if a dnf package is installed via ``rpm -q``.
+
+        When ``min_version`` is set on the package, the installed
+        ``%{VERSION}`` is read in the same query and compared.  An
+        installed package below ``min_version`` is reported as not
+        installed so the caller proceeds to install a newer build.
+        """
         if not self._guard_can_install(pkg):
             return False
 
         try:
             result: subprocess.CompletedProcess = self.runner.run(
-                ["rpm", "-q", pkg["dnf"]],
+                ["rpm", "-q", "--qf", "%{VERSION}\n", pkg["dnf"]],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            return result.returncode == 0
         except CalledProcessError as e:
             log.debug("rpm -q non-zero exit for %s: %s", pkg["name"], e)
             return False
+        if result.returncode != 0:
+            return False
+        min_version = pkg.get("min_version")
+        if min_version is None:
+            return True
+        ver = result.stdout.decode("utf-8", errors="replace").strip()
+        if meets_min_version(ver, min_version):
+            return True
+        log.debug(
+            "Package %s installed at %s, below min_version %s",
+            pkg["name"],
+            ver,
+            min_version,
+        )
+        return False
 
     def is_pkg_available(self, pkg: Optional[Any] = None) -> bool:
         """Return True if *pkg* is known to the local dnf repo index."""

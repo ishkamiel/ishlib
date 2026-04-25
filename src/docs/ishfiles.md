@@ -124,7 +124,7 @@ min_version = "2.30"
 | `pip` | string | PyPI package name |
 | `winget` | string | Windows Package Manager ID |
 | `cmd` | string | Command name used to check if already installed |
-| `min_version` | string | Minimum acceptable version reported by `cmd`; when set, the cmd check is authoritative (backends are not consulted) |
+| `min_version` | string | Minimum acceptable version. When `cmd` is set, the version comes from running the cmd-based probe; otherwise the apt/dnf backends consult `dpkg-query`/`rpm -q` for the installed version. A package below `min_version` is treated as not installed so the appropriate installer runs |
 | `command_version` | string | Command line that prints the version (defaults to `<cmd> --version`); both stdout and stderr are inspected |
 | `pref` | list | Preferred installer order (e.g. `["cargo", "apt"]`) |
 | `ubuntu` | bool | Only install on Ubuntu |
