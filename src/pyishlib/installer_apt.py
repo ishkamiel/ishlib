@@ -7,6 +7,7 @@ import subprocess
 from typing import Any, Optional, Sequence
 
 from .installer_base import InstallerBase
+from .version_check import meets_min_version
 
 log = logging.getLogger(__name__)
 
@@ -35,20 +36,52 @@ class InstallerApt(InstallerBase):
         literal package name via ``dpkg-query``, then falling back to
         ``apt-cache showpkg`` to find providing packages (e.g.
         ``gnome-extensions-app`` → ``gnome-shell-extension-prefs``).
+
+        When ``min_version`` is set on the package, the installed
+        version is read via ``dpkg-query`` and compared.  An installed
+        package below ``min_version`` is treated as not installed so
+        ``apt install`` runs and pulls a newer candidate.
         """
         if not self._guard_can_install(pkg):
             return False
 
         apt_name = pkg["apt"]
+        min_version = pkg.get("min_version")
 
         if self._dpkg_is_installed(apt_name):
-            return True
+            return self._version_ok(pkg, apt_name, min_version)
 
         for provider in self._apt_reverse_provides(apt_name):
             if self._dpkg_is_installed(provider):
                 log.debug("Package %s installed via provider %s", pkg["name"], provider)
-                return True
+                return self._version_ok(pkg, provider, min_version)
 
+        return False
+
+    def _version_ok(
+        self, pkg: dict, dpkg_name: str, min_version: Optional[str]
+    ) -> bool:
+        """Return True if *dpkg_name*'s installed version satisfies *min_version*.
+
+        With *min_version* unset, returns True (installed is enough).
+        """
+        if min_version is None:
+            return True
+        ver = self._dpkg_version(dpkg_name)
+        if ver is None:
+            log.debug(
+                "Could not read dpkg version for %s; treating as not installed",
+                pkg["name"],
+            )
+            return False
+        if meets_min_version(ver, min_version):
+            return True
+        log.debug(
+            "Package %s installed at %s, below min_version %s",
+            pkg["name"],
+            ver,
+            min_version,
+        )
         return False
 
     def is_pkg_available(self, pkg: Optional[Any] = None) -> bool:
@@ -91,6 +124,31 @@ class InstallerApt(InstallerBase):
             )
         except Exception:
             return False
+
+    def _dpkg_version(self, pkg_name: str) -> Optional[str]:
+        """Return the installed version of *pkg_name* per dpkg, or None.
+
+        The Debian epoch (e.g. ``2:`` in ``2:14.1.0-1``) is stripped so
+        the returned string matches the upstream version that
+        ``min_version`` is most likely declared against.
+        """
+        try:
+            result = self.runner.run(
+                ["dpkg-query", "-W", "--showformat=${Version}", pkg_name],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0:
+            return None
+        ver = result.stdout.decode("utf-8", errors="replace").strip()
+        if not ver:
+            return None
+        if ":" in ver:
+            ver = ver.split(":", 1)[1]
+        return ver
 
     def _apt_reverse_provides(self, pkg_name: str) -> list:
         """Return package names that ``Provides: <pkg_name>`` in the apt index."""

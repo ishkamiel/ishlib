@@ -231,6 +231,64 @@ class TestInstallerApt:
         ns = apt.namespace
         assert hasattr(ns, "is_pkg_available")
 
+    def test_is_pkg_installed_min_version_ok(self):
+        """Installed apt package whose version meets min_version → True."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "git", "apt": "git", "min_version": "2.30"}
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "dpkg-query" and "${Status}" in cmd[2]:
+                return subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout=b"install ok installed\n", stderr=b""
+                )
+            if cmd[0] == "dpkg-query" and "${Version}" in cmd[2]:
+                return subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout=b"1:2.40.1-1ubuntu1", stderr=b""
+                )
+            return subprocess.CompletedProcess(args=[], returncode=1)
+
+        runner.run = mock_run
+        assert apt.is_pkg_installed(pkg) is True
+
+    def test_is_pkg_installed_min_version_too_low(self):
+        """Installed apt package below min_version → False (so install runs)."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "git", "apt": "git", "min_version": "2.40"}
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "dpkg-query" and "${Status}" in cmd[2]:
+                return subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout=b"install ok installed\n", stderr=b""
+                )
+            if cmd[0] == "dpkg-query" and "${Version}" in cmd[2]:
+                return subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout=b"1:2.30.0-1ubuntu1", stderr=b""
+                )
+            return subprocess.CompletedProcess(args=[], returncode=1)
+
+        runner.run = mock_run
+        assert apt.is_pkg_installed(pkg) is False
+
+    def test_is_pkg_installed_no_min_version_skips_version_query(self):
+        """Without min_version, _dpkg_version is not consulted."""
+        runner = make_runner({"apt": "/usr/bin/apt"})
+        apt = InstallerApt(runner)
+        pkg = {"name": "git", "apt": "git"}
+        calls = []
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"install ok installed\n", stderr=b""
+            )
+
+        runner.run = mock_run
+        assert apt.is_pkg_installed(pkg) is True
+        # No call should ask for ${Version}
+        assert not any("${Version}" in c[2] for c in calls if len(c) > 2)
+
 
 class TestInstallerDnf:
     def test_is_pkg_available_true(self):
@@ -266,6 +324,51 @@ class TestInstallerDnf:
         dnf = InstallerDnf(make_runner({}))
         pkg = {"name": "tldr", "dnf": "tldr"}
         assert dnf.is_pkg_available(pkg) is False
+
+    def test_is_pkg_installed_min_version_ok(self):
+        """Installed rpm whose %{VERSION} meets min_version → True."""
+        runner = make_runner({"dnf": "/usr/bin/dnf"})
+        dnf = InstallerDnf(runner)
+        pkg = {"name": "git", "dnf": "git", "min_version": "2.30"}
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"2.40.1\n", stderr=b""
+            ),
+        ) as mock_run:
+            assert dnf.is_pkg_installed(pkg) is True
+            mock_run.assert_called_once()
+            argv = mock_run.call_args.args[0]
+            assert argv[:4] == ["rpm", "-q", "--qf", "%{VERSION}\n"]
+
+    def test_is_pkg_installed_min_version_too_low(self):
+        """Installed rpm below min_version → False."""
+        runner = make_runner({"dnf": "/usr/bin/dnf"})
+        dnf = InstallerDnf(runner)
+        pkg = {"name": "git", "dnf": "git", "min_version": "2.40"}
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"2.30.0\n", stderr=b""
+            ),
+        ):
+            assert dnf.is_pkg_installed(pkg) is False
+
+    def test_is_pkg_installed_no_min_version(self):
+        """Without min_version, returncode 0 alone is enough."""
+        runner = make_runner({"dnf": "/usr/bin/dnf"})
+        dnf = InstallerDnf(runner)
+        pkg = {"name": "git", "dnf": "git"}
+        with patch.object(
+            runner,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=b"2.30.0\n", stderr=b""
+            ),
+        ):
+            assert dnf.is_pkg_installed(pkg) is True
 
 
 class TestParseReverseProvides:
