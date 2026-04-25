@@ -179,9 +179,7 @@ class TestInstallerApt:
         runner = make_runner({"apt": "/usr/bin/apt"})
         apt = InstallerApt(runner)
         pkg = {"name": "tldr", "apt": "tldr"}
-        showpkg_out = (
-            b"Package: tldr\nVersions: \n0.5.0-1 (/var/lib/apt/lists/...)\n\n"
-        )
+        showpkg_out = b"Package: tldr\nVersions: \n0.5.0-1 (/var/lib/apt/lists/...)\n\n"
         with patch.object(
             runner,
             "run",
@@ -256,7 +254,10 @@ class TestInstallerDnf:
             runner,
             "run",
             return_value=subprocess.CompletedProcess(
-                args=[], returncode=1, stdout=b"Error: No matching Packages\n", stderr=b""
+                args=[],
+                returncode=1,
+                stdout=b"Error: No matching Packages\n",
+                stderr=b"",
             ),
         ):
             assert dnf.is_pkg_available(pkg) is False
@@ -274,8 +275,7 @@ class TestParseReverseProvides:
 
     def test_multiple_providers(self):
         output = (
-            "Package: virt\nVersions: \n\n"
-            "Reverse Provides:\npkg-a 1.0\npkg-b 2.0\n\n"
+            "Package: virt\nVersions: \n\nReverse Provides:\npkg-a 1.0\npkg-b 2.0\n\n"
         )
         assert _parse_reverse_provides(output) == ["pkg-a", "pkg-b"]
 
@@ -301,10 +301,7 @@ class TestShowpkgHasVersionsOrProviders:
         assert _showpkg_has_versions_or_providers(output) is True
 
     def test_unknown_package_empty(self):
-        output = (
-            "Package: unknown\nVersions: \n\n"
-            "Reverse Provides: \n\n"
-        )
+        output = "Package: unknown\nVersions: \n\nReverse Provides: \n\n"
         assert _showpkg_has_versions_or_providers(output) is False
 
 
@@ -538,7 +535,9 @@ class TestInstallerRegistration:
 
     def test_registered_backends_count(self):
         installer = make_installer(which_returns={})
-        assert len(installer._backends) == 7  # apt, dnf, cargo, pip, brew, winget, custom
+        assert (
+            len(installer._backends) == 7
+        )  # apt, dnf, cargo, pip, brew, winget, custom
 
     def test_get_backend_returns_instance(self):
         installer = make_installer(which_returns={})

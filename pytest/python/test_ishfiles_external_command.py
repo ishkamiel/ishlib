@@ -73,20 +73,21 @@ class TestSeedContext(unittest.TestCase):
 
 class TestApplyExternalsStageNoConfig(unittest.TestCase):
     def test_returns_zero_when_no_externals_toml(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             cfg = _make_cfg(src, tgt)
             ret = apply_externals_stage(cfg)
             assert ret == 0
 
     def test_paths_filter_empty_list_warns_and_returns_zero(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
-            _write_externals_toml(src, """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _write_externals_toml(
+                src,
+                """
 [".fzf"]
 url = "https://example.com/fzf.git"
 revision = "v1.0.0"
-""")
+""",
+            )
             cfg = _make_cfg(src, tgt)
             with self.assertLogs(level="WARNING"):
                 ret = apply_externals_stage(cfg, paths=[".nonexistent"])
@@ -97,11 +98,14 @@ class TestApplyExternalsStageMocked(unittest.TestCase):
     """apply_externals_stage with mocked ExternalsEngine."""
 
     def _run_stage(self, src, tgt, fetch_commit="abc123"):
-        _write_externals_toml(src, """
+        _write_externals_toml(
+            src,
+            """
 [".fzf"]
 url = "https://example.com/fzf.git"
 revision = "v1.0.0"
-""")
+""",
+        )
         cfg = _make_cfg(src, tgt)
 
         mock_fetch = MagicMock()
@@ -114,9 +118,7 @@ revision = "v1.0.0"
         mock_apply.copied = 3
         mock_apply.skipped = 1
 
-        with patch(
-            "pyishlib.ishfiles.commands.external.ExternalsEngine"
-        ) as MockEngine:
+        with patch("pyishlib.ishfiles.commands.external.ExternalsEngine") as MockEngine:
             engine_instance = MockEngine.return_value
             engine_instance.fetch.return_value = mock_fetch
             engine_instance.apply.return_value = mock_apply
@@ -125,23 +127,22 @@ revision = "v1.0.0"
         return ret, cfg
 
     def test_returns_zero_on_success(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             ret, _ = self._run_stage(src, tgt)
             assert ret == 0
 
     def test_seeds_context_after_apply(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _, cfg = self._run_stage(src, tgt, fetch_commit="deadbeef")
             ctx = cfg.context.as_dict()
             assert ctx.get("ext_fzf_revision") == "v1.0.0"
             assert ctx.get("ext_fzf_commit_sha") == "deadbeef"
 
     def test_path_filter_restricts_which_specs_are_processed(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
-            _write_externals_toml(src, """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _write_externals_toml(
+                src,
+                """
 [".fzf"]
 url = "https://example.com/fzf.git"
 revision = "v1.0.0"
@@ -149,7 +150,8 @@ revision = "v1.0.0"
 [".pyenv"]
 url = "https://example.com/pyenv.git"
 revision = "v2.0.0"
-""")
+""",
+            )
             cfg = _make_cfg(src, tgt)
 
             with patch(
@@ -165,13 +167,15 @@ revision = "v2.0.0"
                 assert engine_instance.fetch.call_count == 1
 
     def test_fetch_error_returns_nonzero(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
-            _write_externals_toml(src, """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _write_externals_toml(
+                src,
+                """
 [".fzf"]
 url = "https://example.com/fzf.git"
 revision = "v1.0.0"
-""")
+""",
+            )
             cfg = _make_cfg(src, tgt)
 
             with patch(
@@ -188,13 +192,15 @@ class TestRunUpdateYes(unittest.TestCase):
     """external update --yes rewrites revision and re-fetches."""
 
     def test_update_yes_rewrites_and_fetches(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
-            _write_externals_toml(src, """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _write_externals_toml(
+                src,
+                """
 [".fzf"]
 url = "https://example.com/fzf.git"
 revision = "v0.62.0"
-""")
+""",
+            )
             cfg = _make_cfg(src, tgt)
             # Simulate CLI flag
             cfg.set_default("paths", [])
@@ -209,6 +215,7 @@ revision = "v0.62.0"
                 engine_instance = MockEngine.return_value
 
                 from pyishlib.ishfiles.externals import UpdateCandidate
+
                 engine_instance.check_update.return_value = UpdateCandidate(
                     path=".fzf",
                     current_rev="v0.62.0",
@@ -223,13 +230,15 @@ revision = "v0.62.0"
             engine_instance.fetch.assert_called_once()
 
     def test_update_no_answer_leaves_config_unchanged(self):
-        with tempfile.TemporaryDirectory() as src, \
-             tempfile.TemporaryDirectory() as tgt:
-            _write_externals_toml(src, """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _write_externals_toml(
+                src,
+                """
 [".fzf"]
 url = "https://example.com/fzf.git"
 revision = "v0.62.0"
-""")
+""",
+            )
             cfg = _make_cfg(src, tgt)
             cfg.set_default("paths", [])
             cfg.set_default("update_yes", False)
@@ -237,11 +246,14 @@ revision = "v0.62.0"
 
             from pyishlib.ishfiles.commands.external import run_update
 
-            with patch(
-                "pyishlib.ishfiles.commands.external.ExternalsEngine"
-            ) as MockEngine, patch(
-                "pyishlib.ishfiles.commands.external.prompt_yes_no_always"
-            ) as mock_prompt:
+            with (
+                patch(
+                    "pyishlib.ishfiles.commands.external.ExternalsEngine"
+                ) as MockEngine,
+                patch(
+                    "pyishlib.ishfiles.commands.external.prompt_yes_no_always"
+                ) as mock_prompt,
+            ):
                 engine_instance = MockEngine.return_value
 
                 from pyishlib.ishfiles.externals import UpdateCandidate

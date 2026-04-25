@@ -381,9 +381,7 @@ class TestDryRunAndFailures(unittest.TestCase):
                 patch.object(ds, "is_windows", return_value=False),
                 patch.object(Path, "exists", return_value=False),
             )
-            with self.assertLogs(
-                "pyishlib.ishfiles.default_shell", level="INFO"
-            ) as cm:
+            with self.assertLogs("pyishlib.ishfiles.default_shell", level="INFO") as cm:
                 self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
         self.assertTrue(
             any("does not exist" in m for m in cm.output),
@@ -400,9 +398,7 @@ class TestDryRunAndFailures(unittest.TestCase):
                 patch.object(ds, "is_windows", return_value=False),
                 patch.object(ds.shutil, "which", return_value=None),
             )
-            with self.assertLogs(
-                "pyishlib.ishfiles.default_shell", level="INFO"
-            ) as cm:
+            with self.assertLogs("pyishlib.ishfiles.default_shell", level="INFO") as cm:
                 self.assertEqual(ds.apply_default_shell_stage(cfg), 0)
         self.assertTrue(
             any("not found on PATH" in m for m in cm.output),
@@ -501,9 +497,7 @@ class TestCustomUsername(unittest.TestCase):
         """_current_login_shell falls back to getpwuid when username is None."""
         import pwd
 
-        fake_entry = pwd.struct_passwd(
-            ("root", "x", 0, 0, "", "/root", "/bin/bash")
-        )
+        fake_entry = pwd.struct_passwd(("root", "x", 0, 0, "", "/root", "/bin/bash"))
         with patch.object(pwd, "getpwuid", return_value=fake_entry) as mock_getpwuid:
             with patch.object(pwd, "getpwnam") as mock_getpwnam:
                 result = ds._current_login_shell()

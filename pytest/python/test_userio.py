@@ -83,7 +83,9 @@ class TestPromptChoiceInteractive(unittest.TestCase):
         with patch("sys.stdin.isatty", return_value=True):
             with patch("sys.stdin.readline", return_value="\n"):
                 with patch("sys.stdout.write"), patch("sys.stdout.flush"):
-                    result = prompt_choice("Pick", ["min", "def", "personal"], default="personal")
+                    result = prompt_choice(
+                        "Pick", ["min", "def", "personal"], default="personal"
+                    )
         assert result == "personal"
 
     def test_enter_without_default_uses_first(self):
@@ -114,22 +116,26 @@ class TestGetchCtrlC(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "POSIX-only test")
     def test_posix_ctrl_c_raises(self):
         """When stdin delivers \\x03, getch raises KeyboardInterrupt."""
-        with patch("sys.stdin.fileno", return_value=0), \
-             patch("termios.tcgetattr", return_value=[]), \
-             patch("termios.tcsetattr"), \
-             patch("tty.setcbreak"), \
-             patch("sys.stdin.read", return_value="\x03"):
+        with (
+            patch("sys.stdin.fileno", return_value=0),
+            patch("termios.tcgetattr", return_value=[]),
+            patch("termios.tcsetattr"),
+            patch("tty.setcbreak"),
+            patch("sys.stdin.read", return_value="\x03"),
+        ):
             with self.assertRaises(KeyboardInterrupt):
                 getch()
 
     @unittest.skipIf(sys.platform == "win32", "POSIX-only test")
     def test_posix_normal_char_returned(self):
         """Normal characters are returned unchanged."""
-        with patch("sys.stdin.fileno", return_value=0), \
-             patch("termios.tcgetattr", return_value=[]), \
-             patch("termios.tcsetattr"), \
-             patch("tty.setcbreak"), \
-             patch("sys.stdin.read", return_value="y"):
+        with (
+            patch("sys.stdin.fileno", return_value=0),
+            patch("termios.tcgetattr", return_value=[]),
+            patch("termios.tcsetattr"),
+            patch("tty.setcbreak"),
+            patch("sys.stdin.read", return_value="y"),
+        ):
             assert getch() == "y"
 
 

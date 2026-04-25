@@ -14,14 +14,21 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
-from pyishlib.ishfiles.script_runner import find_scripts, scan_scripts, run_scanned_scripts
+from pyishlib.ishfiles.script_runner import (
+    find_scripts,
+    scan_scripts,
+    run_scanned_scripts,
+)
 from pyishlib.ishfiles.script_state import ScriptState
 from pyishlib.ish_config import IshConfig
 
 
-def _make_cfg(source: str, target: str = None, data_template: dict = None, verbose: bool = False):
+def _make_cfg(
+    source: str, target: str = None, data_template: dict = None, verbose: bool = False
+):
     """Build a minimal IshConfig-like object for tests."""
     import logging as _logging
+
     cfg = IshConfig(
         dry_run=True,
         log_level=_logging.INFO if verbose else _logging.WARNING,
@@ -33,7 +40,9 @@ def _make_cfg(source: str, target: str = None, data_template: dict = None, verbo
     return cfg
 
 
-def _write_script(scripts_dir: Path, name: str, content: str, metadata: str = "") -> Path:
+def _write_script(
+    scripts_dir: Path, name: str, content: str, metadata: str = ""
+) -> Path:
     """Write a script file with optional __ISH__ metadata block."""
     scripts_dir.mkdir(parents=True, exist_ok=True)
     full = ""
@@ -45,7 +54,9 @@ def _write_script(scripts_dir: Path, name: str, content: str, metadata: str = ""
     return p
 
 
-def _write_toml_script(scripts_dir: Path, name: str, toml_block: str, body: str = "") -> Path:
+def _write_toml_script(
+    scripts_dir: Path, name: str, toml_block: str, body: str = ""
+) -> Path:
     """Write a script with a shell-heredoc __ISH__ metadata block."""
     scripts_dir.mkdir(parents=True, exist_ok=True)
     # Use the shell heredoc format recognised by ish_metadata.read_metadata.
@@ -100,9 +111,7 @@ class TestRunWhenGating(unittest.TestCase):
     def test_run_always_runs_every_time(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts_dir = Path(tmp) / "ishscripts"
-            script = _write_toml_script(
-                scripts_dir, "always.sh", 'run_when = "always"'
-            )
+            script = _write_toml_script(scripts_dir, "always.sh", 'run_when = "always"')
             cfg = _make_cfg(tmp)
             state = self._make_state(tmp)
             state.record("always.sh", script.read_text())
@@ -115,9 +124,7 @@ class TestRunWhenGating(unittest.TestCase):
     def test_run_once_skipped_after_first_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts_dir = Path(tmp) / "ishscripts"
-            script = _write_toml_script(
-                scripts_dir, "once.sh", 'run_when = "once"'
-            )
+            script = _write_toml_script(scripts_dir, "once.sh", 'run_when = "once"')
             cfg = _make_cfg(tmp, verbose=True)
             state = self._make_state(tmp)
             state.record("once.sh", "anything")
@@ -131,9 +138,7 @@ class TestRunWhenGating(unittest.TestCase):
     def test_run_once_runs_when_not_seen(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts_dir = Path(tmp) / "ishscripts"
-            script = _write_toml_script(
-                scripts_dir, "once.sh", 'run_when = "once"'
-            )
+            script = _write_toml_script(scripts_dir, "once.sh", 'run_when = "once"')
             cfg = _make_cfg(tmp)
             state = self._make_state(tmp)
             # No prior recording
@@ -146,9 +151,7 @@ class TestRunWhenGating(unittest.TestCase):
     def test_force_scripts_overrides_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts_dir = Path(tmp) / "ishscripts"
-            script = _write_toml_script(
-                scripts_dir, "once.sh", 'run_when = "once"'
-            )
+            script = _write_toml_script(scripts_dir, "once.sh", 'run_when = "once"')
             cfg = _make_cfg(tmp)
             state = self._make_state(tmp)
             state.record("once.sh", "anything")
@@ -171,6 +174,7 @@ class TestRunWhenGating(unittest.TestCase):
             state = self._make_state(tmp)
             # Record the preprocessed content (same as what run_scanned_scripts uses)
             from pyishlib.file_preprocessor import FilePreprocessor
+
             pp = FilePreprocessor()
             preprocessed, _ = pp.preprocess_file(script)
             state.record("onchange.sh", preprocessed)
@@ -195,9 +199,7 @@ class TestScanScriptsTagFilter(unittest.TestCase):
     def test_script_with_matching_bool_tag_included(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts_dir = Path(tmp) / "ishscripts"
-            _write_toml_script(
-                scripts_dir, "work.sh", 'tags = ["isWork"]'
-            )
+            _write_toml_script(scripts_dir, "work.sh", 'tags = ["isWork"]')
             cfg = _make_cfg(tmp, data_template={"isWork": {"type": "bool"}})
             cfg.context.set("isWork", "true")
             kept, _ = scan_scripts(cfg)
@@ -206,9 +208,7 @@ class TestScanScriptsTagFilter(unittest.TestCase):
     def test_script_with_non_matching_bool_tag_excluded(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts_dir = Path(tmp) / "ishscripts"
-            _write_toml_script(
-                scripts_dir, "work.sh", 'tags = ["isWork"]'
-            )
+            _write_toml_script(scripts_dir, "work.sh", 'tags = ["isWork"]')
             cfg = _make_cfg(tmp, data_template={"isWork": {"type": "bool"}})
             cfg.context.set("isWork", "false")
             kept, _ = scan_scripts(cfg)

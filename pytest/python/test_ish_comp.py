@@ -177,23 +177,32 @@ class TestIshConfig:
         assert exc_info.value.code == 42
 
     def test_prompt_yes_no_always_yes(self):
-        with patch("pyishlib.userio.getch", return_value="y"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="y"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = prompt_yes_no_always("Continue?")
         assert result == Choice.YES
 
     def test_prompt_yes_no_always_no(self):
-        with patch("pyishlib.userio.getch", return_value="n"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="n"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = prompt_yes_no_always("Continue?")
         assert result == Choice.NO
 
     def test_prompt_yes_no_always_always(self):
-        with patch("pyishlib.userio.getch", return_value="a"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="a"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = prompt_yes_no_always("Continue?")
         assert result == Choice.ALWAYS
 

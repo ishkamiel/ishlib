@@ -63,9 +63,7 @@ class TestComposeArgv(unittest.TestCase):
         )
         # `--dry-run` is top-level on the target parser, so it sits
         # before the subcommand; the positional `foo.txt` stays after.
-        self.assertEqual(
-            argv, ["--source", "/x", "--dry-run", "apply", "foo.txt"]
-        )
+        self.assertEqual(argv, ["--source", "/x", "--dry-run", "apply", "foo.txt"])
 
     def test_target_parser_abbrev_matches_target(self) -> None:
         target_parser = argparse.ArgumentParser()  # default allow_abbrev=True
@@ -73,9 +71,7 @@ class TestComposeArgv(unittest.TestCase):
         sub = target_parser.add_subparsers(dest="cmd")
         sub.add_parser("apply")
 
-        argv = _compose_argv(
-            "apply", ["--ver"], target_parser=target_parser
-        )
+        argv = _compose_argv("apply", ["--ver"], target_parser=target_parser)
         self.assertEqual(argv, ["--ver", "apply"])
 
 
@@ -227,9 +223,7 @@ class TestPassthroughMethod(unittest.TestCase):
     def test_compose_passthrough_argv_returns_list(self) -> None:
         cmd = _PassThroughCommand()
         cmd.cfg = _ExplicitAwareCfg({"debug"})
-        argv = cmd.compose_passthrough_argv(
-            "apply", (), global_args=["--source", "/x"]
-        )
+        argv = cmd.compose_passthrough_argv("apply", (), global_args=["--source", "/x"])
         # `--debug` is not declared on the mock target parser, so it
         # falls after the subcommand via `_split_for_target`.
         self.assertEqual(argv, ["--source", "/x", "apply", "--debug"])

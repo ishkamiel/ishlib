@@ -51,8 +51,10 @@ class TestOsTaggedLookup(unittest.TestCase):
             d = self._installers(tmp)
             _write(d / "install_mytool.linux.sh")
             _write(d / "install_mytool.debian.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value="debian"):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value="debian"),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -63,8 +65,10 @@ class TestOsTaggedLookup(unittest.TestCase):
             d = self._installers(tmp)
             _write(d / "install_mytool.debian.sh")
             _write(d / "install_mytool.unixlike.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value="debian"):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value="debian"),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -74,8 +78,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.unixlike.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -85,8 +91,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.unixlike.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="macos"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="macos"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -95,8 +103,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.unixlike.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="windows"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="windows"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is None
@@ -107,8 +117,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None and found.name == "install_mytool.sh"
@@ -117,8 +129,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="macos"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="macos"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -127,8 +141,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="windows"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="windows"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is None
@@ -137,8 +153,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.ps1", "Write-Host ok")
-            with patch("pyishlib.installer_custom.detect_os", return_value="windows"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="windows"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None and found.name == "install_mytool.ps1"
@@ -147,8 +165,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.ps1", "Write-Host ok")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is None
@@ -159,8 +179,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None and found.name == "install_mytool"
@@ -169,8 +191,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool")
-            with patch("pyishlib.installer_custom.detect_os", return_value="windows"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="windows"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -181,8 +205,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.windows.ps1", "Write-Host ok")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is None
@@ -191,8 +217,10 @@ class TestOsTaggedLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = self._installers(tmp)
             _write(d / "install_mytool.fedora.sh")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value="debian"):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value="debian"),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is None
@@ -206,8 +234,10 @@ class TestExistingBehaviourPreserved(unittest.TestCase):
             d = Path(tmp) / "ishinstallers"
             d.mkdir()
             _write(d / "install_mytool")
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("mytool")
             assert found is not None
@@ -216,8 +246,10 @@ class TestExistingBehaviourPreserved(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp) / "ishinstallers"
             d.mkdir()
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 custom = _make_custom(tmp)
                 found = custom._find_script("nonexistent")
             assert found is None

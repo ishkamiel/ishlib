@@ -60,7 +60,9 @@ def _make_args(**overrides):
 class TestLoadConfig:
     def test_defaults(self):
         cfg = load_config(config_file=Path("/nonexistent/config.toml"))
-        assert cfg.get_opt("source") == str(Path.home() / ".local" / "share" / "ishfiles")
+        assert cfg.get_opt("source") == str(
+            Path.home() / ".local" / "share" / "ishfiles"
+        )
         assert cfg.get_opt("target") == str(Path.home())
         assert cfg.dry_run is False
 
@@ -511,8 +513,12 @@ class TestGitCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             import subprocess
 
-            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-            subprocess.run(["git", "init", src], check=True, capture_output=True, env=clean_env)
+            clean_env = {
+                k: v for k, v in os.environ.items() if not k.startswith("GIT_")
+            }
+            subprocess.run(
+                ["git", "init", src], check=True, capture_output=True, env=clean_env
+            )
             ret = cli_main(["--source", src, "--target", tgt, "git", "status"])
             assert ret == 0
 
@@ -528,11 +534,19 @@ class TestGitCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             import subprocess
 
-            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            clean_env = {
+                k: v for k, v in os.environ.items() if not k.startswith("GIT_")
+            }
             _make_file(Path(src) / "dot_bashrc", "content\n")
-            subprocess.run(["git", "init", src], check=True, capture_output=True, env=clean_env)
             subprocess.run(
-                ["git", "add", "."], cwd=src, check=True, capture_output=True, env=clean_env
+                ["git", "init", src], check=True, capture_output=True, env=clean_env
+            )
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=src,
+                check=True,
+                capture_output=True,
+                env=clean_env,
             )
 
             # 'git diff' on a target path should translate it
@@ -605,7 +619,9 @@ class TestCdCommand:
         import os
 
         monkeypatch.setenv("SHELL", "/nonexistent/shell")
-        monkeypatch.setattr(os, "execvp", lambda f, a: (_ for _ in ()).throw(FileNotFoundError(f)))
+        monkeypatch.setattr(
+            os, "execvp", lambda f, a: (_ for _ in ()).throw(FileNotFoundError(f))
+        )
         monkeypatch.setattr(os, "chdir", lambda p: None)
 
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -739,9 +755,7 @@ class TestInitCommand:
         assert any("shtab" in rec.getMessage() for rec in caplog.records)
 
     @pytest.mark.skipif(
-        not HAS_SHTAB
-        or shutil.which("bash") is None
-        or sys.platform == "win32",
+        not HAS_SHTAB or shutil.which("bash") is None or sys.platform == "win32",
         reason="needs shtab and a POSIX bash (Git-Bash on Windows is flaky for -n)",
     )
     def test_init_bash_syntax_valid(self, capsys):
@@ -753,9 +767,7 @@ class TestInitCommand:
         )
 
     @pytest.mark.skipif(
-        not HAS_SHTAB
-        or shutil.which("zsh") is None
-        or sys.platform == "win32",
+        not HAS_SHTAB or shutil.which("zsh") is None or sys.platform == "win32",
         reason="needs shtab and zsh (not expected on Windows runners)",
     )
     def test_init_zsh_syntax_valid(self, capsys):
@@ -926,7 +938,7 @@ class TestDataTemplateIsholate:
 
         cfg = self._make_cfg(
             tmp_path,
-            "[isGui]\ntype = \"bool\"\ndefault = false\nisholate = false\n",
+            '[isGui]\ntype = "bool"\ndefault = false\nisholate = false\n',
         )
         with patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
             process_data_template(cfg, isholate=True)
@@ -956,9 +968,10 @@ class TestDataTemplateIsholate:
             '[machineType]\ntype = "ordered_tags"\nvalues = ["min", "def"]\n'
             'default = "def"\nisholate = "min"\n',
         )
-        with patch(
-            "pyishlib.ishfiles.data._save_data_section"
-        ) as mock_save, patch("pyishlib.ishfiles.data.prompt_yes_no_always"):
+        with (
+            patch("pyishlib.ishfiles.data._save_data_section") as mock_save,
+            patch("pyishlib.ishfiles.data.prompt_yes_no_always"),
+        ):
             process_data_template(cfg, isholate=True)
         mock_save.assert_not_called()
 
@@ -1097,9 +1110,7 @@ class TestAddCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(tgt) / ".claude" / "skills" / "foo.md", "foo\n")
             _make_file(Path(tgt) / ".claude" / "skills" / "bar.md", "bar\n")
-            _make_file(
-                Path(tgt) / ".claude" / "skills" / "nested" / "baz.md", "baz\n"
-            )
+            _make_file(Path(tgt) / ".claude" / "skills" / "nested" / "baz.md", "baz\n")
 
             ret = cli_main(
                 [
@@ -1128,9 +1139,7 @@ class TestAddCommand:
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(tgt) / ".claude" / "skills" / "foo.md", "foo\n")
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "add", ".claude/skills"]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "add", ".claude/skills"])
 
             assert ret == 0
             assert (
@@ -1201,9 +1210,7 @@ class TestAddCommand:
             (skills / "link_to_file.md").symlink_to(outside)
             (skills / "link_to_dir").symlink_to(outside_dir)
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "add", str(skills)]
-            )
+            ret = cli_main(["--source", src, "--target", tgt, "add", str(skills)])
 
             assert ret == 0
             assert (
@@ -1578,10 +1585,14 @@ class TestScanScripts:
         """scan_scripts logs a [skipped] line when print_skipped=True and a script is excluded by OS rules."""
         import logging
         from pyishlib.ish_logging import setup_logging
+
         # Ensure INFO-level messages appear on stderr for capsys to capture.
         setup_logging(logging.INFO)
         try:
-            with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            with (
+                tempfile.TemporaryDirectory() as src,
+                tempfile.TemporaryDirectory() as tgt,
+            ):
                 scripts_dir = Path(src) / "ishscripts"
                 scripts_dir.mkdir()
                 _make_file(scripts_dir / "os-only.sh", "#!/bin/sh\necho hello\n")
@@ -1852,9 +1863,11 @@ class TestDotfileContextPrompt:
         import io
 
         ctx = DotfileContext()
-        with patch("builtins.input", return_value="typed"), \
-             patch("sys.stdin", io.StringIO("typed")), \
-             patch("sys.stdin.isatty", return_value=True):
+        with (
+            patch("builtins.input", return_value="typed"),
+            patch("sys.stdin", io.StringIO("typed")),
+            patch("sys.stdin.isatty", return_value=True),
+        ):
             result = ctx.prompt("mykey", "Enter value", "default")
         assert result == "typed"
         assert ctx.get("mykey") == "typed"
@@ -1865,9 +1878,11 @@ class TestDotfileContextPrompt:
         import io
 
         ctx = DotfileContext()
-        with patch("builtins.input", return_value=""), \
-             patch("sys.stdin", io.StringIO("")), \
-             patch("sys.stdin.isatty", return_value=True):
+        with (
+            patch("builtins.input", return_value=""),
+            patch("sys.stdin", io.StringIO("")),
+            patch("sys.stdin.isatty", return_value=True),
+        ):
             result = ctx.prompt("mykey", "Enter value", "fallback")
         assert result == "fallback"
         assert ctx.get("mykey") == "fallback"
@@ -1877,8 +1892,10 @@ class TestDotfileContextPrompt:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext()
-        with patch("sys.stdin.isatty", return_value=False), \
-             patch("builtins.input", side_effect=AssertionError("should not prompt")):
+        with (
+            patch("sys.stdin.isatty", return_value=False),
+            patch("builtins.input", side_effect=AssertionError("should not prompt")),
+        ):
             result = ctx.prompt("mykey", "Enter value", "autodefault")
         assert result == "autodefault"
         assert ctx.get("mykey") == "autodefault"
@@ -1917,7 +1934,9 @@ class TestDotfileContextPromptBool:
 
         for stored, expected in (("yes", "true"), ("No", "false"), ("1", "true")):
             ctx = DotfileContext({"flag": stored})
-            with patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")):
+            with patch(
+                "pyishlib.userio.getch", side_effect=AssertionError("no prompt")
+            ):
                 result = ctx.prompt_bool("flag", "Is it?")
             assert result == expected
             assert ctx.get("flag") == expected
@@ -1926,9 +1945,12 @@ class TestDotfileContextPromptBool:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext()
-        with patch("pyishlib.userio.getch", return_value="y"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="y"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = ctx.prompt_bool("flag", "Is it?", False)
         assert result == "true"
         assert ctx.get("flag") == "true"
@@ -1937,9 +1959,12 @@ class TestDotfileContextPromptBool:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext()
-        with patch("pyishlib.userio.getch", return_value="N"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="N"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = ctx.prompt_bool("flag", "Is it?", True)
         assert result == "false"
 
@@ -1947,9 +1972,12 @@ class TestDotfileContextPromptBool:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext()
-        with patch("pyishlib.userio.getch", return_value="\r"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="\r"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = ctx.prompt_bool("flag", "Is it?", True)
         assert result == "true"
 
@@ -1957,8 +1985,10 @@ class TestDotfileContextPromptBool:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext()
-        with patch("sys.stdin.isatty", return_value=False), \
-             patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")):
+        with (
+            patch("sys.stdin.isatty", return_value=False),
+            patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")),
+        ):
             result = ctx.prompt_bool("flag", "Is it?", False)
         assert result == "false"
 
@@ -1966,9 +1996,12 @@ class TestDotfileContextPromptBool:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext()
-        with patch("pyishlib.userio.getch", side_effect=["x", "y"]), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", side_effect=["x", "y"]),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = ctx.prompt_bool("flag", "Is it?", False)
         assert result == "true"
 
@@ -1977,9 +2010,12 @@ class TestDotfileContextPromptBool:
         from pyishlib.dotfile_context import DotfileContext
 
         ctx = DotfileContext({"flag": "maybe"})  # not a valid bool string
-        with patch("pyishlib.userio.getch", return_value="n"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="n"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = ctx.prompt_bool("flag", "Is it?", True)
         assert result == "false"
         assert ctx.get("flag") == "false"
@@ -2000,9 +2036,11 @@ class TestIshPromptDirective:
         import io
 
         proc = FilePreprocessor(variables=variables or {})
-        with patch("sys.stdin", io.StringIO("typed")), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("builtins.input", return_value="typed"):
+        with (
+            patch("sys.stdin", io.StringIO("typed")),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("builtins.input", return_value="typed"),
+        ):
             return proc.preprocess_text(text)
 
     def test_prompt_directive_sets_variable(self):
@@ -2016,6 +2054,7 @@ class TestIshPromptDirective:
         text = '#@ish prompt myvar "Enter value" "def"\n${__ish_myvar}\n'
         with patch("builtins.input", side_effect=AssertionError("should not prompt")):
             from pyishlib.file_preprocessor import FilePreprocessor
+
             proc = FilePreprocessor(variables={"myvar": "preset"})
             result = proc.preprocess_text(text)
         assert "preset" in result
@@ -2026,8 +2065,10 @@ class TestIshPromptDirective:
 
         text = '#@ish prompt myvar "Enter value" "mydefault"\n${__ish_myvar}\n'
         proc = FilePreprocessor()
-        with patch("sys.stdin.isatty", return_value=False), \
-             patch("builtins.input", side_effect=AssertionError("should not prompt")):
+        with (
+            patch("sys.stdin.isatty", return_value=False),
+            patch("builtins.input", side_effect=AssertionError("should not prompt")),
+        ):
             result = proc.preprocess_text(text)
         assert "mydefault" in result
 
@@ -2037,9 +2078,12 @@ class TestIshPromptDirective:
 
         text = '#@ish prompt_bool flag "Is it?" "false"\n${__ish_flag}\n'
         proc = FilePreprocessor()
-        with patch("pyishlib.userio.getch", return_value="y"), \
-             patch("sys.stdin.isatty", return_value=True), \
-             patch("sys.stdout.write"), patch("sys.stdout.flush"):
+        with (
+            patch("pyishlib.userio.getch", return_value="y"),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("sys.stdout.write"),
+            patch("sys.stdout.flush"),
+        ):
             result = proc.preprocess_text(text)
         assert "true" in result
 
@@ -2049,8 +2093,10 @@ class TestIshPromptDirective:
 
         text = '#@ish prompt_bool flag "Is it?" "true"\n${__ish_flag}\n'
         proc = FilePreprocessor()
-        with patch("sys.stdin.isatty", return_value=False), \
-             patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")):
+        with (
+            patch("sys.stdin.isatty", return_value=False),
+            patch("pyishlib.userio.getch", side_effect=AssertionError("no prompt")),
+        ):
             result = proc.preprocess_text(text)
         assert "true" in result
 
@@ -2085,7 +2131,9 @@ class TestProcessDataTemplate:
 
         with tempfile.TemporaryDirectory() as src:
             cfg = self._make_cfg(src)
-            with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            with patch(
+                "builtins.input", side_effect=AssertionError("should not prompt")
+            ):
                 process_data_template(cfg)  # must not raise
 
     def test_prompts_for_missing_values(self):
@@ -2101,9 +2149,11 @@ class TestProcessDataTemplate:
                 '[myvar]\nprompt = "Enter myvar"\ndefault = "def"\n',
             )
             cfg = self._make_cfg(src)
-            with patch("builtins.input", return_value="userval"), \
-                 patch("sys.stdin", io.StringIO("userval")), \
-                 patch("sys.stdin.isatty", return_value=False):
+            with (
+                patch("builtins.input", return_value="userval"),
+                patch("sys.stdin", io.StringIO("userval")),
+                patch("sys.stdin.isatty", return_value=False),
+            ):
                 process_data_template(cfg)
             assert cfg.context.get("myvar") == "def"  # non-tty uses default
 
@@ -2120,7 +2170,9 @@ class TestProcessDataTemplate:
             )
             cfg = self._make_cfg(src)
             cfg.context.set("myvar", "preset")
-            with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            with patch(
+                "builtins.input", side_effect=AssertionError("should not prompt")
+            ):
                 process_data_template(cfg)
             assert cfg.context.get("myvar") == "preset"
 
@@ -2128,7 +2180,10 @@ class TestProcessDataTemplate:
         """process_data_template() does not offer to save in dry-run mode."""
         from pyishlib.ishfiles.data import process_data_template
 
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as cfg_dir:
+        with (
+            tempfile.TemporaryDirectory() as src,
+            tempfile.TemporaryDirectory() as cfg_dir,
+        ):
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
@@ -2167,9 +2222,12 @@ class TestProcessDataTemplate:
             cfg = self._make_cfg(src)
             cfg.context.set("isWork", "unknown")  # invalid bool value
 
-            with patch("pyishlib.userio.getch", return_value="n"), \
-                 patch("sys.stdin.isatty", return_value=True), \
-                 patch("sys.stdout.write"), patch("sys.stdout.flush"):
+            with (
+                patch("pyishlib.userio.getch", return_value="n"),
+                patch("sys.stdin.isatty", return_value=True),
+                patch("sys.stdout.write"),
+                patch("sys.stdout.flush"),
+            ):
                 process_data_template(cfg)
 
             assert cfg.context.get("isWork") == "false"
@@ -2188,7 +2246,9 @@ class TestProcessDataTemplate:
             cfg = self._make_cfg(src)
             cfg.context.set("isWork", "yes")  # valid synonym for true
 
-            with patch("pyishlib.userio.getch", side_effect=AssertionError("should not prompt")):
+            with patch(
+                "pyishlib.userio.getch", side_effect=AssertionError("should not prompt")
+            ):
                 process_data_template(cfg)
 
             assert cfg.context.get("isWork") == "true"
@@ -2197,7 +2257,10 @@ class TestProcessDataTemplate:
         """Re-prompted values from invalid bool fields are offered for saving."""
         from pyishlib.ishfiles.data import process_data_template
 
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as cfg_dir:
+        with (
+            tempfile.TemporaryDirectory() as src,
+            tempfile.TemporaryDirectory() as cfg_dir,
+        ):
             ishconfig = Path(src) / "ishconfig"
             ishconfig.mkdir()
             _make_file(
@@ -2220,8 +2283,10 @@ class TestProcessDataTemplate:
             )
             cfg.context.set("isWork", "garbage")
 
-            with patch("pyishlib.userio.getch", return_value="y"), \
-                 patch("sys.stdin.isatty", return_value=False):
+            with (
+                patch("pyishlib.userio.getch", return_value="y"),
+                patch("sys.stdin.isatty", return_value=False),
+            ):
                 process_data_template(cfg)
 
             # Non-tty falls back to default ("false"), but the value was reset from "garbage"
@@ -2241,7 +2306,9 @@ class TestProcessDataTemplate:
             cfg = self._make_cfg(src)
             cfg.context.set("email", "anything@example.com")
 
-            with patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            with patch(
+                "builtins.input", side_effect=AssertionError("should not prompt")
+            ):
                 process_data_template(cfg)
 
             assert cfg.context.get("email") == "anything@example.com"
@@ -2273,7 +2340,7 @@ class TestDataSectionIO:
             path.write_text('[ishfiles]\nsource = "/some/path"\n')
             _save_data_section(path, {"key": "val"})
             text = path.read_text()
-            assert '[ishfiles]' in text
+            assert "[ishfiles]" in text
             assert "[data]" in text
             assert 'key = "val"' in text
 
@@ -2393,13 +2460,19 @@ class TestRunInstallAvailabilityFiltering:
         source = self._make_source(tmp_path)
         cfg = self._make_cfg(tmp_path, source)
 
-        unavailable_optional = {"name": "ulauncher", "apt": "ulauncher", "optional": True}
+        unavailable_optional = {
+            "name": "ulauncher",
+            "apt": "ulauncher",
+            "optional": True,
+        }
 
-        with patch.object(
-            Installer, "get_missing_pkgs", return_value=[unavailable_optional]
-        ), patch.object(Installer, "pkg_is_available", return_value=False), patch.object(
-            Installer, "install_pkgs"
-        ) as mock_install:
+        with (
+            patch.object(
+                Installer, "get_missing_pkgs", return_value=[unavailable_optional]
+            ),
+            patch.object(Installer, "pkg_is_available", return_value=False),
+            patch.object(Installer, "install_pkgs") as mock_install,
+        ):
             ret = run_install(cfg, extra_packages=[unavailable_optional])
 
         mock_install.assert_not_called()
@@ -2416,11 +2489,11 @@ class TestRunInstallAvailabilityFiltering:
         opt_a = {"name": "bat", "apt": "bat", "optional": True}
         opt_b = {"name": "tldr", "apt": "tldr", "optional": True}
 
-        with patch.object(
-            Installer, "get_missing_pkgs", return_value=[opt_a, opt_b]
-        ), patch.object(Installer, "pkg_is_available", return_value=True), patch.object(
-            Installer, "install_pkgs", return_value=True
-        ) as mock_install:
+        with (
+            patch.object(Installer, "get_missing_pkgs", return_value=[opt_a, opt_b]),
+            patch.object(Installer, "pkg_is_available", return_value=True),
+            patch.object(Installer, "install_pkgs", return_value=True) as mock_install,
+        ):
             ret = run_install(cfg, extra_packages=[opt_a, opt_b])
 
         assert ret == 0
@@ -2442,12 +2515,12 @@ class TestRunInstallAvailabilityFiltering:
         def fake_is_available(pkg):
             return pkg["name"] == "tldr"
 
-        with patch.object(
-            Installer, "get_missing_pkgs", return_value=[available, unavailable]
-        ), patch.object(
-            Installer, "pkg_is_available", side_effect=fake_is_available
-        ), patch.object(
-            Installer, "install_pkgs", return_value=True
+        with (
+            patch.object(
+                Installer, "get_missing_pkgs", return_value=[available, unavailable]
+            ),
+            patch.object(Installer, "pkg_is_available", side_effect=fake_is_available),
+            patch.object(Installer, "install_pkgs", return_value=True),
         ):
             run_install(cfg, extra_packages=[available, unavailable])
 
@@ -2471,9 +2544,19 @@ def _init_git_repo(path: Path) -> None:
         capture_output=True,
     )
     subprocess.run(
-        ["git", "-C", str(path),
-         "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false",
-         "commit", "--allow-empty", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -2488,9 +2571,18 @@ def _git_add_and_commit(path: Path, *files: str) -> None:
         capture_output=True,
     )
     subprocess.run(
-        ["git", "-C", str(path),
-         "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false",
-         "commit", "-m", "add files"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+            "commit",
+            "-m",
+            "add files",
+        ],
         check=True,
         capture_output=True,
     )
@@ -2571,7 +2663,9 @@ class TestStatusCommand:
             _make_file(Path(src) / "ishscripts" / "10_setup.sh", "#!/bin/bash\n")
             _git_add_and_commit(Path(src), "dot_zshrc", "ishscripts/10_setup.sh")
             # Modify a non-dotfile tracked file (ishscripts are excluded from dotfile discovery)
-            (Path(src) / "ishscripts" / "10_setup.sh").write_text("#!/bin/bash\n# changed\n")
+            (Path(src) / "ishscripts" / "10_setup.sh").write_text(
+                "#!/bin/bash\n# changed\n"
+            )
             rc, captured = self._run(src, tgt, capsys)
         assert rc == 0
         assert "Other source changes:" in captured.out
@@ -2645,7 +2739,9 @@ class TestCommitCommand:
             subprocess.run(
                 ["git", "-C", src, "add", "dot_zshrc"], check=True, capture_output=True
             )
-            rc = cli_main(["--source", src, "--target", tgt, "commit", "-m", "my custom msg"])
+            rc = cli_main(
+                ["--source", src, "--target", tgt, "commit", "-m", "my custom msg"]
+            )
         assert rc == 0
 
     def test_commit_nothing_to_commit_returns_nonzero(self, capsys):

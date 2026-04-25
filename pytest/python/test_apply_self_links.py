@@ -29,9 +29,12 @@ def _make_cfg(source: str, target: str, *, dry_run: bool = False):
 
 class TestInstallLaunchers(unittest.TestCase):
     def test_calls_install_all_with_correct_paths(self):
-        with patch.object(Path, "is_dir", return_value=True), patch(
-            "pyishlib.ishfiles.commands.apply._install_launchers_impl"
-        ) as mock_install:
+        with (
+            patch.object(Path, "is_dir", return_value=True),
+            patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers_impl"
+            ) as mock_install,
+        ):
             mock_install.return_value = 0
             cfg = _make_cfg("/fake/source", "/fake/target")
             _install_launchers(cfg)
@@ -43,9 +46,12 @@ class TestInstallLaunchers(unittest.TestCase):
         )
 
     def test_passes_dry_run(self):
-        with patch.object(Path, "is_dir", return_value=True), patch(
-            "pyishlib.ishfiles.commands.apply._install_launchers_impl"
-        ) as mock_install:
+        with (
+            patch.object(Path, "is_dir", return_value=True),
+            patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers_impl"
+            ) as mock_install,
+        ):
             mock_install.return_value = 0
             cfg = _make_cfg("/fake/source", "/fake/target", dry_run=True)
             _install_launchers(cfg)
@@ -58,9 +64,12 @@ class TestInstallLaunchers(unittest.TestCase):
 
     def test_returns_install_all_return_value(self):
         for expected_ret in (0, 1):
-            with patch.object(Path, "is_dir", return_value=True), patch(
-                "pyishlib.ishfiles.commands.apply._install_launchers_impl"
-            ) as mock_install:
+            with (
+                patch.object(Path, "is_dir", return_value=True),
+                patch(
+                    "pyishlib.ishfiles.commands.apply._install_launchers_impl"
+                ) as mock_install,
+            ):
                 mock_install.return_value = expected_ret
                 cfg = _make_cfg("/fake/source", "/fake/target")
                 ret = _install_launchers(cfg)
@@ -68,9 +77,12 @@ class TestInstallLaunchers(unittest.TestCase):
 
     def test_missing_source_dir_returns_nonzero(self):
         """When ishlib/src does not exist, _install_launchers must not call install_all."""
-        with patch.object(Path, "is_dir", return_value=False), patch(
-            "pyishlib.ishfiles.commands.apply._install_launchers_impl"
-        ) as mock_install:
+        with (
+            patch.object(Path, "is_dir", return_value=False),
+            patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers_impl"
+            ) as mock_install,
+        ):
             cfg = _make_cfg("/fake/source", "/fake/target")
             ret = _install_launchers(cfg)
         mock_install.assert_not_called()
@@ -78,9 +90,12 @@ class TestInstallLaunchers(unittest.TestCase):
 
     def test_all_registered_tools_covered(self):
         """install_all is called once and covers all registered tools via the registry."""
-        with patch.object(Path, "is_dir", return_value=True), patch(
-            "pyishlib.ishfiles.commands.apply._install_launchers_impl"
-        ) as mock_install:
+        with (
+            patch.object(Path, "is_dir", return_value=True),
+            patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers_impl"
+            ) as mock_install,
+        ):
             mock_install.return_value = 0
             cfg = _make_cfg("/src", "/tgt")
             _install_launchers(cfg)

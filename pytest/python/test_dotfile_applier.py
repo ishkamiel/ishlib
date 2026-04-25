@@ -95,9 +95,7 @@ class TestMergejsonTranslation:
         assert translate_name("mergejson_dot_settings.json") == ".settings.json"
 
     def test_executable_mergejson_dot_combo(self):
-        assert (
-            translate_name("executable_mergejson_dot_foo.json") == ".foo.json"
-        )
+        assert translate_name("executable_mergejson_dot_foo.json") == ".foo.json"
 
     def test_is_mergejson_name_plain(self):
         assert is_mergejson_name("mergejson_foo.json") is True
@@ -125,9 +123,7 @@ class TestMergejsonTranslation:
 
     def test_reverse_translate_executable_mergejson_dot(self):
         assert (
-            reverse_translate_name(
-                ".foo.json", executable=True, mergejson=True
-            )
+            reverse_translate_name(".foo.json", executable=True, mergejson=True)
             == "executable_mergejson_dot_foo.json"
         )
 
@@ -224,7 +220,11 @@ class TestDotFile:
     # -- executable_ prefix --------------------------------------------------
 
     def test_executable_property_true(self):
-        df = DotFile(Path("/repo/executable_myscript"), Path("executable_myscript"), Path("/home"))
+        df = DotFile(
+            Path("/repo/executable_myscript"),
+            Path("executable_myscript"),
+            Path("/home"),
+        )
         assert df.executable is True
 
     def test_executable_property_false_for_dot(self):
@@ -232,7 +232,11 @@ class TestDotFile:
         assert df.executable is False
 
     def test_executable_target_name(self):
-        df = DotFile(Path("/repo/executable_myscript"), Path("executable_myscript"), Path("/home"))
+        df = DotFile(
+            Path("/repo/executable_myscript"),
+            Path("executable_myscript"),
+            Path("/home"),
+        )
         assert df.target.name == "myscript"
 
     def test_executable_dot_combo_target_name(self):
@@ -244,11 +248,18 @@ class TestDotFile:
         assert df.target.name == ".localbin"
         assert df.executable is True
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="exec bits not meaningful on Windows"
+    )
     def test_change_type_modified_when_not_executable(self):
         """File with executable_ prefix is MODIFIED if target lacks exec bit."""
-        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
-            src = _make_file(Path(src_dir) / "executable_myscript", "#!/bin/sh\necho hi\n")
+        with (
+            tempfile.TemporaryDirectory() as src_dir,
+            tempfile.TemporaryDirectory() as tgt,
+        ):
+            src = _make_file(
+                Path(src_dir) / "executable_myscript", "#!/bin/sh\necho hi\n"
+            )
             # Install target with same content but no exec bit
             target = Path(tgt) / "myscript"
             target.write_text("#!/bin/sh\necho hi\n")
@@ -257,10 +268,17 @@ class TestDotFile:
             df = DotFile(src, Path("executable_myscript"), Path(tgt))
             assert df.get_change_type() == ChangeType.MODIFIED
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="exec bits not meaningful on Windows"
+    )
     def test_change_type_none_when_executable_and_correct_bit(self):
-        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
-            src = _make_file(Path(src_dir) / "executable_myscript", "#!/bin/sh\necho hi\n")
+        with (
+            tempfile.TemporaryDirectory() as src_dir,
+            tempfile.TemporaryDirectory() as tgt,
+        ):
+            src = _make_file(
+                Path(src_dir) / "executable_myscript", "#!/bin/sh\necho hi\n"
+            )
             target = Path(tgt) / "myscript"
             target.write_text("#!/bin/sh\necho hi\n")
             target.chmod(0o755)
@@ -299,18 +317,20 @@ class TestDotFile:
         assert df.target.name == ".settings.json"
 
     def test_mergejson_change_type_new(self):
-        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
-            src = _make_file(
-                Path(src_dir) / "mergejson_settings.json", '{"a": 1}\n'
-            )
-            df = DotFile(
-                src, Path("mergejson_settings.json"), Path(tgt)
-            )
+        with (
+            tempfile.TemporaryDirectory() as src_dir,
+            tempfile.TemporaryDirectory() as tgt,
+        ):
+            src = _make_file(Path(src_dir) / "mergejson_settings.json", '{"a": 1}\n')
+            df = DotFile(src, Path("mergejson_settings.json"), Path(tgt))
             assert df.get_change_type() == ChangeType.NEW
 
     def test_mergejson_change_type_none_for_reordered_keys(self):
         """Key reordering inside a JSON object does not count as a change."""
-        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
+        with (
+            tempfile.TemporaryDirectory() as src_dir,
+            tempfile.TemporaryDirectory() as tgt,
+        ):
             src = _make_file(
                 Path(src_dir) / "mergejson_settings.json",
                 '{\n  "a": 1,\n  "b": 2\n}\n',
@@ -319,31 +339,27 @@ class TestDotFile:
                 Path(tgt) / "settings.json",
                 '{\n  "b": 2,\n  "a": 1\n}\n',
             )
-            df = DotFile(
-                src, Path("mergejson_settings.json"), Path(tgt)
-            )
+            df = DotFile(src, Path("mergejson_settings.json"), Path(tgt))
             assert df.get_change_type() is None
 
     def test_mergejson_change_type_modified_when_value_differs(self):
-        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
-            src = _make_file(
-                Path(src_dir) / "mergejson_settings.json", '{"a": 2}\n'
-            )
+        with (
+            tempfile.TemporaryDirectory() as src_dir,
+            tempfile.TemporaryDirectory() as tgt,
+        ):
+            src = _make_file(Path(src_dir) / "mergejson_settings.json", '{"a": 2}\n')
             _make_file(Path(tgt) / "settings.json", '{"a": 1}\n')
-            df = DotFile(
-                src, Path("mergejson_settings.json"), Path(tgt)
-            )
+            df = DotFile(src, Path("mergejson_settings.json"), Path(tgt))
             assert df.get_change_type() == ChangeType.MODIFIED
 
     def test_mergejson_change_type_modified_when_target_invalid_json(self):
-        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as tgt:
-            src = _make_file(
-                Path(src_dir) / "mergejson_settings.json", '{"a": 1}\n'
-            )
+        with (
+            tempfile.TemporaryDirectory() as src_dir,
+            tempfile.TemporaryDirectory() as tgt,
+        ):
+            src = _make_file(Path(src_dir) / "mergejson_settings.json", '{"a": 1}\n')
             _make_file(Path(tgt) / "settings.json", "not json at all")
-            df = DotFile(
-                src, Path("mergejson_settings.json"), Path(tgt)
-            )
+            df = DotFile(src, Path("mergejson_settings.json"), Path(tgt))
             assert df.get_change_type() == ChangeType.MODIFIED
 
 
@@ -538,9 +554,7 @@ class TestDiscover:
     def test_discover_by_target_name_finds_mergejson_dot_source(self):
         """Target name '.settings.json' resolves to 'mergejson_dot_settings.json'."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_dot_settings.json", '{"a": 1}\n'
-            )
+            _make_file(Path(src) / "mergejson_dot_settings.json", '{"a": 1}\n')
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             dotfiles = applier.discover(files=[Path(".settings.json")])
@@ -726,7 +740,9 @@ class TestApplyChanges:
             assert applied == 1
             assert not (Path(tgt) / ".bashrc").exists()
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="exec bits not meaningful on Windows"
+    )
     def test_apply_executable_sets_exec_bit(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "executable_myscript", "#!/bin/sh\necho hi\n")
@@ -755,7 +771,9 @@ class TestApplyChanges:
             assert not (Path(tgt) / "executable_myscript").exists()
             assert (Path(tgt) / "myscript").exists()
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="exec bits not meaningful on Windows"
+    )
     def test_apply_executable_dot_combo(self):
         """executable_dot_foo → .foo with exec bit."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -771,7 +789,9 @@ class TestApplyChanges:
             assert target.exists(), ".localscript should be installed"
             assert os.access(target, os.X_OK), ".localscript should be executable"
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="exec bits not meaningful on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="exec bits not meaningful on Windows"
+    )
     def test_apply_executable_missing_bit_triggers_reapply(self):
         """Already-installed file with wrong permissions is re-applied."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
@@ -833,9 +853,7 @@ class TestApplyMergejson:
     def test_apply_mergejson_dot_combo(self):
         """mergejson_dot_foo.json -> .foo.json merged as JSON."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_dot_settings.json", '{"a": 1}\n'
-            )
+            _make_file(Path(src) / "mergejson_dot_settings.json", '{"a": 1}\n')
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             applier.apply_changes(
@@ -848,12 +866,8 @@ class TestApplyMergejson:
 
     def test_apply_mergejson_preserves_disjoint_target_keys(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_settings.json", '{"new_key": 1}\n'
-            )
-            _make_file(
-                Path(tgt) / "settings.json", '{"existing_key": "keep"}\n'
-            )
+            _make_file(Path(src) / "mergejson_settings.json", '{"new_key": 1}\n')
+            _make_file(Path(tgt) / "settings.json", '{"existing_key": "keep"}\n')
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             applier.apply_changes(
@@ -865,12 +879,8 @@ class TestApplyMergejson:
 
     def test_apply_mergejson_source_wins_on_overlap(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_settings.json", '{"theme": "dark"}\n'
-            )
-            _make_file(
-                Path(tgt) / "settings.json", '{"theme": "light"}\n'
-            )
+            _make_file(Path(src) / "mergejson_settings.json", '{"theme": "dark"}\n')
+            _make_file(Path(tgt) / "settings.json", '{"theme": "light"}\n')
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             applier.apply_changes(
@@ -919,9 +929,7 @@ class TestApplyMergejson:
     def test_apply_mergejson_null_removes_key(self):
         """RFC 7396: null in the patch deletes the key."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_settings.json", '{"drop": null}\n'
-            )
+            _make_file(Path(src) / "mergejson_settings.json", '{"drop": null}\n')
             _make_file(
                 Path(tgt) / "settings.json",
                 '{"drop": 1, "keep": 2}\n',
@@ -956,9 +964,7 @@ class TestApplyMergejson:
 
     def test_apply_mergejson_invalid_source_is_skipped(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_settings.json", "not json {{{\n"
-            )
+            _make_file(Path(src) / "mergejson_settings.json", "not json {{{\n")
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             dotfiles = applier.prepare(applier.discover())
@@ -968,12 +974,8 @@ class TestApplyMergejson:
     def test_apply_mergejson_invalid_target_is_overwritten(self):
         """An unparsable existing target is treated as an empty base."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-            _make_file(
-                Path(src) / "mergejson_settings.json", '{"a": 1}\n'
-            )
-            _make_file(
-                Path(tgt) / "settings.json", "garbage contents"
-            )
+            _make_file(Path(src) / "mergejson_settings.json", '{"a": 1}\n')
+            _make_file(Path(tgt) / "settings.json", "garbage contents")
 
             applier = DotfileApplier(source_dir=Path(src), target_dir=Path(tgt))
             applier.apply_changes(

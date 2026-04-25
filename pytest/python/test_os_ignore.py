@@ -221,56 +221,70 @@ class TestDetectDistro:
 
     def test_ubuntu(self):
         # Real Ubuntu: ID=ubuntu, ID_LIKE=debian
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "ubuntu", "ID_LIKE": "debian"}
             assert detect_distro() == "debian"
 
     def test_debian(self):
         # Real Debian: ID=debian (no ID_LIKE)
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "debian"}
             assert detect_distro() == "debian"
 
     def test_fedora(self):
         # Real Fedora: ID=fedora (no ID_LIKE)
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_pop_os(self):
         # Real Pop!_OS: ID=pop-os, ID_LIKE="ubuntu debian"
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "pop-os", "ID_LIKE": "ubuntu debian"}
             assert detect_distro() == "debian"
 
     def test_fedora_asahi_remix(self):
         # Real Asahi: ID=fedora-asahi-remix, ID_LIKE=fedora
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "fedora-asahi-remix", "ID_LIKE": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_rocky(self):
         # Real Rocky: ID="rocky", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "rocky", "ID_LIKE": "rhel centos fedora"}
             assert detect_distro() == "fedora"
 
     def test_almalinux(self):
         # Real AlmaLinux: ID="almalinux", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {
                 "ID": "almalinux",
@@ -280,46 +294,58 @@ class TestDetectDistro:
 
     def test_linuxmint(self):
         # Real Mint: ID=linuxmint, ID_LIKE="ubuntu debian"
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "linuxmint", "ID_LIKE": "ubuntu debian"}
             assert detect_distro() == "debian"
 
     def test_kali(self):
         # Real Kali: ID=kali, ID_LIKE=debian
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "kali", "ID_LIKE": "debian"}
             assert detect_distro() == "debian"
 
     def test_centos_stream(self):
         # Real CentOS Stream: ID="centos", ID_LIKE="rhel centos fedora"
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "centos", "ID_LIKE": "rhel centos fedora"}
             assert detect_distro() == "fedora"
 
     def test_amazon_linux(self):
         # Real Amazon Linux 2023: ID="amzn", ID_LIKE="fedora"
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "amzn", "ID_LIKE": "fedora"}
             assert detect_distro() == "fedora"
 
     def test_unknown_distro(self):
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {"ID": "gentoo"}
             assert detect_distro() is None
 
     def test_no_os_release(self):
-        with patch("pyishlib.environment.sys") as mock_sys, \
-                patch("pyishlib.environment._read_os_release") as mock_read:
+        with (
+            patch("pyishlib.environment.sys") as mock_sys,
+            patch("pyishlib.environment._read_os_release") as mock_read,
+        ):
             mock_sys.platform = "linux"
             mock_read.return_value = {}
             assert detect_distro() is None
@@ -332,23 +358,31 @@ class TestDetectDistro:
 
 class TestDetectOsTags:
     def test_linux_with_distro(self):
-        with patch("pyishlib.environment.detect_os", return_value="linux"), \
-                patch("pyishlib.environment.detect_distro", return_value="debian"):
+        with (
+            patch("pyishlib.environment.detect_os", return_value="linux"),
+            patch("pyishlib.environment.detect_distro", return_value="debian"),
+        ):
             assert detect_os_tags() == ["linux", "unixlike", "debian"]
 
     def test_linux_unknown_distro(self):
-        with patch("pyishlib.environment.detect_os", return_value="linux"), \
-                patch("pyishlib.environment.detect_distro", return_value=None):
+        with (
+            patch("pyishlib.environment.detect_os", return_value="linux"),
+            patch("pyishlib.environment.detect_distro", return_value=None),
+        ):
             assert detect_os_tags() == ["linux", "unixlike"]
 
     def test_macos(self):
-        with patch("pyishlib.environment.detect_os", return_value="macos"), \
-                patch("pyishlib.environment.detect_distro", return_value=None):
+        with (
+            patch("pyishlib.environment.detect_os", return_value="macos"),
+            patch("pyishlib.environment.detect_distro", return_value=None),
+        ):
             assert detect_os_tags() == ["macos", "unixlike"]
 
     def test_windows(self):
-        with patch("pyishlib.environment.detect_os", return_value="windows"), \
-                patch("pyishlib.environment.detect_distro", return_value=None):
+        with (
+            patch("pyishlib.environment.detect_os", return_value="windows"),
+            patch("pyishlib.environment.detect_distro", return_value=None),
+        ):
             assert detect_os_tags() == ["windows"]
 
 
@@ -424,23 +458,29 @@ class TestShouldSkipForOs:
         """only_on uses AND: ALL tags must match."""
         # "unixlike,linux" system matches only_on=["unixlike"] (one tag, trivially AND)
         assert (
-            should_skip_for_os(only_on=["unixlike"], current_os="linux,unixlike") is False
+            should_skip_for_os(only_on=["unixlike"], current_os="linux,unixlike")
+            is False
         )
         # "macos,unixlike" matches only_on=["unixlike"] too
         assert (
-            should_skip_for_os(only_on=["unixlike"], current_os="macos,unixlike") is False
+            should_skip_for_os(only_on=["unixlike"], current_os="macos,unixlike")
+            is False
         )
         # "windows" does NOT have "unixlike" → skipped
-        assert (
-            should_skip_for_os(only_on=["unixlike"], current_os="windows") is True
-        )
+        assert should_skip_for_os(only_on=["unixlike"], current_os="windows") is True
         # AND: only_on=["unixlike","linux"] requires both tags
         assert (
-            should_skip_for_os(only_on=["unixlike", "linux"], current_os="linux,unixlike,debian") is False
+            should_skip_for_os(
+                only_on=["unixlike", "linux"], current_os="linux,unixlike,debian"
+            )
+            is False
         )
         # macOS has unixlike but not linux → skipped
         assert (
-            should_skip_for_os(only_on=["unixlike", "linux"], current_os="macos,unixlike") is True
+            should_skip_for_os(
+                only_on=["unixlike", "linux"], current_os="macos,unixlike"
+            )
+            is True
         )
 
     def test_ignore_on_match(self):

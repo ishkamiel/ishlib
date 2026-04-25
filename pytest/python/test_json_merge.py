@@ -37,9 +37,7 @@ class TestDeepMergeJson:
         assert deep_merge_json({"l": [1, 2, 3]}, {"l": [9]}) == {"l": [9]}
 
     def test_null_removes_key(self):
-        assert deep_merge_json({"drop": 1, "keep": 2}, {"drop": None}) == {
-            "keep": 2
-        }
+        assert deep_merge_json({"drop": 1, "keep": 2}, {"drop": None}) == {"keep": 2}
 
     def test_null_on_missing_key_is_noop(self):
         assert deep_merge_json({}, {"absent": None}) == {}
