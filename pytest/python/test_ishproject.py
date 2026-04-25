@@ -221,6 +221,35 @@ class TestApplyPassthrough(_ChdirTestCase):
         # global args precede the subcommand
         self.assertLess(argv.index("--source"), argv.index("apply"))
 
+    def test_passthrough_forwards_skip_launchers(self) -> None:
+        # Project worktrees never contain ishlib/src, so ishproject apply
+        # should always tell ishfiles to skip Phase 0.
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["apply", "--dry-run"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertEqual(argv.count("--skip-launchers"), 1)
+        # --skip-launchers is an apply-subparser flag; it must follow the
+        # subcommand, not precede it.
+        self.assertGreater(argv.index("--skip-launchers"), argv.index("apply"))
+
+    def test_passthrough_skip_launchers_not_duplicated(self) -> None:
+        # If the user explicitly passes --skip-launchers via `rest`, the
+        # auto-prepend must not add a duplicate.
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        with patch(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["apply", "--dry-run", "--skip-launchers"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertEqual(argv.count("--skip-launchers"), 1)
+
 
 class TestApplyExcludes(_ChdirTestCase):
     """Verify ``ishproject apply`` registers applied targets in info/exclude."""
@@ -1019,6 +1048,88 @@ class TestInit(_ChdirTestCase):
         self.assertTrue((self.root / "child" / ".ishlib" / "ishproject").is_dir())
         self.assertTrue(
             (self.root / "child" / "grandchild" / ".ishlib" / "ishproject").is_dir()
+        )
+
+    def test_init_missing_branch_standalone_still_errors(self) -> None:
+        # Remote exists, fetch succeeds, branch doesn't exist on remote, no
+        # --create.  Standalone (non-recurse) callers should still see a
+        # non-zero exit so they can script around it.
+        _init_repo(self.root)
+        _git("remote", "add", "origin", str(self.bare), cwd=self.root)
+        rc = cli_main(["init"])
+        self.assertEqual(rc, 1)
+        self.assertFalse((self.root / ".ishlib" / "ishproject").exists())
+
+    def test_init_recurse_missing_branch_skips_submodule(self) -> None:
+        # Parent already has the branch locally (no --create needed).  The
+        # submodule has a working remote but no ishproject branch on it.
+        # Recursion should classify the submodule as "not configured" and
+        # exit 0 without flagging it as a failure.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+
+        with self.assertLogs("pyishlib.ishproject.commands.init", level="INFO") as cm:
+            rc = cli_main(["init", "--recurse-submodules"])
+
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
+        # Submodule was NOT initialised (no branch, no --create).
+        self.assertFalse((self.root / "child" / ".ishlib" / "ishproject").exists())
+        joined = "\n".join(cm.output)
+        # No "failed in" message — the submodule was skipped, not failed.
+        self.assertNotIn("ishproject init failed in", joined)
+        # The summary message names the skipped repo.
+        self.assertIn("ishproject not configured", joined)
+        self.assertIn("child", joined)
+
+    def test_init_recurse_mixed_skip_and_fail(self) -> None:
+        # Two submodules: one missing the branch (soft skip), one with a
+        # broken origin (hard fail).  Expect rc=1 with only the broken one
+        # reported as a failure.
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        workspace = _bare_workspace(self)
+        skip_bare = _make_submodule_source(workspace, "skip")
+        broken_bare = _make_submodule_source(workspace, "broken")
+        _add_submodule(self.root, skip_bare, "skip")
+        _add_submodule(self.root, broken_bare, "broken")
+        _git(
+            "remote",
+            "set-url",
+            "origin",
+            "/nonexistent/path.git",
+            cwd=self.root / "broken",
+        )
+
+        with self.assertLogs("pyishlib.ishproject.commands.init", level="INFO") as cm:
+            rc = cli_main(["init", "--recurse-submodules"])
+
+        self.assertEqual(rc, 1)
+        joined = "\n".join(cm.output)
+        # The broken submodule appears in the failure summary.
+        self.assertIn("ishproject init failed in", joined)
+        self.assertIn("broken", joined)
+        # The skip submodule appears in the skip summary, not the failure summary.
+        self.assertIn("ishproject not configured", joined)
+        self.assertIn("skip", joined)
+
+    def test_init_error_messages_include_repo_path(self) -> None:
+        # Fetch failure path: the message must include a tag identifying
+        # which repo it concerns.
+        _init_repo(self.root)
+        _git("remote", "add", "origin", "/nonexistent/path.git", cwd=self.root)
+        with self.assertLogs("pyishlib.ishproject.commands.init", level="ERROR") as cm:
+            rc = cli_main(["init"])
+        self.assertEqual(rc, 1)
+        joined = "\n".join(cm.output)
+        self.assertIn("Failed to fetch", joined)
+        # The bracketed tag is either "[.]" (relative-to-cwd) or "[<abspath>]".
+        self.assertTrue(
+            "[.]" in joined or f"[{self.root}]" in joined,
+            f"expected repo tag in: {joined!r}",
         )
 
     def test_init_recurse_continues_past_submodule_failure(self) -> None:
