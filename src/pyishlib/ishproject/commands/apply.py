@@ -91,6 +91,11 @@ class ApplyCommand(CliCommand):
             return 1
 
         rest_list = list(rest)
+        # Project worktrees never contain ishlib/src, so launcher install is
+        # always meaningless here. Default-skip; leave as-is if the caller
+        # already requested it explicitly.
+        if "--skip-launchers" not in rest_list:
+            rest_list.insert(0, "--skip-launchers")
         global_args = ["--source", str(source), "--target", str(target)]
         self._update_project_excludes(
             source, target, rest_list, global_args=global_args

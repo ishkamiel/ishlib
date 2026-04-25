@@ -29,6 +29,24 @@ class _RemoteError(Exception):
     """Sentinel: remote resolution failed; caller returns 1."""
 
 
+class _NotConfigured(Exception):
+    """Sentinel: repo has no ishproject branch and ``--create`` was not given.
+
+    Distinguished from a real failure so recursion can classify it as a
+    skip rather than an error.  Carrying this via an exception (rather
+    than an int sentinel) avoids collisions with arbitrary non-zero exit
+    codes from the forwarded ``ishfiles apply`` call.
+    """
+
+
+def _repo_tag(root: Path) -> str:
+    """Return a short ``[<path>]`` prefix for log messages about *root*."""
+    try:
+        return f"[{root.relative_to(Path.cwd())}]"
+    except ValueError:
+        return f"[{root}]"
+
+
 def _looks_like_url(s: str) -> bool:
     if Path(s).is_absolute():  # absolute path (POSIX or Windows)
         return True
@@ -42,7 +60,7 @@ def _looks_like_url(s: str) -> bool:
     return False
 
 
-def _resolve_remote(repo: GitRepo, args: argparse.Namespace) -> str:
+def _resolve_remote(repo: GitRepo, args: argparse.Namespace, root: Path) -> str:
     """Determine which remote to use for the ishproject branch.
 
     Resolution order:
@@ -56,6 +74,7 @@ def _resolve_remote(repo: GitRepo, args: argparse.Namespace) -> str:
     Raises:
         _RemoteError: when resolution cannot proceed (caller returns 1).
     """
+    tag = _repo_tag(root)
     if args.remote is not None:
         reply = args.remote
     else:
@@ -63,8 +82,9 @@ def _resolve_remote(repo: GitRepo, args: argparse.Namespace) -> str:
             return "origin"
         if not sys.stdin.isatty():
             log.error(
-                "No `origin` remote configured and no --remote flag given. "
-                "Pass --remote <name|url> to specify the remote."
+                "%s No `origin` remote configured and no --remote flag given. "
+                "Pass --remote <name|url> to specify the remote.",
+                tag,
             )
             raise _RemoteError()
         reply = prompt_string(
@@ -73,7 +93,7 @@ def _resolve_remote(repo: GitRepo, args: argparse.Namespace) -> str:
             name="remote",
         )
         if not reply:
-            log.error("No remote specified; aborting.")
+            log.error("%s No remote specified; aborting.", tag)
             raise _RemoteError()
 
     # Name of an already-configured remote?
@@ -87,8 +107,9 @@ def _resolve_remote(repo: GitRepo, args: argparse.Namespace) -> str:
             if existing == reply:
                 return "ishproject"  # idempotent re-run
             log.error(
-                "Remote `ishproject` is already set to %s; refusing to "
+                "%s Remote `ishproject` is already set to %s; refusing to "
                 "overwrite with %s.",
+                tag,
                 existing,
                 reply,
             )
@@ -97,7 +118,8 @@ def _resolve_remote(repo: GitRepo, args: argparse.Namespace) -> str:
         return "ishproject"
 
     log.error(
-        "Remote %r is not configured in this repo and does not look like a URL.",
+        "%s Remote %r is not configured in this repo and does not look like a URL.",
+        tag,
         reply,
     )
     raise _RemoteError()
@@ -166,20 +188,36 @@ class InitCommand(CliCommand):
         cfg: IshprojectConfig = self.cfg.ishproject_cfg
         branch = cfg.default_branch
         root = Path.cwd()
+        recurse = bool(getattr(self.cfg, "recurse_submodules", False))
 
-        rc = self._init_one(self.cfg, cfg, branch, root)
+        skipped: List[str] = []
+        failures: List[str] = []
+        parent_not_configured = False
+        rc = 0
+        try:
+            rc = self._init_one(self.cfg, cfg, branch, root)
+        except _NotConfigured:
+            parent_not_configured = True
 
-        if not getattr(self.cfg, "recurse_submodules", False):
+        if not recurse:
+            # Standalone callers asked about one specific repo. "Not
+            # configured" is still a non-success outcome (so the shell
+            # exit is non-zero), but the user already got an info-level
+            # message from `_init_project_worktree` explaining exactly
+            # what happened.
+            if parent_not_configured:
+                return 1
             return rc
 
-        failures: List[str] = []
-        if rc != 0:
+        if parent_not_configured:
+            skipped.append(str(root))
+        elif rc != 0:
             failures.append(str(root))
 
         try:
             repo = GitRepo.discover(root, require_root=True)
         except NotAGitRepoError:
-            return 1 if failures else rc
+            return 1 if failures else 0
 
         child_args = copy.copy(self.cfg)
         child_args.remote = None
@@ -187,12 +225,27 @@ class InitCommand(CliCommand):
 
         for sub in repo.list_submodules(recursive=True):
             log.info("ishproject init in submodule %s", sub)
-            sub_rc = self._init_one(child_args, cfg, branch, sub)
+            try:
+                sub_rc = self._init_one(child_args, cfg, branch, sub)
+            except _NotConfigured:
+                skipped.append(str(sub))
+                continue
             if sub_rc != 0:
                 failures.append(str(sub))
 
+        if skipped:
+            log.info(
+                "ishproject not configured in %d repo(s) (no %s branch): %s",
+                len(skipped),
+                branch,
+                ", ".join(skipped),
+            )
         if failures:
-            log.error("ishproject init failed in: %s", ", ".join(failures))
+            log.error(
+                "ishproject init failed in %d repo(s): %s",
+                len(failures),
+                ", ".join(failures),
+            )
             return 1
         return 0
 
@@ -259,14 +312,18 @@ class InitCommand(CliCommand):
 
         # From here a remote is needed: fetch to refresh refs, then decide.
         try:
-            remote_name = _resolve_remote(repo, args)
+            remote_name = _resolve_remote(repo, args, root)
         except _RemoteError:
             return 1
 
         try:
             repo.fetch(remote_name)
         except subprocess.CalledProcessError:
-            log.error("Failed to fetch from %s; aborting.", remote_name)
+            log.error(
+                "%s Failed to fetch from %s; aborting.",
+                _repo_tag(root),
+                remote_name,
+            )
             return 1
 
         carriers = repo.remotes_with_branch(branch)
@@ -297,13 +354,14 @@ class InitCommand(CliCommand):
             return 0
 
         if not args.create:
-            log.error(
-                "Branch %s not found locally or on remote %s after fetch. "
-                "Pass --create to bootstrap an empty orphan branch.",
+            log.info(
+                "%s ishproject not configured (no %s branch on %s); "
+                "pass --create to bootstrap.",
+                _repo_tag(root),
                 branch,
                 remote_name,
             )
-            return 1
+            raise _NotConfigured()
 
         # Orphan path: create locally then push to validate the remote.
         if not runner.dry_run:
@@ -324,8 +382,9 @@ class InitCommand(CliCommand):
             )
         except subprocess.CalledProcessError:
             log.error(
-                "Orphan branch %s created locally but push to %s failed. "
+                "%s Orphan branch %s created locally but push to %s failed. "
                 "Fix the remote and run: git -C %s push -u %s %s",
+                _repo_tag(root),
                 branch,
                 remote_name,
                 source,
