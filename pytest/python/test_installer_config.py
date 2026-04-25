@@ -266,7 +266,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
             return real_open(file, mode, *a, **kw)
 
         with patch("builtins.open", side_effect=mock_open):
-            return InstallerConfigTOML(fn, cfg=cfg)
+            return InstallerConfigTOML(fn, cfg=cfg)  # type: ignore[arg-type]
 
     # ---- no tags → always included ----------------------------------------
 

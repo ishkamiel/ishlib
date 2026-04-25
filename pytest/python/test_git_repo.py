@@ -470,7 +470,7 @@ class TestRemoteOps(unittest.TestCase):
 
     def test_remote_url_returns_url(self) -> None:
         url = self.repo.remote_url("origin")
-        self.assertIsNotNone(url)
+        assert url is not None
         self.assertIn("bare.git", url)
 
     def test_remote_url_missing_remote_returns_none(self) -> None:

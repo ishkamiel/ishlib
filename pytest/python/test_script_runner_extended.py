@@ -24,7 +24,10 @@ from pyishlib.ish_config import IshConfig
 
 
 def _make_cfg(
-    source: str, target: str = None, data_template: dict = None, verbose: bool = False
+    source: str,
+    target: str | None = None,
+    data_template: dict | None = None,
+    verbose: bool = False,
 ):
     """Build a minimal IshConfig-like object for tests."""
     import logging as _logging
