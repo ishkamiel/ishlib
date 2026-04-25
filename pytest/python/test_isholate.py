@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 
-# SPDX-License-Identifier: MIT
-# Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
-
 #
 # Tests for the isholate tool (CLI and container lifecycle)
 
