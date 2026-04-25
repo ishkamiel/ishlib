@@ -9,7 +9,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(
@@ -21,7 +20,6 @@ from pyishlib.ishfiles.commands.external import (
     _seed_context,
 )
 from pyishlib.ishfiles.externals_config import ExternalSpec
-from pyishlib.dotfile_context import DotfileContext
 from pyishlib.ish_config import IshConfig
 
 

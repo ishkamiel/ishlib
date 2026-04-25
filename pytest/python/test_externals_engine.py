@@ -5,14 +5,13 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
@@ -20,8 +19,6 @@ sys.path.insert(
 
 from pyishlib.ishfiles.externals import (
     ExternalsEngine,
-    FetchResult,
-    ApplyResult,
     copy_tree_nondestructive,
     _parse_remote_tags,
     _pick_latest_tag,

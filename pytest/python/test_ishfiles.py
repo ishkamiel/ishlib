@@ -949,7 +949,7 @@ class TestDataTemplateIsholate:
 
     def test_isholate_override_not_saved(self, tmp_path):
         """Isholate overrides must not trigger a save to the config file."""
-        from pyishlib.ishfiles.data import process_data_template, _save_data_section
+        from pyishlib.ishfiles.data import process_data_template
 
         cfg = self._make_cfg(
             tmp_path,
@@ -2195,7 +2195,7 @@ class TestProcessDataTemplate:
 
     def test_invalid_bool_value_included_in_new_values(self):
         """Re-prompted values from invalid bool fields are offered for saving."""
-        from pyishlib.ishfiles.data import process_data_template, _validate_value
+        from pyishlib.ishfiles.data import process_data_template
 
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as cfg_dir:
             ishconfig = Path(src) / "ishconfig"
