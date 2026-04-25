@@ -47,9 +47,7 @@ class TestInstaller(unittest.TestCase):
         install_package_result: bool = installer.install_pkg(pkg_config)
 
         # mock_which.assert_called_once_with("fakecmd")
-        mock_run.assert_any_call(
-            ["apt", "install", "-y", "fakepkg"], sudo=True
-        )
+        mock_run.assert_any_call(["apt", "install", "-y", "fakepkg"], sudo=True)
         assert install_package_result
 
 

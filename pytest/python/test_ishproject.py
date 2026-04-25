@@ -882,6 +882,7 @@ class TestInit(_ChdirTestCase):
         self.assertIn("--debug", argv)
         self.assertIn("--log-file", argv)
         self.assertIn(str(log_path), argv)
+
     # ---- --recurse-submodules ---------------------------------------------
 
     def test_init_no_recurse_skips_submodule(self) -> None:
@@ -893,9 +894,7 @@ class TestInit(_ChdirTestCase):
         rc = cli_main(["init", "--create", "--remote", str(self.bare)])
         self.assertEqual(rc, 0)
         self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
-        self.assertFalse(
-            (self.root / "child" / ".ishlib" / "ishproject").exists()
-        )
+        self.assertFalse((self.root / "child" / ".ishlib" / "ishproject").exists())
 
     def test_init_recurse_submodules_inits_child(self) -> None:
         _init_repo(self.root)
@@ -914,13 +913,9 @@ class TestInit(_ChdirTestCase):
         )
         self.assertEqual(rc, 0)
         self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
-        self.assertTrue(
-            (self.root / "child" / ".ishlib" / "ishproject").is_dir()
-        )
+        self.assertTrue((self.root / "child" / ".ishlib" / "ishproject").is_dir())
         # Submodule's real git dir lives under the parent's .git/modules/.
-        sub_exclude = (
-            self.root / ".git" / "modules" / "child" / "info" / "exclude"
-        )
+        sub_exclude = self.root / ".git" / "modules" / "child" / "info" / "exclude"
         self.assertTrue(sub_exclude.is_file())
         self.assertIn("/.ishlib/", sub_exclude.read_text(encoding="utf-8"))
 
@@ -1021,17 +1016,9 @@ class TestInit(_ChdirTestCase):
         )
         self.assertEqual(rc, 0)
         self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
+        self.assertTrue((self.root / "child" / ".ishlib" / "ishproject").is_dir())
         self.assertTrue(
-            (self.root / "child" / ".ishlib" / "ishproject").is_dir()
-        )
-        self.assertTrue(
-            (
-                self.root
-                / "child"
-                / "grandchild"
-                / ".ishlib"
-                / "ishproject"
-            ).is_dir()
+            (self.root / "child" / "grandchild" / ".ishlib" / "ishproject").is_dir()
         )
 
     def test_init_recurse_continues_past_submodule_failure(self) -> None:
@@ -1068,13 +1055,9 @@ class TestInit(_ChdirTestCase):
         self.assertEqual(rc, 1)
         # Parent and the healthy submodule still got inited.
         self.assertTrue((self.root / ".ishlib" / "ishproject").is_dir())
-        self.assertTrue(
-            (self.root / "healthy" / ".ishlib" / "ishproject").is_dir()
-        )
+        self.assertTrue((self.root / "healthy" / ".ishlib" / "ishproject").is_dir())
         # The broken submodule did not.
-        self.assertFalse(
-            (self.root / "broken" / ".ishlib" / "ishproject").exists()
-        )
+        self.assertFalse((self.root / "broken" / ".ishlib" / "ishproject").exists())
 
 
 # ---------------------------------------------------------------------------

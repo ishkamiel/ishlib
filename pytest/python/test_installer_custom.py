@@ -94,7 +94,11 @@ class TestInstallerCustom:
     def test_can_use_custom_with_extension(self):
         # The platform-native extension (.sh on Unix, .ps1 on Windows) is found.
         ext = "ps1" if sys.platform == "win32" else "sh"
-        content = "Write-Output hi\n" if sys.platform == "win32" else "#!/bin/sh\necho hello\n"
+        content = (
+            "Write-Output hi\n"
+            if sys.platform == "win32"
+            else "#!/bin/sh\necho hello\n"
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
@@ -108,7 +112,11 @@ class TestInstallerCustom:
     def test_can_use_custom_ignored_when_only_wrong_platform_extension(self):
         # A script with the wrong platform's extension is not surfaced.
         other_ext = "sh" if sys.platform == "win32" else "ps1"
-        content = "#!/bin/sh\necho hello\n" if sys.platform == "win32" else "Write-Output hi\n"
+        content = (
+            "#!/bin/sh\necho hello\n"
+            if sys.platform == "win32"
+            else "Write-Output hi\n"
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
@@ -172,7 +180,11 @@ class TestInstallerCustom:
     def test_find_script_with_extension(self):
         # The platform-native extension is found.
         ext = "ps1" if sys.platform == "win32" else "sh"
-        content = "Write-Output hi\n" if sys.platform == "win32" else "#!/bin/sh\necho hello\n"
+        content = (
+            "Write-Output hi\n"
+            if sys.platform == "win32"
+            else "#!/bin/sh\necho hello\n"
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
@@ -187,11 +199,17 @@ class TestInstallerCustom:
     def test_find_script_returns_none_for_wrong_platform_extension(self):
         # Only the wrong platform's extension exists: _find_script returns None.
         other_ext = "sh" if sys.platform == "win32" else "ps1"
-        content = "#!/bin/sh\necho hello\n" if sys.platform == "win32" else "Write-Output hi\n"
+        content = (
+            "#!/bin/sh\necho hello\n"
+            if sys.platform == "win32"
+            else "Write-Output hi\n"
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             installers = Path(tmpdir) / "ishinstallers"
             installers.mkdir()
-            (installers / f"install_mytool.{other_ext}").write_text(content, encoding="utf-8")
+            (installers / f"install_mytool.{other_ext}").write_text(
+                content, encoding="utf-8"
+            )
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
             assert custom._find_script("mytool") is None
@@ -216,8 +234,10 @@ class TestInstallerCustom:
             with_ext.write_text("#!/bin/sh\necho ext\n", encoding="utf-8")
             cfg = make_cfg(source=tmpdir)
             custom = InstallerCustom(make_runner(cfg=cfg), cfg=cfg)
-            with patch("pyishlib.installer_custom.detect_os", return_value="linux"), \
-                 patch("pyishlib.installer_custom.detect_distro", return_value=None):
+            with (
+                patch("pyishlib.installer_custom.detect_os", return_value="linux"),
+                patch("pyishlib.installer_custom.detect_distro", return_value=None),
+            ):
                 found = custom._find_script("mytool")
             assert found is not None and found.name == "install_mytool.sh"
 
@@ -251,7 +271,9 @@ class TestInstallerCustomRegistration:
         runner = CommandRunner(cfg=cfg)
         runner.which = lambda cmd: None
         installer = Installer(cfg=cfg, runner=runner)
-        assert len(installer._backends) == 7  # apt, dnf, cargo, pip, brew, winget, custom
+        assert (
+            len(installer._backends) == 7
+        )  # apt, dnf, cargo, pip, brew, winget, custom
 
     def test_get_installer_with_custom(self):
         with tempfile.TemporaryDirectory() as tmpdir:

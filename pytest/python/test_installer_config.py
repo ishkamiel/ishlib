@@ -273,7 +273,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_no_tags_always_included(self):
         config = self._make_config(
             {"machineType": "min"},
-            b"[pkg]\napt = \"somepkg\"\n",
+            b'[pkg]\napt = "somepkg"\n',
         )
         pkgs = config.get_pkgs()
         assert any(p["name"] == "pkg" for p in pkgs)
@@ -283,7 +283,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_bool_tag_truthy_included(self):
         config = self._make_config(
             {"needBuildTools": "true"},
-            b"[pkg]\napt = \"build-pkg\"\ntags = [\"needBuildTools\"]\n",
+            b'[pkg]\napt = "build-pkg"\ntags = ["needBuildTools"]\n',
         )
         pkgs = config.get_pkgs()
         assert any(p["name"] == "pkg" for p in pkgs)
@@ -291,7 +291,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_bool_tag_falsy_excluded(self):
         config = self._make_config(
             {"needBuildTools": "false"},
-            b"[pkg]\napt = \"build-pkg\"\ntags = [\"needBuildTools\"]\n",
+            b'[pkg]\napt = "build-pkg"\ntags = ["needBuildTools"]\n',
         )
         pkgs = config.get_pkgs()
         assert not any(p["name"] == "pkg" for p in pkgs)
@@ -300,7 +300,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
         """!isWork is true when isWork is false."""
         config = self._make_config(
             {"isWork": "false"},
-            b"[pkg]\napt = \"personal-pkg\"\ntags = [\"!isWork\"]\n",
+            b'[pkg]\napt = "personal-pkg"\ntags = ["!isWork"]\n',
         )
         pkgs = config.get_pkgs()
         assert any(p["name"] == "pkg" for p in pkgs)
@@ -308,7 +308,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_negated_bool_tag_excluded_when_truthy(self):
         config = self._make_config(
             {"isWork": "true"},
-            b"[pkg]\napt = \"personal-pkg\"\ntags = [\"!isWork\"]\n",
+            b'[pkg]\napt = "personal-pkg"\ntags = ["!isWork"]\n',
         )
         pkgs = config.get_pkgs()
         assert not any(p["name"] == "pkg" for p in pkgs)
@@ -318,7 +318,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_tags_type_exact_match(self):
         config = self._make_config(
             {"flavor": "chocolate"},
-            b"[pkg]\napt = \"choc-pkg\"\ntags = [\"chocolate\"]\n",
+            b'[pkg]\napt = "choc-pkg"\ntags = ["chocolate"]\n',
         )
         pkgs = config.get_pkgs()
         assert any(p["name"] == "pkg" for p in pkgs)
@@ -326,7 +326,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_tags_type_no_match(self):
         config = self._make_config(
             {"flavor": "vanilla"},
-            b"[pkg]\napt = \"choc-pkg\"\ntags = [\"chocolate\"]\n",
+            b'[pkg]\napt = "choc-pkg"\ntags = ["chocolate"]\n',
         )
         pkgs = config.get_pkgs()
         assert not any(p["name"] == "pkg" for p in pkgs)
@@ -335,7 +335,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
 
     def test_ordered_tags_higher_implies_lower(self):
         """personal machine includes 'min' and 'def' tagged packages."""
-        toml = b"[a]\napt=\"a\"\ntags=[\"min\"]\n[b]\napt=\"b\"\ntags=[\"def\"]\n[c]\napt=\"c\"\ntags=[\"personal\"]\n"
+        toml = b'[a]\napt="a"\ntags=["min"]\n[b]\napt="b"\ntags=["def"]\n[c]\napt="c"\ntags=["personal"]\n'
         config = self._make_config({"machineType": "personal"}, toml)
         names = [p["name"] for p in config.get_pkgs()]
         assert "a" in names
@@ -344,7 +344,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
 
     def test_ordered_tags_lower_does_not_imply_higher(self):
         """min machine excludes 'def' and 'personal' tagged packages."""
-        toml = b"[a]\napt=\"a\"\ntags=[\"min\"]\n[b]\napt=\"b\"\ntags=[\"def\"]\n[c]\napt=\"c\"\ntags=[\"personal\"]\n"
+        toml = b'[a]\napt="a"\ntags=["min"]\n[b]\napt="b"\ntags=["def"]\n[c]\napt="c"\ntags=["personal"]\n'
         config = self._make_config({"machineType": "min"}, toml)
         names = [p["name"] for p in config.get_pkgs()]
         assert "a" in names
@@ -352,7 +352,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
         assert "c" not in names
 
     def test_ordered_tags_def_includes_min_excludes_personal(self):
-        toml = b"[a]\napt=\"a\"\ntags=[\"min\"]\n[b]\napt=\"b\"\ntags=[\"def\"]\n[c]\napt=\"c\"\ntags=[\"personal\"]\n"
+        toml = b'[a]\napt="a"\ntags=["min"]\n[b]\napt="b"\ntags=["def"]\n[c]\napt="c"\ntags=["personal"]\n'
         config = self._make_config({"machineType": "def"}, toml)
         names = [p["name"] for p in config.get_pkgs()]
         assert "a" in names
@@ -364,7 +364,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
     def test_unknown_tag_excluded_with_warning(self):
         config = self._make_config(
             {},
-            b"[pkg]\napt = \"p\"\ntags = [\"totally_unknown_tag\"]\n",
+            b'[pkg]\napt = "p"\ntags = ["totally_unknown_tag"]\n',
         )
         with self.assertLogs("pyishlib.tag_filter", level="WARNING"):
             pkgs = config.get_pkgs()
@@ -376,7 +376,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
         """Package tag 'Min' matches ordered_tags value 'min'."""
         config = self._make_config(
             {"machineType": "min"},
-            b"[pkg]\napt = \"p\"\ntags = [\"Min\"]\n",
+            b'[pkg]\napt = "p"\ntags = ["Min"]\n',
         )
         pkgs = config.get_pkgs()
         assert any(p["name"] == "pkg" for p in pkgs)
@@ -385,7 +385,7 @@ class TestInstallerConfigTagFilter(unittest.TestCase):
         """Context value 'Personal' matches tag 'personal'."""
         config = self._make_config(
             {"machineType": "Personal"},
-            b"[pkg]\napt = \"p\"\ntags = [\"personal\"]\n",
+            b'[pkg]\napt = "p"\ntags = ["personal"]\n',
         )
         pkgs = config.get_pkgs()
         assert any(p["name"] == "pkg" for p in pkgs)

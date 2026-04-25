@@ -37,7 +37,9 @@ _IS_WIN = sys.platform == "win32"
 _HAS_GRIFFE = importlib.util.find_spec("griffe") is not None
 
 _SKIP_WIN = unittest.skipIf(_IS_WIN, "ishlib.sh requires bash; skipped on Windows")
-_SKIP_GRIFFE = unittest.skipIf(not _HAS_GRIFFE, "griffe not installed (pip install griffe)")
+_SKIP_GRIFFE = unittest.skipIf(
+    not _HAS_GRIFFE, "griffe not installed (pip install griffe)"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +78,8 @@ def _run_build_pydocs(out_dir: Path) -> None:
     result = _run(
         sys.executable,
         str(_SCRIPTS_DIR / "build_pydocs.py"),
-        "--out-dir", str(out_dir),
+        "--out-dir",
+        str(out_dir),
     )
     assert result.returncode == 0, (
         f"build_pydocs.py failed (exit {result.returncode}):\n"
@@ -89,9 +92,12 @@ def _run_build_wiki(gen_docs_dir: Path, out_dir: Path) -> None:
     result = _run(
         sys.executable,
         str(_SCRIPTS_DIR / "build_wiki.py"),
-        "--src-docs-dir", str(_SRC_DOCS_DIR),
-        "--gen-docs-dir", str(gen_docs_dir),
-        "--out", str(out_dir),
+        "--src-docs-dir",
+        str(_SRC_DOCS_DIR),
+        "--gen-docs-dir",
+        str(gen_docs_dir),
+        "--out",
+        str(out_dir),
     )
     assert result.returncode == 0, (
         f"build_wiki.py failed (exit {result.returncode}):\n"
@@ -148,7 +154,8 @@ class TestPydocsBuild(unittest.TestCase):
         result = _run(
             sys.executable,
             str(_SCRIPTS_DIR / "build_pydocs.py"),
-            "--out-dir", str(self.pyishlib_out),
+            "--out-dir",
+            str(self.pyishlib_out),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -158,8 +165,11 @@ class TestPydocsBuild(unittest.TestCase):
 
     def test_module_pages_created(self):
         _run_build_pydocs(self.pyishlib_out)
-        pages = [p for p in self.pyishlib_out.iterdir()
-                 if p.suffix == ".md" and p.name != "index.md"]
+        pages = [
+            p
+            for p in self.pyishlib_out.iterdir()
+            if p.suffix == ".md" and p.name != "index.md"
+        ]
         self.assertGreater(len(pages), 0, "No per-module pages generated")
 
     def test_index_references_modules(self):
@@ -200,9 +210,12 @@ class TestWikiBuild(unittest.TestCase):
         result = _run(
             sys.executable,
             str(_SCRIPTS_DIR / "build_wiki.py"),
-            "--src-docs-dir", str(_SRC_DOCS_DIR),
-            "--gen-docs-dir", str(self.docs_dir),
-            "--out", str(self.wiki_out),
+            "--src-docs-dir",
+            str(_SRC_DOCS_DIR),
+            "--gen-docs-dir",
+            str(self.docs_dir),
+            "--out",
+            str(self.wiki_out),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 

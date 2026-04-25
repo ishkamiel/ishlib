@@ -75,7 +75,7 @@ class TestLoadTomlFile(unittest.TestCase):
 
     def test_tomllib_unavailable_silent_by_default(self) -> None:
         path = self.tmp_path / "irrelevant.toml"
-        path.write_text('a = 1\n', encoding="utf-8")
+        path.write_text("a = 1\n", encoding="utf-8")
 
         with patch.object(_compat, "tomllib", None):
             # No logs expected at WARNING level when warn_missing_toml=False.
@@ -95,13 +95,11 @@ class TestLoadTomlFile(unittest.TestCase):
 
     def test_tomllib_unavailable_warns_when_opted_in(self) -> None:
         path = self.tmp_path / "irrelevant.toml"
-        path.write_text('a = 1\n', encoding="utf-8")
+        path.write_text("a = 1\n", encoding="utf-8")
 
         with patch.object(_compat, "tomllib", None):
             with self.assertLogs("pyishlib._compat", level="WARNING") as captured:
-                result = load_toml_file(
-                    path, default=None, warn_missing_toml=True
-                )
+                result = load_toml_file(path, default=None, warn_missing_toml=True)
 
         self.assertIsNone(result)
         self.assertTrue(
@@ -139,7 +137,7 @@ class TestLoadTomlFileStrict(unittest.TestCase):
 
     def test_missing_tomllib_raises_importerror(self) -> None:
         path = self.tmp_path / "any.toml"
-        path.write_text('a = 1\n', encoding="utf-8")
+        path.write_text("a = 1\n", encoding="utf-8")
 
         with patch.object(_compat, "tomllib", None):
             with patch.object(_compat, "HAS_TOML", False):

@@ -60,9 +60,13 @@ class TestInstallAll(unittest.TestCase):
         ret = install_all(dest_dir=self.dest, source_dir=self.source)
         self.assertEqual(ret, 0)
         for tool in TOOLS:
-            self.assertTrue((self.dest / tool.name).is_file(), f"{tool.name} not created")
+            self.assertTrue(
+                (self.dest / tool.name).is_file(), f"{tool.name} not created"
+            )
 
-    @unittest.skipIf(sys.platform == "win32", "POSIX execute bits not meaningful on Windows")
+    @unittest.skipIf(
+        sys.platform == "win32", "POSIX execute bits not meaningful on Windows"
+    )
     def test_launchers_are_executable(self):
         install_all(dest_dir=self.dest, source_dir=self.source)
         for tool in TOOLS:
@@ -82,7 +86,9 @@ class TestInstallAll(unittest.TestCase):
                 f"{tool.name} was unnecessarily re-written",
             )
 
-    @unittest.skipIf(sys.platform == "win32", "launcher symlink migration is Linux/macOS-only")
+    @unittest.skipIf(
+        sys.platform == "win32", "launcher symlink migration is Linux/macOS-only"
+    )
     def test_replaces_symlinks(self):
         self.dest.mkdir(parents=True)
         for tool in TOOLS:
@@ -100,8 +106,7 @@ class TestInstallAll(unittest.TestCase):
         self.assertFalse(self.dest.exists(), "dry_run must not create directories")
 
     @unittest.skipIf(
-        sys.platform == "win32"
-        or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
         "chmod(0o555) is unreliable on Windows and when running as root",
     )
     def test_error_on_unwritable_dest(self):

@@ -69,6 +69,7 @@ def test_ish_error_stderr(shell, tmp_path, ishlib):
 
 def test_ish_critical_exits(shell, tmp_path, ishlib):
     import subprocess
+
     script_content = inspect.cleandoc(f"""
     #!/usr/bin/env {shell}
     . "{str(ishlib)}"
@@ -77,10 +78,7 @@ def test_ish_critical_exits(shell, tmp_path, ishlib):
     """)
     tmp_file = tmp_path / "test.sh"
     tmp_file.write_text(script_content)
-    result = subprocess.run(
-        [shell, str(tmp_file)],
-        capture_output=True, text=True
-    )
+    result = subprocess.run([shell, str(tmp_file)], capture_output=True, text=True)
     assert result.returncode != 0
     assert "SHOULD_NOT_REACH" not in result.stdout + result.stderr
     assert "critical_message_here" in result.stdout + result.stderr
@@ -130,6 +128,7 @@ def test_error_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
 
 def test_critical_routes_to_ishlib_log_out(shell, tmp_path, ishlib):
     import subprocess
+
     log_file = tmp_path / "out.log"
     script_content = inspect.cleandoc(f"""
     #!/usr/bin/env {shell}

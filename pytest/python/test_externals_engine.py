@@ -400,8 +400,10 @@ class TestFetchMocked(unittest.TestCase):
         return ExternalsEngine(cfg, runner, state), runner
 
     def test_clone_when_cache_missing(self):
-        with tempfile.TemporaryDirectory() as tmp_src, \
-             tempfile.TemporaryDirectory() as tmp_tgt:
+        with (
+            tempfile.TemporaryDirectory() as tmp_src,
+            tempfile.TemporaryDirectory() as tmp_tgt,
+        ):
             engine, runner = self._make_engine(tmp_src, tmp_tgt)
             spec = _make_spec()
 
@@ -410,15 +412,16 @@ class TestFetchMocked(unittest.TestCase):
             engine.fetch(spec)
 
             clone_call = [
-                c for c in runner.git.call_args_list
-                if c.args[0][0] == "clone"
+                c for c in runner.git.call_args_list if c.args[0][0] == "clone"
             ]
             assert len(clone_call) == 1
             assert "--no-checkout" in clone_call[0].args[0]
 
     def test_no_clone_when_cache_exists(self):
-        with tempfile.TemporaryDirectory() as tmp_src, \
-             tempfile.TemporaryDirectory() as tmp_tgt:
+        with (
+            tempfile.TemporaryDirectory() as tmp_src,
+            tempfile.TemporaryDirectory() as tmp_tgt,
+        ):
             engine, runner = self._make_engine(tmp_src, tmp_tgt)
             spec = _make_spec()
 
@@ -428,21 +431,23 @@ class TestFetchMocked(unittest.TestCase):
 
             # State says fresh so no fetch needed (refresh period elapsed check).
             # Inject a fresh record so is_stale returns False for 168h period.
-            engine._state.set(spec.path, spec.revision, "sha", spec.url,
-                              last_fetched=time.time())
+            engine._state.set(
+                spec.path, spec.revision, "sha", spec.url, last_fetched=time.time()
+            )
 
             spec.refresh_period = 168 * 3600  # 168h
             engine.fetch(spec)
 
             clone_calls = [
-                c for c in runner.git.call_args_list
-                if c.args[0][0] == "clone"
+                c for c in runner.git.call_args_list if c.args[0][0] == "clone"
             ]
             assert len(clone_calls) == 0
 
     def test_checkout_always_called(self):
-        with tempfile.TemporaryDirectory() as tmp_src, \
-             tempfile.TemporaryDirectory() as tmp_tgt:
+        with (
+            tempfile.TemporaryDirectory() as tmp_src,
+            tempfile.TemporaryDirectory() as tmp_tgt,
+        ):
             engine, runner = self._make_engine(tmp_src, tmp_tgt)
             spec = _make_spec()
             cache_dir = Path(tmp_src) / ".cache" / "externals" / ".fzf"
@@ -451,28 +456,29 @@ class TestFetchMocked(unittest.TestCase):
             engine.fetch(spec)
 
             checkout_calls = [
-                c for c in runner.git.call_args_list
-                if c.args[0][0] == "checkout"
+                c for c in runner.git.call_args_list if c.args[0][0] == "checkout"
             ]
             assert len(checkout_calls) == 1
             assert spec.revision in checkout_calls[0].args[0]
 
     def test_force_bypasses_refresh_period(self):
-        with tempfile.TemporaryDirectory() as tmp_src, \
-             tempfile.TemporaryDirectory() as tmp_tgt:
+        with (
+            tempfile.TemporaryDirectory() as tmp_src,
+            tempfile.TemporaryDirectory() as tmp_tgt,
+        ):
             engine, runner = self._make_engine(tmp_src, tmp_tgt)
             spec = _make_spec(refresh_period=168 * 3600)
 
             cache_dir = Path(tmp_src) / ".cache" / "externals" / ".fzf"
             cache_dir.mkdir(parents=True)
-            engine._state.set(spec.path, spec.revision, "sha", spec.url,
-                              last_fetched=time.time())
+            engine._state.set(
+                spec.path, spec.revision, "sha", spec.url, last_fetched=time.time()
+            )
 
             engine.fetch(spec, force=True)
 
             fetch_calls = [
-                c for c in runner.git.call_args_list
-                if c.args[0][0] == "fetch"
+                c for c in runner.git.call_args_list if c.args[0][0] == "fetch"
             ]
             assert len(fetch_calls) == 1
 
