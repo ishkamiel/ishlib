@@ -408,10 +408,8 @@ class TestFetchMocked(unittest.TestCase):
             engine, runner = self._make_engine(tmp_src, tmp_tgt)
             spec = _make_spec()
 
-            # Patch cache_dir to not exist
-            cache_dir = Path(tmp_src) / ".cache" / "externals" / ".fzf"
-            # cache_dir does not exist — engine should clone
-
+            # cache_dir (under tmp_src/.cache/externals/.fzf) does not exist —
+            # engine should clone.
             engine.fetch(spec)
 
             clone_call = [

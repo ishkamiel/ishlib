@@ -33,7 +33,7 @@ class TestCommandRunnerLogging:
     @patch.object(CommandRunner, "_print_cmd")
     def test_run_print(self, mock_method):
         command = ["echo", "Hello, World!"]
-        result = self.runner.run(command, capture_output=True)
+        self.runner.run(command, capture_output=True)
 
         # Make sure we printed the command via _print_cmd
         mock_method.assert_called_with(command)

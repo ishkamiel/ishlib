@@ -56,7 +56,7 @@ class TestInstallerConfigSimple(unittest.TestCase):
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_read(self, mock_open):
-        config = InstallerConfigJSON(TestInstallerConfigSimple.DUMMY_CONFIG_FN)
+        InstallerConfigJSON(TestInstallerConfigSimple.DUMMY_CONFIG_FN)
         mock_open.assert_any_call(
             TestInstallerConfigSimple.DUMMY_CONFIG_FN, "r", encoding="utf-8"
         )
@@ -110,7 +110,7 @@ class TestInstallerConfigFull(unittest.TestCase):
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_read(self, mock_open):
-        config = InstallerConfigJSON(TestInstallerConfigFull.DUMMY_CONFIG_FN)
+        InstallerConfigJSON(TestInstallerConfigFull.DUMMY_CONFIG_FN)
         mock_open.assert_any_call(
             TestInstallerConfigFull.DUMMY_CONFIG_FN, "r", encoding="utf-8"
         )
@@ -139,7 +139,7 @@ apt = "apt-file"
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_read(self, mock_open):
-        config = InstallerConfigTOML(TestInstallerConfigTOMLSimple.DUMMY_CONFIG_FN)
+        InstallerConfigTOML(TestInstallerConfigTOMLSimple.DUMMY_CONFIG_FN)
         mock_open.assert_any_call(TestInstallerConfigTOMLSimple.DUMMY_CONFIG_FN, "rb")
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
@@ -194,7 +194,7 @@ type = "python_pkg"
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
     def test_config_read(self, mock_open):
-        config = InstallerConfigTOML(TestInstallerConfigTOMLFull.DUMMY_CONFIG_FN)
+        InstallerConfigTOML(TestInstallerConfigTOMLFull.DUMMY_CONFIG_FN)
         mock_open.assert_any_call(TestInstallerConfigTOMLFull.DUMMY_CONFIG_FN, "rb")
 
     @patch("builtins.open", side_effect=mock_open_side_effect)
