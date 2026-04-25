@@ -3,7 +3,8 @@
 # Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
 
 import inspect
-from . import *
+
+from . import run_check_call, run_script_content
 
 
 def pytest_generate_tests(metafunc):

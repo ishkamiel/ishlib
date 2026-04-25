@@ -4,8 +4,10 @@
 
 import inspect
 from pathlib import Path
-from . import *
+
 import pytest
+
+from . import gen_script_and_check_output
 
 
 @pytest.fixture
