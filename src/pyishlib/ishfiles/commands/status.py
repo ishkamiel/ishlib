@@ -40,7 +40,16 @@ class StatusCommand(CliCommand):
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        pass
+        parser.add_argument(
+            "--include-ignored",
+            action="store_true",
+            default=False,
+            help=(
+                "Also list git-ignored paths under 'Other source changes'. "
+                "Used by `ishproject status` because the ishproject worktree "
+                "tracks files that match the main repo's .git/info/exclude."
+            ),
+        )
 
     def run(self) -> int:
         finder = make_finder(self.cfg)
@@ -58,13 +67,11 @@ class StatusCommand(CliCommand):
 
         try:
             repo = GitRepo.discover(finder.source_dir)
-            # include_ignored: the dotfiles source is typically an
-            # ishproject worktree where managed files may match the
-            # shared .git/info/exclude (ishproject writes those
-            # patterns so the main worktree stays clean). We still want
-            # to see those files here — they are the user's new/edited
-            # dotfiles, not something to silently hide.
-            dirty_paths = repo.status_porcelain(include_ignored=True)
+            # Pass --ignored=traditional only when requested (e.g. by
+            # `ishproject status`, which needs to surface dotfiles that
+            # match .git/info/exclude in the shared ishproject worktree).
+            include_ignored = self.cfg.get_opt("include_ignored", default=False)
+            dirty_paths = repo.status_porcelain(include_ignored=include_ignored)
         except NotAGitRepoError:
             log.warning(
                 "Source directory is not a git repository: %s", finder.source_dir

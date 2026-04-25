@@ -55,8 +55,9 @@ class StatusCommand(CliCommand):
                 source,
             )
             return 1
+        forwarded = ["--include-ignored", *self.cfg.rest]
         return self.passthrough(
             "status",
-            self.cfg.rest,
+            forwarded,
             global_args=["--source", str(source), "--target", str(target)],
         )
