@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2024-2026 Hans Liljestrand <hans@liljestrand.dev>
 
-from . import *
+import pytest
+
+from . import all_shells, get_src_files, run_check_call
 
 
 def pytest_generate_tests(metafunc):
