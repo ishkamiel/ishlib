@@ -25,15 +25,15 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
-from pyishlib.isholate.cli import build_parser, main as cli_main
-from pyishlib.isholate.config import (
+from pyishlib.isholate.cli import build_parser, main as cli_main  # noqa: E402
+from pyishlib.isholate.config import (  # noqa: E402
     discover_host_ishfiles_source,
     discover_project_overlay,
     load_project_config,
     resolve_default_shell,
 )
-from pyishlib.container.incus import check_incus_available
-from pyishlib.isholate.claude import (
+from pyishlib.container.incus import check_incus_available  # noqa: E402
+from pyishlib.isholate.claude import (  # noqa: E402
     _CLAUDE_ALLOW_DOMAINS,
     _CLAUDE_DNS_UPSTREAM,
     _CLAUDE_FIREWALL_APPLY_SCRIPT,
@@ -50,7 +50,7 @@ from pyishlib.isholate.claude import (
     _install_claude_firewall,
     _preflight_claude_host_tools,
 )
-from pyishlib.isholate.container import (
+from pyishlib.isholate.container import (  # noqa: E402
     _META_SOURCE_HASH,
     _assert_no_isholate_devices,
     _find_isholate_containers,

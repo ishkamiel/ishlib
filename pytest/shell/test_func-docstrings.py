@@ -27,5 +27,5 @@ def test_print_docstrings_does_not_leak_IFS(shell, tmp_path, ishlib):
     fi
     """)
     out = gen_script_and_check_output(shell, tmp_path, script_content)
-    lines = [l.strip() for l in out.strip().splitlines()]
+    lines = [line.strip() for line in out.strip().splitlines()]
     assert lines[-1] == "CLEAN"
