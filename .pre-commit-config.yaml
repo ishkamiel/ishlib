@@ -28,8 +28,8 @@ repos:
     rev: v1.20.0
     hooks:
     -   id: mypy
-        exclude: ^pytest/
         additional_dependencies:
+        -   pytest
         -   types-PyYAML
 -   repo: https://github.com/crate-ci/typos
     rev: v1.45.0

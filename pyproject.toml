@@ -33,10 +33,18 @@ dev = [
 
 [tool.ruff]
 src = ["src"]
-exclude = ["pytest"]
 
 [tool.mypy]
 mypy_path = "src"
 explicit_package_bases = true
-exclude = ["pytest/"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pytest.*"]
+disable_error_code = [
+  "call-overload",   # @patch decorator overloads
+  "attr-defined",    # MagicMock attrs and pytest.mark.*
+  "misc",            # decorator-untyped-call chains
+  "no-untyped-def",  # conftest fixtures intentionally unannotated
+]
+check_untyped_defs = false
