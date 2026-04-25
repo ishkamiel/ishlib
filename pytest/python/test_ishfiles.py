@@ -380,6 +380,47 @@ class TestCli:
 
         assert ret == 0  # notes.bak ignored, dot_bashrc unchanged
 
+    def test_apply_skip_launchers_skips_phase0(self):
+        """``--skip-launchers`` must prevent Phase 0 from invoking launcher install."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            with patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers"
+            ) as mock_launch:
+                ret = cli_main(
+                    [
+                        "--source",
+                        src,
+                        "--target",
+                        tgt,
+                        "apply",
+                        "--dry-run",
+                        "--skip-launchers",
+                    ]
+                )
+            assert ret == 0
+            mock_launch.assert_not_called()
+
+    def test_apply_default_runs_phase0(self):
+        """Without ``--skip-launchers``, Phase 0 still invokes launcher install."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            with patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers",
+                return_value=0,
+            ) as mock_launch:
+                ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
+            assert ret == 0
+            mock_launch.assert_called_once()
+
+    def test_apply_launcher_failure_propagates_to_exit_code(self):
+        """A real launcher write failure must mark the apply as errored."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            with patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers",
+                return_value=1,
+            ):
+                ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
+            assert ret == 1
+
 
 # ---------------------------------------------------------------------------
 # reverse translation

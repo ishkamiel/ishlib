@@ -30,15 +30,17 @@ def _install_launchers(cfg: IshConfig) -> int:
     from *cfg*.  The source directory is ``<source>/ishlib/src``; the
     destination is ``<target>/.local/bin``.
 
-    Returns 0 on success, 1 if any launcher could not be written.
+    Returns 0 on success or when the source directory simply does not
+    exist (a normal condition for project worktrees that don't bundle
+    ishlib).  Returns 1 only when an actual write failure occurs.
     """
     source = Path(cfg.get_opt("source")).expanduser()
     target = Path(cfg.get_opt("target")).expanduser()
     source_dir = source / "ishlib" / "src"
     dest_dir = target / ".local" / "bin"
     if not source_dir.is_dir():
-        log.warning("Skipping launcher installation: %s does not exist", source_dir)
-        return 1
+        log.info("Skipping launcher installation: %s does not exist", source_dir)
+        return 0
     return _install_launchers_impl(
         dest_dir=dest_dir,
         source_dir=source_dir,
@@ -85,6 +87,13 @@ class ApplyCommand(CliCommand):
             help="Skip package installation and scripts; apply dotfiles only",
         )
         parser.add_argument(
+            "--skip-launchers",
+            action="store_true",
+            default=False,
+            dest="skip_launchers",
+            help="Skip Phase 0 (tool launcher installation in ~/.local/bin).",
+        )
+        parser.add_argument(
             "--force-scripts",
             nargs="*",
             metavar="SCRIPT",
@@ -116,9 +125,15 @@ class ApplyCommand(CliCommand):
         force_scripts_arg = self.cfg.get_opt("force_scripts")
         force_scripts = force_scripts_arg
 
-        log.info("Phase 0: Installing tool launchers in ~/.local/bin")
-        _install_launchers(self.cfg)
         had_errors = False
+        if self.cfg.get_opt("skip_launchers", default=False):
+            log.debug("Skipping Phase 0: launcher installation (--skip-launchers)")
+        else:
+            log.info("Phase 0: Installing tool launchers in ~/.local/bin")
+            launcher_ret = _install_launchers(self.cfg)
+            if launcher_ret != 0:
+                log.warning("Some tool launchers could not be installed")
+                had_errors = True
 
         finder = make_finder(self.cfg)
         applier = make_applier(self.cfg, finder=finder)

@@ -75,8 +75,8 @@ class TestInstallLaunchers(unittest.TestCase):
                 ret = _install_launchers(cfg)
             self.assertEqual(ret, expected_ret)
 
-    def test_missing_source_dir_returns_nonzero(self):
-        """When ishlib/src does not exist, _install_launchers must not call install_all."""
+    def test_missing_source_dir_skips_silently(self):
+        """A missing ishlib/src is a normal condition (not a failure)."""
         with (
             patch.object(Path, "is_dir", return_value=False),
             patch(
@@ -86,7 +86,7 @@ class TestInstallLaunchers(unittest.TestCase):
             cfg = _make_cfg("/fake/source", "/fake/target")
             ret = _install_launchers(cfg)
         mock_install.assert_not_called()
-        self.assertEqual(ret, 1)
+        self.assertEqual(ret, 0)
 
     def test_all_registered_tools_covered(self):
         """install_all is called once and covers all registered tools via the registry."""
