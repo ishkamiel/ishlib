@@ -90,7 +90,7 @@ def test_dash_dash_q(shell, tmp_path, ishlib):
     assert res[1] == ""
 
 
-def test_dash_dash_q(shell, tmp_path, ishlib):
+def test_dash_dash_q_passthrough(shell, tmp_path, ishlib):
     res = run_cmd(shell, tmp_path, ishlib, "ish_run -q -- echo -- -n -hello --hello")
     assert res[0] == "-- -n -hello --hello"
     assert res[1] == ""
