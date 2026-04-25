@@ -51,28 +51,3 @@ def gen_script_and_check_output(shell, tmp_path, script_content):
         return run_check_output(shell, tmp_file)
     except subprocess.CalledProcessError as e:
         pytest.fail(f"\n{shell} {tmp_file}\n{e.output}")
-
-
-@pytest.fixture
-def all_src_files():
-    return get_src_files()
-
-
-@pytest.fixture
-def project_root():
-    return rel_path(".")
-
-
-@pytest.fixture
-def src_folder():
-    return rel_path("src")
-
-
-@pytest.fixture
-def ishlib():
-    return rel_path("ishlib.sh")
-
-
-@pytest.fixture
-def sh_only():
-    return poisix_only_shells

@@ -15,6 +15,8 @@ import shutil
 
 import pytest
 
+from . import get_src_files, poisix_only_shells, rel_path
+
 _SHELLCHECK_AVAILABLE = bool(shutil.which("shellcheck"))
 # Legacy TAP tests (run via prove) require zsh.
 _ZSH_AVAILABLE = bool(shutil.which("zsh"))
@@ -30,3 +32,28 @@ def pytest_runtest_setup(item):
         pytest.skip("shellcheck not installed")
     if not _ZSH_AVAILABLE and "prove" in item.nodeid:
         pytest.skip("zsh not available (required by legacy prove tests)")
+
+
+@pytest.fixture(scope="session")
+def all_src_files():
+    return get_src_files()
+
+
+@pytest.fixture
+def project_root():
+    return rel_path(".")
+
+
+@pytest.fixture
+def src_folder():
+    return rel_path("src")
+
+
+@pytest.fixture
+def ishlib():
+    return rel_path("ishlib.sh")
+
+
+@pytest.fixture
+def sh_only():
+    return poisix_only_shells
