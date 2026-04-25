@@ -14,6 +14,7 @@ from .installer_custom import InstallerCustom
 from .installer_pip import InstallerPip
 from .installer_brew import InstallerBrew
 from .installer_winget import InstallerWinget
+from .version_check import meets_min_version, probe_version
 
 log = logging.getLogger(__name__)
 
@@ -108,16 +109,48 @@ class Installer:
     def have_pkg(self, package: Mapping) -> bool:
         """Check if a package is installed."""
         found_checker = False
-        if "cmd" in package:
+        cmd = package.get("cmd")
+        min_version = package.get("min_version")
+
+        if cmd is not None:
             found_checker = True
-            if self.runner.which(package["cmd"]) is not None:
+            on_path = self.runner.which(cmd) is not None
+            if min_version is not None:
+                # Version-aware path is authoritative — backends do not version-check,
+                # so consulting them here would mask a too-old installation.
+                if not on_path:
+                    log.debug("Did not find %s with which", cmd)
+                    return False
+                probe_cmd = package.get("command_version", f"{cmd} --version")
+                output = probe_version(self.runner, probe_cmd)
+                if output is None:
+                    log.debug(
+                        "Version probe for %s failed; treating as not installed",
+                        package["name"],
+                    )
+                    return False
+                if meets_min_version(output, min_version):
+                    log.debug(
+                        "Package %s meets min_version %s",
+                        package["name"],
+                        min_version,
+                    )
+                    return True
+                log.debug(
+                    "Package %s below min_version %s; will reinstall",
+                    package["name"],
+                    min_version,
+                )
+                return False
+            if on_path:
                 log.debug(
                     "Package %s installed, found command %s",
                     package["name"],
-                    package["cmd"],
+                    cmd,
                 )
                 return True
-            log.debug("Did not find %s with which", package["cmd"])
+            log.debug("Did not find %s with which", cmd)
+
         for i in self._backends:
             ns = self.installer(i)
             if ns.can_install(package):

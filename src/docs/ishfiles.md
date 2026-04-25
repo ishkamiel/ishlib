@@ -90,6 +90,11 @@ pref = ["cargo"]
 apt = "python3-toml"
 pip = "toml"
 ubuntu = true
+
+[git-modern]
+apt = "git"
+cmd = "git"
+min_version = "2.30"
 ```
 
 ### JSON example
@@ -119,6 +124,8 @@ ubuntu = true
 | `pip` | string | PyPI package name |
 | `winget` | string | Windows Package Manager ID |
 | `cmd` | string | Command name used to check if already installed |
+| `min_version` | string | Minimum acceptable version reported by `cmd`; when set, the cmd check is authoritative (backends are not consulted) |
+| `command_version` | string | Command line that prints the version (defaults to `<cmd> --version`); both stdout and stderr are inspected |
 | `pref` | list | Preferred installer order (e.g. `["cargo", "apt"]`) |
 | `ubuntu` | bool | Only install on Ubuntu |
 | `gnome` | bool | Only install on GNOME desktop |
