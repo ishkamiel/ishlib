@@ -1786,6 +1786,203 @@ class TestStatusPassthrough(_ChdirTestCase):
         self.assertGreater(argv.index("--include-ignored"), argv.index("status"))
 
 
+class TestStatusSubmoduleRecursion(_ChdirTestCase):
+    """`ishproject status` recurses automatically into submodules.
+
+    Each submodule is reported only when the underlying git submodule is
+    initialised AND its locally-known refs include the ishproject branch.
+    No fetches are performed.
+    """
+
+    def _add_initialised_submodule(self, name: str) -> Path:
+        """Create a submodule wired up under ``self.root`` and return its path."""
+        workspace = _bare_workspace(self)
+        bare = _make_submodule_source(workspace, name)
+        _add_submodule(self.root, bare, name)
+        return self.root / name
+
+    def test_recurses_into_submodule_with_branch_and_worktree(self) -> None:
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        sub = self._add_initialised_submodule("child")
+        _git("branch", ISHPROJECT_BRANCH, cwd=sub)
+        (sub / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_main.call_count, 2)
+
+        sources = []
+        for call in mock_main.call_args_list:
+            argv = call.args[0]
+            sources.append(argv[argv.index("--source") + 1])
+        self.assertIn(str(self.root / ".ishlib" / "ishproject"), sources)
+        self.assertIn(str(sub / ".ishlib" / "ishproject"), sources)
+
+    def test_skips_submodule_without_ishproject_branch(self) -> None:
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        # Submodule has no ishproject branch and no worktree.
+        self._add_initialised_submodule("child")
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertEqual(
+            argv[argv.index("--source") + 1],
+            str(self.root / ".ishlib" / "ishproject"),
+        )
+
+    def test_includes_uninitialized_submodule_with_branch(self) -> None:
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        sub = self._add_initialised_submodule("child")
+        # Branch exists, but no `.ishlib/ishproject` worktree.
+        _git("branch", ISHPROJECT_BRANCH, cwd=sub)
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            with self.assertLogs(
+                "pyishlib.ishproject.commands.status", level="INFO"
+            ) as cm:
+                rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        # Parent only — submodule has no worktree to status against.
+        mock_main.assert_called_once()
+        # …but the submodule was surfaced in an info log.
+        joined = "\n".join(cm.output)
+        self.assertIn(str(sub), joined)
+        self.assertIn(ISHPROJECT_BRANCH, joined)
+        self.assertIn("worktree not initialized", joined)
+
+    def test_no_header_when_only_parent_reports(self) -> None:
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        # Submodule has no ishproject branch — no section, no header.
+        self._add_initialised_submodule("child")
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ):
+            from io import StringIO
+
+            buf = StringIO()
+            with patch("sys.stdout", buf):
+                rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("===", buf.getvalue())
+
+    def test_header_emitted_when_submodule_reports(self) -> None:
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        sub = self._add_initialised_submodule("child")
+        _git("branch", ISHPROJECT_BRANCH, cwd=sub)
+        (sub / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ):
+            from io import StringIO
+
+            buf = StringIO()
+            with patch("sys.stdout", buf):
+                rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn("=== . ===", out)
+        self.assertIn("=== child ===", out)
+
+    def test_skips_submodule_with_stale_worktree_dir_no_branch(self) -> None:
+        """A leftover `.ishlib/ishproject` directory must not be reported
+        when the ishproject branch has been deleted (or never existed)
+        in the submodule.  Otherwise status would silently report
+        against a stale worktree, contradicting the "no branch → silent
+        skip" contract.
+        """
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        sub = self._add_initialised_submodule("child")
+        # Stale worktree dir present, but no ishproject branch.
+        (sub / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            from io import StringIO
+
+            buf = StringIO()
+            with patch("sys.stdout", buf):
+                rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        # Parent only; submodule is silently skipped.
+        mock_main.assert_called_once()
+        argv = mock_main.call_args.args[0]
+        self.assertEqual(
+            argv[argv.index("--source") + 1],
+            str(self.root / ".ishlib" / "ishproject"),
+        )
+        # No header should be emitted (only one section, no submodule report).
+        self.assertNotIn("===", buf.getvalue())
+
+    def test_does_not_fetch_when_origin_unreachable(self) -> None:
+        """Pointing the submodule's origin at a non-existent path must not break status.
+
+        ``branch_exists`` only consults locally-known refs, so a missing
+        remote should be irrelevant. This test guards against a future
+        regression that would add an implicit ``git fetch`` to the
+        submodule recursion path.
+        """
+        _init_repo(self.root)
+        _git("branch", ISHPROJECT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+        sub = self._add_initialised_submodule("child")
+        _git("branch", ISHPROJECT_BRANCH, cwd=sub)
+        (sub / ".ishlib" / "ishproject").mkdir(parents=True)
+        # Break origin so any accidental fetch would explode.
+        _git(
+            "remote",
+            "set-url",
+            "origin",
+            str(self.root / "definitely-does-not-exist.git"),
+            cwd=sub,
+        )
+
+        with patch(
+            "pyishlib.ishproject.commands.status.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["status"])
+        self.assertEqual(rc, 0)
+        # Both parent and submodule should still produce status.
+        self.assertEqual(mock_main.call_count, 2)
+
+
 class TestCommitPassthrough(_ChdirTestCase):
     def test_missing_source_returns_1(self) -> None:
         with patch("pyishlib.ishproject.commands.commit.ishfiles_main") as mock_main:
