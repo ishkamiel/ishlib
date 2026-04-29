@@ -68,6 +68,17 @@ class Container(ABC):
     def copy_to(self, dest_name: str) -> "Container":
         """Clone this container to *dest_name* and return the new handle."""
 
+    @abstractmethod
+    def dump_diagnostics(self) -> None:
+        """Print backend-native failure diagnostics for this container.
+
+        Used after a failed start/run to surface whatever the backend
+        considers the most useful debug output (e.g. ``incus info
+        --show-log`` for Incus, ``docker logs`` + ``docker inspect``
+        for Docker).  Output goes to the backend's normal channels —
+        callers do not capture it.
+        """
+
     # ------------------------------------------------------------------
     # Exec / file I/O
     # ------------------------------------------------------------------
