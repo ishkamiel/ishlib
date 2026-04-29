@@ -36,6 +36,7 @@ import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
+from ..container import Container, get_backend
 from ..container import incus as _incus
 from ..ish_logging import log_level_from_args, log_level_to_cli_flags
 from .claude import (
@@ -167,10 +168,19 @@ def _project_base_name(username: str, project_path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _container(name: str) -> Container:
+    """Return a backend-native :class:`Container` handle for *name*.
+
+    Pure factory — no I/O.  Today always returns an Incus container; a
+    future backend swap is a one-line change in
+    :func:`pyishlib.container.get_backend`.
+    """
+    return get_backend().container(name)
+
+
 def _container_exists(name: str) -> bool:
-    """Return True if an Incus container with *name* exists (any state)."""
-    r = _incus._run(["incus", "info", name], capture_output=True, check=False)
-    return r.returncode == 0
+    """Return True if a container with *name* exists (any state)."""
+    return _container(name).exists()
 
 
 def _get_stored_fingerprint(name: str) -> Optional[str]:
@@ -1081,28 +1091,26 @@ def ensure_host_base(
                     f"host base '{name}' is stale (source changed) — rebuilding...",
                     quiet=quiet,
                 )
-                _incus._run(["incus", "delete", name, "--force"], check=False)
+                _container(name).delete(force=True)
         elif rebuild and _container_exists(name):
             _say(
                 f"rebuilding host base '{name}' (--rebuild requested)...",
                 quiet=quiet,
             )
-            _incus._run(["incus", "delete", name, "--force"], check=False)
+            _container(name).delete(force=True)
 
         _say(
             f"creating host base '{name}' from {image} "
             "(may pull the image on first use)...",
             quiet=quiet,
         )
-        _incus._run(
-            ["incus", "init", image, name, "--config", "security.nesting=true"],
-            check=True,
-        )
+        c = _container(name)
+        c.create(image, **{"security.nesting": "true"})
         started = False
 
         try:
             _say(f"starting host base '{name}'...", quiet=quiet)
-            _incus._run(["incus", "start", name], check=True)
+            c.start()
             started = True
 
             # Create the container user matching the host username.
@@ -1144,7 +1152,7 @@ def ensure_host_base(
             # without racing a live container.  The assertion ensures a silently-failing
             # removal cannot poison the base for future copies.
             _say(f"stopping and saving host base '{name}'...", quiet=quiet)
-            _incus._run(["incus", "stop", name, "--force"], check=False)
+            c.stop(force=True)
             _remove_isholate_devices(name)
             _assert_no_isholate_devices(name)
             _set_stored_fingerprint(name, fingerprint)
@@ -1153,8 +1161,8 @@ def ensure_host_base(
 
         except (subprocess.CalledProcessError, RuntimeError):
             if started:
-                _incus._run(["incus", "stop", name, "--force"], check=False)
-                _incus._run(["incus", "delete", name, "--force"], check=False)
+                c.stop(force=True)
+                c.delete(force=True)
             raise
 
 
@@ -1232,13 +1240,13 @@ def ensure_project_base(
                     f"project base '{name}' is stale (host base or overlay changed) — rebuilding...",
                     quiet=quiet,
                 )
-            _incus._run(["incus", "delete", name, "--force"], check=False)
+            _container(name).delete(force=True)
 
         _say(
             f"creating project base '{name}' from host base '{host_base}'...",
             quiet=quiet,
         )
-        _incus._run(["incus", "copy", host_base, name], check=True)
+        c = _container(host_base).copy_to(name)
         # Strip any isholate-* devices inherited from the host base.  The host
         # base is supposed to be device-free when stopped, but a stale base from
         # an interrupted earlier run may still carry them; starting a container
@@ -1251,7 +1259,7 @@ def ensure_project_base(
 
         try:
             _say(f"starting project base '{name}'...", quiet=quiet)
-            _incus._run(["incus", "start", name], check=True)
+            c.start()
             started = True
 
             # Retrieve the uid stored in the host base (inherited by the copy).
@@ -1294,7 +1302,7 @@ def ensure_project_base(
             _remove_isholate_devices(name)
 
             _say(f"stopping and saving project base '{name}'...", quiet=quiet)
-            _incus._run(["incus", "stop", name, "--force"], check=False)
+            c.stop(force=True)
             _set_stored_fingerprint(name, combined_fp)
 
             return name
@@ -1311,8 +1319,8 @@ def ensure_project_base(
                     log.info(
                         "devices on '%s' at failure: %s", name, dev_r.stdout.strip()
                     )
-                _incus._run(["incus", "stop", name, "--force"], check=False)
-                _incus._run(["incus", "delete", name, "--force"], check=False)
+                c.stop(force=True)
+                c.delete(force=True)
             raise
 
 
@@ -1354,11 +1362,11 @@ def _launch_ephemeral_from_base(
         f"creating ephemeral container '{name}' from base '{parent_base}'...",
         quiet=quiet,
     )
-    _incus._run(["incus", "copy", parent_base, name], check=True)
+    c = _container(parent_base).copy_to(name)
 
     try:
         _say(f"starting container '{name}'...", quiet=quiet)
-        _incus._run(["incus", "start", name], check=True)
+        c.start()
         started = True
 
         # Determine container UID; fall back to live lookup if metadata was lost.
@@ -1428,8 +1436,8 @@ def _launch_ephemeral_from_base(
     finally:
         if started:
             _say(f"stopping and deleting '{name}'...", quiet=quiet)
-            _incus._run(["incus", "stop", name, "--force"], check=False)
-            _incus._run(["incus", "delete", name, "--force"], check=False)
+            c.stop(force=True)
+            c.delete(force=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1475,15 +1483,13 @@ def _launch_one_shot(
         "(may pull the image on first use)...",
         quiet=quiet,
     )
-    _incus._run(
-        ["incus", "init", args.image, name, "--config", "security.nesting=true"],
-        check=True,
-    )
+    c = _container(name)
+    c.create(args.image, **{"security.nesting": "true"})
 
     try:
         _say(f"starting container '{name}'...", quiet=quiet)
         try:
-            _incus._run(["incus", "start", name], check=True)
+            c.start()
             started = True
         except subprocess.CalledProcessError:
             print(
@@ -1605,8 +1611,8 @@ def _launch_one_shot(
     finally:
         if started:
             _say(f"stopping and deleting '{name}'...", quiet=quiet)
-            _incus._run(["incus", "stop", name, "--force"], check=False)
-            _incus._run(["incus", "delete", name, "--force"], check=False)
+            c.stop(force=True)
+            c.delete(force=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1807,6 +1813,9 @@ def purge_containers(
     failed = False
     for name in containers:
         _say(f"deleting {name}...", quiet=quiet)
+        # Direct _run here so we can branch on the exit code.  Container.delete
+        # is "fire and forget"; surfacing the returncode would mean adding a
+        # capture-output variant to the ABC for one diagnostic call site.
         r = _incus._run(["incus", "delete", name, "--force"], check=False)
         if r.returncode != 0:
             print(f"isholate: failed to delete {name}", file=sys.stderr)
