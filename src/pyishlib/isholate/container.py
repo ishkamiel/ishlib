@@ -185,81 +185,42 @@ def _container_exists(name: str) -> bool:
 
 def _get_stored_fingerprint(name: str) -> Optional[str]:
     """Read the source fingerprint stored on a base container's metadata."""
-    r = _incus._run(
-        ["incus", "config", "get", name, _META_SOURCE_HASH],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if r.returncode != 0:
-        return None
-    return r.stdout.strip() or None
+    return _container(name).get_metadata(_META_SOURCE_HASH)
 
 
 def _set_stored_fingerprint(name: str, fingerprint: str) -> None:
     """Store *fingerprint* on *name*'s container metadata."""
-    _incus._run(
-        ["incus", "config", "set", name, _META_SOURCE_HASH, fingerprint],
-        check=True,
-    )
+    _container(name).set_metadata(_META_SOURCE_HASH, fingerprint)
 
 
 def _get_stored_uid(name: str) -> Optional[int]:
     """Read the container user UID from a base container's metadata."""
-    r = _incus._run(
-        ["incus", "config", "get", name, _META_UID],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if r.returncode != 0:
+    val = _container(name).get_metadata(_META_UID)
+    if val is None:
         return None
-    val = r.stdout.strip()
     try:
-        return int(val) if val else None
+        return int(val)
     except ValueError:
         return None
 
 
 def _set_stored_uid(name: str, uid: int) -> None:
     """Store *uid* on *name*'s container metadata."""
-    _incus._run(
-        ["incus", "config", "set", name, _META_UID, str(uid)],
-        check=True,
-    )
+    _container(name).set_metadata(_META_UID, str(uid))
 
 
-def _parse_isholate_devices(stdout: str) -> List[str]:
-    """Filter ``incus config device list`` output to just ``isholate-*`` names.
-
-    Takes the raw stdout (one device name per line) and returns the names
-    whose whitespace-stripped value starts with ``isholate-``.  Shared by
-    both the lenient listing path and the strict assertion path so their
-    parsing stays consistent.
-    """
-    return [
-        line.strip()
-        for line in stdout.splitlines()
-        if line.strip().startswith("isholate-")
-    ]
+def _filter_isholate(devices: List[str]) -> List[str]:
+    """Return only the entries in *devices* that start with ``isholate-``."""
+    return [d for d in devices if d.startswith("isholate-")]
 
 
 def _list_isholate_devices(name: str) -> List[str]:
     """Return the names of all ``isholate-*`` devices configured on *name*.
 
-    Uses ``incus config device list`` which prints one device name per line
-    (plain text, no ``--format`` flag support).  Returns an empty list when
-    the container does not exist or the command fails.
+    Lenient: returns an empty list when the container is missing or the
+    daemon errors.
     """
-    r = _incus._run(
-        ["incus", "config", "device", "list", name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if r.returncode != 0 or not r.stdout.strip():
-        return []
-    return _parse_isholate_devices(r.stdout)
+    return _filter_isholate(_container(name).list_devices())
 
 
 def _remove_isholate_devices(name: str) -> None:
@@ -268,11 +229,9 @@ def _remove_isholate_devices(name: str) -> None:
     Called before stopping a base container so that it carries no stale
     host-path bind-mount references.
     """
-    for device_name in _list_isholate_devices(name):
-        _incus._run(
-            ["incus", "config", "device", "remove", name, device_name],
-            check=False,
-        )
+    c = _container(name)
+    for device_name in _filter_isholate(c.list_devices()):
+        c.remove_device(device_name)
 
 
 def _assert_no_isholate_devices(name: str) -> None:
@@ -281,25 +240,11 @@ def _assert_no_isholate_devices(name: str) -> None:
     Called after ``_remove_isholate_devices`` on a stopped base so that a
     silently-failing removal cannot poison the base for future copies.
 
-    Fails closed: unlike ``_list_isholate_devices`` (which is lenient for the
-    best-effort cleanup path), this helper raises on a non-zero exit from
-    ``incus config device list`` so a failed device-list call cannot mask a
-    poisoned base.
+    Uses :meth:`Container.list_devices_strict` so a failed device-list
+    call propagates as a RuntimeError rather than masking a poisoned
+    base.
     """
-    r = _incus._run(
-        ["incus", "config", "device", "list", name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if r.returncode != 0:
-        stderr = (r.stderr or "").strip()
-        raise RuntimeError(
-            f"failed to verify isholate devices for '{name}': "
-            f"'incus config device list' exited with {r.returncode}"
-            + (f": {stderr}" if stderr else "")
-        )
-    leftovers = _parse_isholate_devices(r.stdout)
+    leftovers = _filter_isholate(_container(name).list_devices_strict())
     if leftovers:
         raise RuntimeError(
             f"failed to remove isholate devices from '{name}': {leftovers}"
@@ -524,22 +469,9 @@ def _add_mount(
     shift: bool = False,
 ) -> None:
     """Attach a disk device mapping host *src* → in-container *dst*."""
-    cmd = [
-        "incus",
-        "config",
-        "device",
-        "add",
-        name,
-        device_name,
-        "disk",
-        f"source={src}",
-        f"path={dst}",
-    ]
-    if readonly:
-        cmd.append("readonly=true")
-    if shift:
-        cmd.append("shift=true")
-    _incus._run(cmd, check=True)
+    _container(name).add_mount(
+        device_name, src, dst, readonly=readonly, shift=shift
+    )
 
 
 def _add_home_mount(

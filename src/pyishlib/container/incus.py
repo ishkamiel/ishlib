@@ -399,6 +399,22 @@ class IncusContainer(Container):
             return []
         return [line.strip() for line in r.stdout.splitlines() if line.strip()]
 
+    def list_devices_strict(self) -> List[str]:
+        r = _run(
+            ["incus", "config", "device", "list", self.name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if r.returncode != 0:
+            stderr = (r.stderr or "").strip()
+            raise RuntimeError(
+                f"failed to list devices on '{self.name}': "
+                f"'incus config device list' exited with {r.returncode}"
+                + (f": {stderr}" if stderr else "")
+            )
+        return [line.strip() for line in r.stdout.splitlines() if line.strip()]
+
     # ------------------------------------------------------------------
     # Metadata
     # ------------------------------------------------------------------
