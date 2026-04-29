@@ -23,8 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..container import incus as _incus
-from ..container.incus import IncusContainer
+from ..container import Container, get_backend
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +52,7 @@ def _add_claude_mounts(
     user can read and write the host user's Claude credentials and state.
     Either source can be missing; only existing paths are mounted.
     """
-    container = IncusContainer(name)
+    container = get_backend().container(name)
     mounted: List[str] = []
 
     claude_dir = home / ".claude"
@@ -129,7 +128,7 @@ def _build_minimal_claude_json(home: Path) -> Optional[Dict[str, Any]]:
 
 
 def _push_minimal_claude_json(
-    container: IncusContainer,
+    container: Container,
     username: str,
     container_uid: int,
     data: Dict[str, Any],
@@ -177,7 +176,7 @@ def _install_claude_base_auth(
     container recognises the credentials without inheriting host session
     / project state.
     """
-    container = IncusContainer(name)
+    container = get_backend().container(name)
 
     rel = ".claude/.credentials.json"
     src = home / rel
@@ -271,75 +270,33 @@ def _ensure_claude_network(*, quiet: bool = False) -> str:
     ``ipv4.firewall`` + ``ipv4.nat`` so upgrades that change the allowlist
     or toggle flags are picked up.
 
-    Inlined here (rather than delegating to
-    :func:`pyishlib.container.incus.ensure_managed_network`) so the
-    Claude-specific network/dnsmasq configuration stays alongside the
-    rest of the ``--claude`` support in this module.
+    The ``raw.dnsmasq`` configuration is Incus-specific (Docker has no
+    equivalent), so this whole helper lives in the Claude module and is
+    invoked through :meth:`pyishlib.container.IncusBackend.apply_claude_network_isolation`.
     """
-    show_r = _incus._run(
-        ["incus", "network", "show", _CLAUDE_NETWORK_NAME],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    if show_r.returncode != 0:
-        _say(
-            f"creating Incus managed network '{_CLAUDE_NETWORK_NAME}' "
-            "(one-time setup for --no-network --claude)...",
-            quiet=quiet,
+    backend = get_backend()
+    if not backend.supports_managed_networks:
+        raise RuntimeError(
+            f"--no-network --claude requires a backend with managed-network "
+            f"support (got '{backend.name}')"
         )
-        _incus._run_checked(
-            [
-                "incus",
-                "network",
-                "create",
-                _CLAUDE_NETWORK_NAME,
-                "ipv4.address=auto",
-                "ipv4.nat=true",
-                "ipv4.firewall=false",
-                "ipv6.address=none",
-            ],
-            f"create isholate-claude bridge '{_CLAUDE_NETWORK_NAME}'",
-            stdin=subprocess.DEVNULL,
-        )
-
-    raw_dnsmasq = _build_claude_raw_dnsmasq()
-    _incus._run_checked(
-        [
-            "incus",
-            "network",
-            "set",
-            _CLAUDE_NETWORK_NAME,
-            "raw.dnsmasq",
-            raw_dnsmasq,
-        ],
-        "configure DNS allowlist on isholate-claude bridge",
-        stdin=subprocess.DEVNULL,
+    _say(
+        f"ensuring Incus managed network '{_CLAUDE_NETWORK_NAME}'...",
+        quiet=quiet,
     )
-    _incus._run_checked(
-        [
-            "incus",
-            "network",
-            "set",
-            _CLAUDE_NETWORK_NAME,
-            "ipv4.firewall",
-            "false",
+    backend.ensure_managed_network(
+        _CLAUDE_NETWORK_NAME,
+        create_config=[
+            "ipv4.address=auto",
+            "ipv4.nat=true",
+            "ipv4.firewall=false",
+            "ipv6.address=none",
         ],
-        "disable Incus auto-firewall on isholate-claude bridge",
-        stdin=subprocess.DEVNULL,
-    )
-    _incus._run_checked(
-        [
-            "incus",
-            "network",
-            "set",
-            _CLAUDE_NETWORK_NAME,
-            "ipv4.nat",
-            "true",
-        ],
-        "ensure NAT is enabled on isholate-claude bridge",
-        stdin=subprocess.DEVNULL,
+        set_config={
+            "raw.dnsmasq": _build_claude_raw_dnsmasq(),
+            "ipv4.firewall": "false",
+            "ipv4.nat": "true",
+        },
     )
     return _CLAUDE_NETWORK_NAME
 
@@ -437,7 +394,7 @@ def _claude_firewall_rules_in_place() -> bool:
 
     unit_name = Path(_CLAUDE_FIREWALL_SYSTEMD_UNIT).name
     try:
-        enabled_r = _incus._run(
+        enabled_r = subprocess.run(
             ["systemctl", "is-enabled", unit_name],
             capture_output=True,
             text=True,
@@ -522,7 +479,7 @@ def _install_claude_firewall(*, quiet: bool = False) -> None:
         raise RuntimeError(msg)
 
     script = _build_claude_firewall_install_script()
-    result = _incus._run(
+    result = subprocess.run(
         ["sudo", "/bin/sh", "-c", script],
         check=False,
     )
@@ -535,30 +492,34 @@ def _install_claude_firewall(*, quiet: bool = False) -> None:
         )
 
 
-def _apply_network_restrictions(
-    name: str, *, allow_claude: bool, quiet: bool = False
-) -> None:
-    """Lock down network egress for the ephemeral container.
+def apply_no_network(container: Container, *, quiet: bool = False) -> None:
+    """Detach the container's ``eth0`` interface (no egress at all).
 
-    Both paths operate at the Incus layer via device overrides — nothing is
-    configured inside the container.
+    Operates entirely at the backend layer via a device override —
+    nothing is configured inside the container.  This is the
+    ``--no-network`` (without ``--claude``) path.
     """
-    if not allow_claude:
-        _say(
-            f"--no-network: detaching eth0 from '{name}' via Incus device override...",
-            quiet=quiet,
-        )
-        _incus._run(
-            ["incus", "config", "device", "remove", name, "eth0"],
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-        _incus._run_checked(
-            ["incus", "config", "device", "add", name, "eth0", "none"],
-            "detach eth0 via Incus device override (--no-network)",
-        )
-        return
+    name = container.name
+    _say(
+        f"--no-network: detaching eth0 from '{name}' via device override...",
+        quiet=quiet,
+    )
+    container.remove_device("eth0")
+    container.add_device("eth0", "none")
 
+
+def apply_claude_network_isolation(
+    container: Container, *, quiet: bool = False
+) -> None:
+    """Apply ``--no-network --claude`` egress filtering.
+
+    Switches the container's ``eth0`` to the dedicated
+    ``isholate-claude`` Incus bridge (DNS-allowlisted via
+    ``raw.dnsmasq``), then ensures the host-side ipset + iptables
+    + systemd unit are in place.  Incus-specific by design — the
+    ``raw.dnsmasq`` mechanism has no Docker analogue.
+    """
+    name = container.name
     network = _ensure_claude_network(quiet=quiet)
 
     if not _claude_firewall_rules_in_place():
@@ -568,22 +529,20 @@ def _apply_network_restrictions(
         f"--no-network --claude: switching '{name}' to the '{network}' bridge...",
         quiet=quiet,
     )
-    _incus._run(
-        ["incus", "config", "device", "remove", name, "eth0"],
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    _incus._run_checked(
-        [
-            "incus",
-            "config",
-            "device",
-            "add",
-            name,
-            "eth0",
-            "nic",
-            f"network={network}",
-            "name=eth0",
-        ],
-        f"attach eth0 to '{network}' bridge (--no-network --claude)",
-    )
+    container.remove_device("eth0")
+    container.add_device("eth0", "nic", network=network, name="eth0")
+
+
+def _apply_network_restrictions(
+    name: str, *, allow_claude: bool, quiet: bool = False
+) -> None:
+    """Compatibility wrapper used by isholate/container.py.
+
+    Resolves the container handle and dispatches to either
+    :func:`apply_no_network` or :func:`apply_claude_network_isolation`.
+    """
+    container = get_backend().container(name)
+    if allow_claude:
+        apply_claude_network_isolation(container, quiet=quiet)
+    else:
+        apply_no_network(container, quiet=quiet)

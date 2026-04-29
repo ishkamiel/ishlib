@@ -3680,7 +3680,7 @@ class TestClaudeFirewallRulesInPlace:
             return SimpleNamespace(returncode=1, stdout="", stderr="")
 
         with (
-            patch("pyishlib.container.incus._run", side_effect=fake_run),
+            patch("pyishlib.isholate.claude.subprocess.run", side_effect=fake_run),
             patch(
                 "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
                 return_value=True,
@@ -3697,7 +3697,7 @@ class TestClaudeFirewallRulesInPlace:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with (
-            patch("pyishlib.container.incus._run", side_effect=fake_run),
+            patch("pyishlib.isholate.claude.subprocess.run", side_effect=fake_run),
             patch(
                 "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
                 return_value=True,
@@ -3717,7 +3717,7 @@ class TestClaudeFirewallRulesInPlace:
             return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
 
         with (
-            patch("pyishlib.container.incus._run", side_effect=fake_run),
+            patch("pyishlib.isholate.claude.subprocess.run", side_effect=fake_run),
             patch(
                 "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
                 return_value=False,
@@ -3734,7 +3734,7 @@ class TestClaudeFirewallRulesInPlace:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with (
-            patch("pyishlib.container.incus._run", side_effect=fake_run),
+            patch("pyishlib.isholate.claude.subprocess.run", side_effect=fake_run),
             patch(
                 "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
                 return_value=True,
@@ -3756,7 +3756,7 @@ class TestClaudeFirewallRulesInPlace:
             return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
 
         with (
-            patch("pyishlib.container.incus._run", side_effect=fake_run),
+            patch("pyishlib.isholate.claude.subprocess.run", side_effect=fake_run),
             patch(
                 "pyishlib.isholate.claude._claude_firewall_on_disk_matches",
                 return_value=True,
@@ -3907,11 +3907,13 @@ class TestInstallClaudeFirewall:
                 "pyishlib.isholate.claude.shutil.which",
                 side_effect=self._all_tools_present,
             ),
-            patch("pyishlib.container.incus._run", side_effect=fake_run) as mock_run,
+            patch(
+                "pyishlib.isholate.claude.subprocess.run", side_effect=fake_run
+            ) as mock_run,
         ):
             _install_claude_firewall()
 
-        # One _run call, and it's the sudo invocation.
+        # One subprocess.run call, and it's the sudo invocation.
         assert mock_run.call_count == 1
         cmd = mock_run.call_args_list[0].args[0]
         assert cmd[:3] == ["sudo", "/bin/sh", "-c"]
@@ -3992,7 +3994,7 @@ class TestInstallClaudeFirewall:
                 "pyishlib.isholate.claude.shutil.which",
                 side_effect=self._all_tools_present,
             ),
-            patch("pyishlib.container.incus._run", side_effect=fake_run),
+            patch("pyishlib.isholate.claude.subprocess.run", side_effect=fake_run),
         ):
             with pytest.raises(RuntimeError, match="failed to install"):
                 _install_claude_firewall()
