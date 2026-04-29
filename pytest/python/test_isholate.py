@@ -2394,7 +2394,8 @@ class TestParser:
         The check is covered by :class:`TestCheckIncusAvailable`; these tests
         exercise argparse wiring and dispatch, so we simulate a healthy host.
         """
-        with patch("pyishlib.isholate.cli.check_incus_available", return_value=None):
+        with patch("pyishlib.isholate.cli.get_backend") as gb:
+            gb.return_value.check_available.return_value = None
             yield
 
     def test_subcommand_is_required(self):
@@ -3167,10 +3168,10 @@ class TestCliIncusPreflight:
     """The CLI should bail out with a helpful message when incus isn't usable."""
 
     def test_main_returns_1_and_prints_guidance(self, capsys):
-        with patch(
-            "pyishlib.isholate.cli.check_incus_available",
-            return_value="isholate: error: TEST GUIDANCE",
-        ):
+        with patch("pyishlib.isholate.cli.get_backend") as gb:
+            gb.return_value.check_available.return_value = (
+                "isholate: error: TEST GUIDANCE"
+            )
             rc = cli_main(["run"])
         captured = capsys.readouterr()
         assert rc == 1
@@ -3178,10 +3179,9 @@ class TestCliIncusPreflight:
 
     def test_help_works_without_incus(self, capsys):
         """`--help` must still print usage on hosts without a healthy incus."""
-        with patch(
-            "pyishlib.isholate.cli.check_incus_available",
-            return_value="isholate: error: SHOULD NOT BE PRINTED",
-        ) as mock_check:
+        with patch("pyishlib.isholate.cli.get_backend") as gb:
+            mock_check = gb.return_value.check_available
+            mock_check.return_value = "isholate: error: SHOULD NOT BE PRINTED"
             with pytest.raises(SystemExit) as exc_info:
                 cli_main(["--help"])
         captured = capsys.readouterr()
@@ -4096,7 +4096,7 @@ class TestCliPreflightClaudeHostTools:
         with (
             patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which),
             patch("pyishlib.isholate.cli.is_linux", return_value=True),
-            patch("pyishlib.isholate.cli.check_incus_available", return_value=None),
+            patch("pyishlib.isholate.cli.get_backend", return_value=SimpleNamespace(check_available=lambda: None)),
             patch(
                 "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
@@ -4117,7 +4117,7 @@ class TestCliPreflightClaudeHostTools:
         with (
             patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which),
             patch("pyishlib.isholate.cli.is_linux", return_value=True),
-            patch("pyishlib.isholate.cli.check_incus_available", return_value=None),
+            patch("pyishlib.isholate.cli.get_backend", return_value=SimpleNamespace(check_available=lambda: None)),
             patch(
                 "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
@@ -4155,7 +4155,7 @@ class TestCliPreflightClaudeHostTools:
         with (
             patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which),
             patch("pyishlib.isholate.cli.is_linux", return_value=True),
-            patch("pyishlib.isholate.cli.check_incus_available", return_value=None),
+            patch("pyishlib.isholate.cli.get_backend", return_value=SimpleNamespace(check_available=lambda: None)),
             patch(
                 "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),

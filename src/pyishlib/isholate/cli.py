@@ -17,7 +17,7 @@ import logging
 from typing import List, Optional
 
 from ..cli_base import BaseCLI
-from ..container.incus import check_incus_available
+from ..container import get_backend
 from ..environment import is_linux
 from .commands.list import ListCommand
 from .commands.purge import PurgeCommand
@@ -57,9 +57,9 @@ class IsholateCLI(BaseCLI):
         if not is_linux():
             log.critical("isholate is only supported on Linux")
             return 1
-        incus_guidance = check_incus_available()
-        if incus_guidance is not None:
-            log.error("%s", incus_guidance)
+        guidance = get_backend().check_available()
+        if guidance is not None:
+            log.error("%s", guidance)
             return 1
         return None
 
