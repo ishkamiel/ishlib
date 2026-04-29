@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from ..environment import detect_distro
+from .backend import ContainerBackend
 from .container import Container
 
 log = logging.getLogger(__name__)
@@ -418,4 +419,47 @@ class IncusContainer(Container):
         _run(
             ["incus", "config", "set", self.name, key, value],
             check=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# IncusBackend
+# ---------------------------------------------------------------------------
+
+
+class IncusBackend(ContainerBackend):
+    """Incus-backed :class:`ContainerBackend` implementation.
+
+    Thin facade over the module-level free functions
+    (:func:`check_incus_available`, :func:`list_incus_containers`,
+    :func:`ensure_managed_network`) and the :class:`IncusContainer`
+    factory.  Tool code should depend on this class (or its ABC) rather
+    than the free functions so that swapping in a different backend is a
+    one-line change in :func:`pyishlib.container.get_backend`.
+    """
+
+    name = "incus"
+
+    def check_available(self) -> Optional[str]:
+        return check_incus_available()
+
+    def container(self, name: str) -> Container:
+        return IncusContainer(name)
+
+    def list_containers(self) -> List[dict]:
+        return list_incus_containers()
+
+    @property
+    def supports_managed_networks(self) -> bool:
+        return True
+
+    def ensure_managed_network(
+        self,
+        name: str,
+        *,
+        create_config: List[str],
+        set_config: Dict[str, str],
+    ) -> None:
+        ensure_managed_network(
+            name, create_config=create_config, set_config=set_config
         )
