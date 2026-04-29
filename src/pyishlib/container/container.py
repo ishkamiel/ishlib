@@ -142,7 +142,21 @@ class Container(ABC):
 
     @abstractmethod
     def list_devices(self) -> List[str]:
-        """Return all device names configured on this container."""
+        """Return all device names configured on this container.
+
+        Lenient: returns an empty list when the container is missing or
+        the daemon errors.  Use :meth:`list_devices_strict` when a
+        failed daemon call must be propagated.
+        """
+
+    @abstractmethod
+    def list_devices_strict(self) -> List[str]:
+        """Return all device names configured on this container, strictly.
+
+        Raises :class:`RuntimeError` when the daemon call fails so a
+        silently-failing list cannot mask a poisoned container in a
+        post-cleanup assertion.
+        """
 
     # ------------------------------------------------------------------
     # Arbitrary key/value metadata on the container
