@@ -875,7 +875,6 @@ class TestLaunchAndExec:
         Returns (all_calls, returncode).
         """
         side_effects = fake_run_returns or []
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         call_count = [0]
 
@@ -884,7 +883,10 @@ class TestLaunchAndExec:
             call_count[0] += 1
             if idx < len(side_effects):
                 return side_effects[idx]
-            return default
+            # ``id -u`` lookups now go through Container.exec → _run; route
+            # them to the canonical fake so the production code can parse
+            # the fake uid.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         with patch(
             "pyishlib.isholate.container.get_host_user_info",
@@ -1156,7 +1158,8 @@ class TestLaunchAndExec:
         def fake_run(cmd, **kwargs):
             if "--user" in cmd:
                 raise subprocess.CalledProcessError(1, cmd)
-            return SimpleNamespace(returncode=0)
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         with patch(
             "pyishlib.isholate.container.get_host_user_info",
@@ -1251,14 +1254,13 @@ class TestProvisioning:
     """
 
     def _run_with_mocks(self, args, host_source=None, overlay=None):
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
-
         def fake_run(cmd, **kwargs):
             # device list returns valid (empty) JSON so the strict
             # _assert_no_isholate_devices check passes.
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(returncode=0, stdout="{}", stderr="")
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         project_root = overlay.parent.parent if overlay is not None else None
 
@@ -1463,14 +1465,13 @@ class TestProvisioning:
         path is actually exercised), and toggles the existence of the host's
         ``~/.claude`` directory and ``~/.claude.json`` file independently.
         """
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
-
         def fake_run(cmd, **kwargs):
             # device list returns valid (empty) JSON so the strict
             # _assert_no_isholate_devices check passes.
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(returncode=0, stdout="{}", stderr="")
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         claude_dir = _FAKE_HOME / ".claude"
         claude_json = _FAKE_HOME / ".claude.json"
@@ -1609,7 +1610,6 @@ class TestBaseManagement:
         quiet=True,
     ):
         """Run ensure_host_base with mocked Incus calls."""
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         def fake_run(cmd, **kwargs):
             # Return the stored fingerprint for config get of source_hash
@@ -1624,7 +1624,8 @@ class TestBaseManagement:
             # _assert_no_isholate_devices check passes.
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(returncode=0, stdout="{}", stderr="")
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         calls = []
 
@@ -1720,7 +1721,6 @@ class TestBaseManagement:
         """Cached path: ephemeral is incus copy, not incus init."""
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
         calls = []
 
         def fake_run(cmd, **kwargs):
@@ -1729,7 +1729,8 @@ class TestBaseManagement:
             # _assert_no_isholate_devices check passes.
             if cmd[:4] == ["incus", "config", "device", "list"]:
                 return SimpleNamespace(returncode=0, stdout="{}", stderr="")
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         with patch(
             "pyishlib.isholate.container.get_host_user_info",
@@ -1774,7 +1775,6 @@ class TestStaleDeviceHandling:
         optionally returns stale plain-text output on the first device list
         call (subsequent calls return empty, simulating successful removal).
         """
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
         calls = []
         device_list_count = [0]
 
@@ -1794,7 +1794,8 @@ class TestStaleDeviceHandling:
                 if device_list_count[0] == 1 and stale_output:
                     return SimpleNamespace(returncode=0, stdout=stale_output, stderr="")
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         return fake_run, calls
 
@@ -1846,7 +1847,6 @@ class TestStaleDeviceHandling:
     def test_host_base_reuse_scrubs_stale_devices(self):
         """ensure_host_base must remove stale devices from a reused (cached) base."""
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
         calls = []
         # Simulate: first list call returns stale, subsequent calls return
         # clean (device removal succeeded).
@@ -1867,7 +1867,8 @@ class TestStaleDeviceHandling:
                         returncode=0, stdout=self._STALE_OUTPUT, stderr=""
                     )
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with patch(
@@ -1899,7 +1900,6 @@ class TestStaleDeviceHandling:
     def test_host_base_new_build_raises_if_devices_remain(self):
         """ensure_host_base raises when device removal silently fails during new build."""
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
 
         def fake_run(cmd, **kwargs):
             if cmd[:2] == ["incus", "info"]:
@@ -1911,7 +1911,8 @@ class TestStaleDeviceHandling:
                 return SimpleNamespace(
                     returncode=0, stdout=self._STALE_OUTPUT, stderr=""
                 )
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         with patch("pyishlib.container.incus._run", side_effect=fake_run):
             with patch(
@@ -2003,7 +2004,8 @@ class TestBaseBuildLocking:
                 with state_lock:
                     state["fingerprint"] = cmd[5]
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         results = {}
         errors = {}
@@ -2110,7 +2112,8 @@ class TestBaseBuildLocking:
                 with state_lock:
                     state.setdefault(target, {"exists": True, "fp": ""})["fp"] = cmd[5]
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         results = {}
         errors = {}
@@ -2285,6 +2288,11 @@ class TestNetworkPreflight:
                 if not getattr(result, "stdout", "").strip():
                     return SimpleNamespace(returncode=0, stdout="{}", stderr="")
                 return result
+            # ``id -u`` lookups go through Container.exec → _run; satisfy
+            # them with the canonical fake before deferring to the
+            # per-test fake_run.
+            if "id" in cmd and "-u" in cmd:
+                return _fake_subprocess_run(cmd, **kwargs)
             return fake_run_fn(cmd, **kwargs)
 
         with patch(
@@ -3252,10 +3260,9 @@ class TestClaudeBaseMountsInLaunch:
     """--claude-base wires the credentials mount and the allow_claude bridge."""
 
     def _run_with_mocks(self, args):
-        default = SimpleNamespace(returncode=0, stdout="", stderr="")
-
         def fake_run(cmd, **kwargs):
-            return default
+            # ``id -u`` lookups now route through Container.exec → _run.
+            return _fake_subprocess_run(cmd, **kwargs)
 
         with patch(
             "pyishlib.isholate.container.get_host_user_info",

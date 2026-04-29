@@ -178,6 +178,27 @@ def _container(name: str) -> Container:
     return get_backend().container(name)
 
 
+def _exec_checked(
+    c: Container,
+    cmd: List[str],
+    step: str,
+    **kwargs: Any,
+) -> "subprocess.CompletedProcess":
+    """Run ``c.exec(cmd, check=True)`` and log a labelled error on failure.
+
+    Mirror of ``_incus._run_checked`` but for the abstraction.  The
+    step label is written to the error log on a non-zero exit so the
+    user knows which provisioning step broke before the
+    ``CalledProcessError`` propagates.
+    """
+    kwargs.setdefault("check", True)
+    try:
+        return c.exec(cmd, **kwargs)
+    except subprocess.CalledProcessError as exc:
+        log.error("%s failed (exit %d)", step, exc.returncode)
+        raise
+
+
 def _container_exists(name: str) -> bool:
     """Return True if a container with *name* exists (any state)."""
     return _container(name).exists()
@@ -337,10 +358,11 @@ def _network_preflight(name: str, *, quiet: bool = False) -> None:
         RuntimeError: if the container cannot reach the internet.
     """
     _say("checking container network connectivity...", quiet=quiet)
+    c = _container(name)
 
     def _probe(cmd: List[str]) -> "tuple[int, str]":
-        r = _incus._run(
-            ["incus", "exec", name, "--"] + cmd,
+        r = c.exec(
+            cmd,
             check=False,
             capture_output=True,
             text=True,
@@ -531,9 +553,11 @@ def _bootstrap_base(
         quiet:     Suppress isholate's own progress messages.
     """
     chatty = log_level <= logging.INFO
+    c = _container(name)
     # Create the /run/isholate staging directory.
-    _incus._run_checked(
-        ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
+    _exec_checked(
+        c,
+        ["mkdir", "-p", _ISHOLATE_RUN_DIR],
         "create staging directory",
         stdin=subprocess.DEVNULL,
     )
@@ -556,12 +580,8 @@ def _bootstrap_base(
     _network_preflight(name, quiet=quiet)
 
     # Force apt to use IPv4.
-    _incus._run(
+    c.exec(
         [
-            "incus",
-            "exec",
-            name,
-            "--",
             "/bin/sh",
             "-c",
             "mkdir -p /etc/apt/apt.conf.d && "
@@ -578,12 +598,8 @@ def _bootstrap_base(
             f"apt-cacher-ng detected on host — configuring proxy ({bridge_ip}:3142) in container...",
             quiet=quiet,
         )
-        _incus._run(
+        c.exec(
             [
-                "incus",
-                "exec",
-                name,
-                "--",
                 "/bin/sh",
                 "-c",
                 "mkdir -p /etc/apt/apt.conf.d && "
@@ -608,14 +624,9 @@ def _bootstrap_base(
         if chatty
         else f"apt-get install -qq -y --no-install-recommends {_base_pkgs}"
     )
-    _incus._run_checked(
+    _exec_checked(
+        c,
         [
-            "incus",
-            "exec",
-            name,
-            "--env",
-            "DEBIAN_FRONTEND=noninteractive",
-            "--",
             "/bin/sh",
             "-c",
             f"if command -v apt-get >/dev/null 2>&1; then "
@@ -625,27 +636,24 @@ def _bootstrap_base(
             "fi",
         ],
         f"bootstrap ({_base_pkgs} install)",
+        env={"DEBIAN_FRONTEND": "noninteractive"},
         stdin=subprocess.DEVNULL,
     )
     _say("installing @anthropic-ai/sandbox-runtime via npm...", quiet=quiet)
     npm_flags = "" if chatty else "--loglevel=error "
-    _incus._run_checked(
+    _exec_checked(
+        c,
         [
-            "incus",
-            "exec",
-            name,
-            "--env",
-            "npm_config_update_notifier=false",
-            "--env",
-            "npm_config_audit=false",
-            "--env",
-            "npm_config_fund=false",
-            "--",
             "/bin/sh",
             "-c",
             f"npm install -g {npm_flags}@anthropic-ai/sandbox-runtime@{_SANDBOX_RUNTIME_VERSION}",
         ],
         "bootstrap (@anthropic-ai/sandbox-runtime install)",
+        env={
+            "npm_config_update_notifier": "false",
+            "npm_config_audit": "false",
+            "npm_config_fund": "false",
+        },
         stdin=subprocess.DEVNULL,
     )
 
@@ -717,6 +725,7 @@ def _apply_host_ishfiles(
     container_home = f"/home/{username}"
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_log = "/tmp/isholate-ishfiles-pass1.log"
+    c = _container(name)
 
     _add_mount(
         name,
@@ -725,15 +734,7 @@ def _apply_host_ishfiles(
         f"{_ISHOLATE_RUN_DIR}/ishsrc",
         readonly=True,
     )
-    pass1_cmd = [
-        "incus",
-        "exec",
-        name,
-        "--env",
-        f"HOME={container_home}",
-        "--env",
-        "ISHLIB_PYTHON=/usr/bin/python3",
-        "--",
+    pass1_cmd: List[str] = [
         ishfiles_bin,
         *ishfiles_flags,
         "--log-file",
@@ -754,9 +755,14 @@ def _apply_host_ishfiles(
         pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
     pass1_cmd += ["apply", "--isholate", "--yes"]
     try:
-        _incus._run_checked(
+        _exec_checked(
+            c,
             pass1_cmd,
             "ishfiles apply (pass 1: host dotfiles)",
+            env={
+                "HOME": container_home,
+                "ISHLIB_PYTHON": "/usr/bin/python3",
+            },
             stdin=subprocess.DEVNULL,
         )
     finally:
@@ -764,17 +770,9 @@ def _apply_host_ishfiles(
         _pull_container_log(name, container_log, host_log)
 
     _say("finalising ownership of container home...", quiet=quiet)
-    _incus._run_checked(
-        [
-            "incus",
-            "exec",
-            name,
-            "--",
-            "chown",
-            "-R",
-            f"{uid}:{uid}",
-            container_home,
-        ],
+    _exec_checked(
+        c,
+        ["chown", "-R", f"{uid}:{uid}", container_home],
         "finalise container home ownership",
         stdin=subprocess.DEVNULL,
     )
@@ -806,6 +804,7 @@ def _apply_project_overlay(
     container_home = f"/home/{username}"
     ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_log = "/tmp/isholate-ishfiles-pass2.log"
+    c = _container(name)
 
     _add_mount(
         name,
@@ -815,16 +814,9 @@ def _apply_project_overlay(
         readonly=True,
     )
     try:
-        _incus._run_checked(
+        _exec_checked(
+            c,
             [
-                "incus",
-                "exec",
-                name,
-                "--env",
-                f"HOME={container_home}",
-                "--env",
-                "ISHLIB_PYTHON=/usr/bin/python3",
-                "--",
                 ishfiles_bin,
                 *ishfiles_flags,
                 "--log-file",
@@ -838,6 +830,10 @@ def _apply_project_overlay(
                 "--yes",
             ],
             "ishfiles apply (pass 2: project overlay)",
+            env={
+                "HOME": container_home,
+                "ISHLIB_PYTHON": "/usr/bin/python3",
+            },
             stdin=subprocess.DEVNULL,
         )
     finally:
@@ -845,17 +841,9 @@ def _apply_project_overlay(
         _pull_container_log(name, container_log, host_log)
 
     _say("finalising ownership of container home...", quiet=quiet)
-    _incus._run_checked(
-        [
-            "incus",
-            "exec",
-            name,
-            "--",
-            "chown",
-            "-R",
-            f"{uid}:{uid}",
-            container_home,
-        ],
+    _exec_checked(
+        c,
+        ["chown", "-R", f"{uid}:{uid}", container_home],
         "finalise container home ownership",
         stdin=subprocess.DEVNULL,
     )
@@ -1047,16 +1035,13 @@ def ensure_host_base(
 
             # Create the container user matching the host username.
             _say(f"creating user '{username}' in host base...", quiet=quiet)
-            _incus._run(
-                ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
-                check=False,
-            )
-            _incus._run(
-                ["incus", "exec", name, "--", "useradd", "-m", "-s", shell, username],
+            c.exec(["userdel", "-r", "ubuntu"], check=False)
+            c.exec(
+                ["useradd", "-m", "-s", shell, username],
                 check=True,
             )
-            uid_result = subprocess.run(
-                ["incus", "exec", name, "--", "id", "-u", username],
+            uid_result = c.exec(
+                ["id", "-u", username],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -1197,8 +1182,8 @@ def ensure_project_base(
             # Retrieve the uid stored in the host base (inherited by the copy).
             uid = _get_stored_uid(name)
             if uid is None:
-                uid_result = subprocess.run(
-                    ["incus", "exec", name, "--", "id", "-u", username],
+                uid_result = c.exec(
+                    ["id", "-u", username],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -1207,8 +1192,9 @@ def ensure_project_base(
 
             # Re-create the staging dir (it lives in /run, which is tmpfs and
             # does not persist across container stop/start).
-            _incus._run_checked(
-                ["incus", "exec", name, "--", "mkdir", "-p", _ISHOLATE_RUN_DIR],
+            _exec_checked(
+                c,
+                ["mkdir", "-p", _ISHOLATE_RUN_DIR],
                 "create staging directory",
                 stdin=subprocess.DEVNULL,
             )
@@ -1306,8 +1292,8 @@ def _launch_ephemeral_from_base(
         if stored_uid is not None:
             container_uid = stored_uid
         else:
-            uid_result = subprocess.run(
-                ["incus", "exec", name, "--", "id", "-u", username],
+            uid_result = c.exec(
+                ["id", "-u", username],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -1335,34 +1321,28 @@ def _launch_ephemeral_from_base(
             )
 
         exec_cwd = str(cwd) if (args.rw_cwd or args.ro_cwd) else f"/home/{username}"
-        exec_cmd = [
-            "incus",
-            "exec",
-            name,
-            "--user",
-            str(container_uid),
-            "--cwd",
-            exec_cwd,
-            "--env",
-            f"HOME=/home/{username}",
-            "--env",
-            f"USER={username}",
-            "--env",
-            f"LOGNAME={username}",
-            "--",
-        ]
         command = args.command
         if command and command[0] == "--":
             command = command[1:]
 
         if command:
-            exec_cmd.extend(command)
+            exec_argv: List[str] = list(command)
             _say(f"running command in '{name}'...", quiet=quiet)
         else:
-            exec_cmd.extend(_login_shell_argv(args.shell))
+            exec_argv = list(_login_shell_argv(args.shell))
             _say(f"launching {args.shell} as login shell in '{name}'...", quiet=quiet)
 
-        result = _incus._run(exec_cmd, check=False)
+        result = c.exec(
+            exec_argv,
+            user=container_uid,
+            cwd=exec_cwd,
+            env={
+                "HOME": f"/home/{username}",
+                "USER": username,
+                "LOGNAME": username,
+            },
+            check=False,
+        )
         return result.returncode
 
     finally:
@@ -1437,16 +1417,13 @@ def _launch_one_shot(
             return 1
 
         _say(f"creating user '{username}' inside container...", quiet=quiet)
-        _incus._run(
-            ["incus", "exec", name, "--", "userdel", "-r", "ubuntu"],
-            check=False,
-        )
-        _incus._run(
-            ["incus", "exec", name, "--", "useradd", "-m", "-s", args.shell, username],
+        c.exec(["userdel", "-r", "ubuntu"], check=False)
+        c.exec(
+            ["useradd", "-m", "-s", args.shell, username],
             check=True,
         )
-        uid_result = subprocess.run(
-            ["incus", "exec", name, "--", "id", "-u", username],
+        uid_result = c.exec(
+            ["id", "-u", username],
             capture_output=True,
             text=True,
             check=True,
@@ -1486,34 +1463,28 @@ def _launch_one_shot(
             )
 
         exec_cwd = str(cwd) if (args.rw_cwd or args.ro_cwd) else f"/home/{username}"
-        exec_cmd = [
-            "incus",
-            "exec",
-            name,
-            "--user",
-            str(container_uid),
-            "--cwd",
-            exec_cwd,
-            "--env",
-            f"HOME=/home/{username}",
-            "--env",
-            f"USER={username}",
-            "--env",
-            f"LOGNAME={username}",
-            "--",
-        ]
         command = args.command
         if command and command[0] == "--":
             command = command[1:]
 
         if command:
-            exec_cmd.extend(command)
+            exec_argv: List[str] = list(command)
             _say(f"running command in '{name}'...", quiet=quiet)
         else:
-            exec_cmd.extend(_login_shell_argv(args.shell))
+            exec_argv = list(_login_shell_argv(args.shell))
             _say(f"launching {args.shell} as login shell in '{name}'...", quiet=quiet)
 
-        result = _incus._run(exec_cmd, check=False)
+        result = c.exec(
+            exec_argv,
+            user=container_uid,
+            cwd=exec_cwd,
+            env={
+                "HOME": f"/home/{username}",
+                "USER": username,
+                "LOGNAME": username,
+            },
+            check=False,
+        )
         return result.returncode
 
     except subprocess.CalledProcessError as exc:
@@ -1569,9 +1540,10 @@ def _pull_container_logs(
         Local path where logs were written, or None if pull failed / no logs found.
     """
     log_dir_in_container = f"{container_home}/.local/state/ishfiles/logs"
+    c = _container(name)
 
-    check = _incus._run(
-        ["incus", "exec", name, "--", "test", "-d", log_dir_in_container],
+    check = c.exec(
+        ["test", "-d", log_dir_in_container],
         check=False,
         capture_output=True,
         stdin=subprocess.DEVNULL,
