@@ -674,25 +674,12 @@ def _pull_container_log(
                             ``/tmp/ishfiles-pass1.log``).
         host_dest:          Host file path to write the pulled log to.
     """
-    host_dest.parent.mkdir(parents=True, exist_ok=True)
-    r = _incus._run(
-        [
-            "incus",
-            "file",
-            "pull",
-            f"{container_name}{container_log_path}",
-            str(host_dest),
-        ],
-        capture_output=True,
-        check=False,
-    )
-    if r.returncode == 0:
+    if _container(container_name).pull_file(container_log_path, host_dest):
         log.info("Container log saved to: %s", host_dest)
     else:
         log.debug(
-            "Could not pull container log %s (may not exist yet): %s",
+            "Could not pull container log %s (may not exist yet)",
             container_log_path,
-            r.stderr.decode(errors="replace").strip() if r.stderr else "",
         )
 
 
@@ -1227,15 +1214,10 @@ def ensure_project_base(
 
         except (subprocess.CalledProcessError, RuntimeError):
             if started:
-                dev_r = _incus._run(
-                    ["incus", "config", "device", "list", name],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if dev_r.returncode == 0 and dev_r.stdout.strip():
+                devices = c.list_devices()
+                if devices:
                     log.info(
-                        "devices on '%s' at failure: %s", name, dev_r.stdout.strip()
+                        "devices on '%s' at failure: %s", name, ", ".join(devices)
                     )
                 c.stop(force=True)
                 c.delete(force=True)
@@ -1408,7 +1390,7 @@ def _launch_one_shot(
                 f"\nContainer failed to start. Fetching logs for '{name}':\n",
                 file=sys.stderr,
             )
-            _incus._run(["incus", "info", "--show-log", name], check=False)
+            c.dump_diagnostics()
             print(
                 f"\nContainer '{name}' left in place for manual inspection.\n"
                 f"Clean up with: incus delete {name} --force",
@@ -1556,24 +1538,10 @@ def _pull_container_logs(
     dest = local_log_root / name
     dest.mkdir(parents=True, exist_ok=True)
 
-    result = _incus._run(
-        [
-            "incus",
-            "file",
-            "pull",
-            "--recursive",
-            f"{name}{log_dir_in_container}",
-            str(dest),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        stdin=subprocess.DEVNULL,
-    )
-    if result.returncode != 0:
+    if not c.pull_file(log_dir_in_container, dest, recursive=True):
         if not quiet:
             print(
-                f"isholate: warning: could not pull logs from container: {result.stderr.strip()}",
+                "isholate: warning: could not pull logs from container",
                 file=sys.stderr,
             )
         return None
@@ -1658,7 +1626,7 @@ def _find_isholate_containers(
     safe_user = _sanitize_for_name(username)
 
     entries = []
-    for c in _incus.list_incus_containers():
+    for c in get_backend().list_containers():
         name = c.get("name", "")
         classified = _classify_isholate_name(
             name, safe_user=None if all_users else safe_user

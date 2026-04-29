@@ -290,6 +290,9 @@ class IncusContainer(Container):
         _run(["incus", "copy", self.name, dest_name], check=True)
         return IncusContainer(dest_name)
 
+    def dump_diagnostics(self) -> None:
+        _run(["incus", "info", "--show-log", self.name], check=False)
+
     # ------------------------------------------------------------------
     # Exec / file I/O
     # ------------------------------------------------------------------
