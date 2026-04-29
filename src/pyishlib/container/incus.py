@@ -380,7 +380,7 @@ class IncusContainer(Container):
         ]
         for key, value in options.items():
             cmd.append(f"{key}={value}")
-        _run(cmd, check=True)
+        _run_checked(cmd, f"add device '{device_name}' on '{self.name}'")
 
     def remove_device(self, device_name: str) -> None:
         # Removal is best-effort — check=False so a missing device does not
@@ -482,3 +482,20 @@ class IncusBackend(ContainerBackend):
         ensure_managed_network(
             name, create_config=create_config, set_config=set_config
         )
+
+    def apply_no_network(
+        self, container: Container, *, quiet: bool = False
+    ) -> None:
+        # Lazy import — the implementation lives next to the rest of the
+        # ``--claude`` machinery so claude-specific knowledge does not
+        # bleed into pyishlib.container.
+        from ..isholate.claude import apply_no_network as _impl
+
+        _impl(container, quiet=quiet)
+
+    def apply_claude_network_isolation(
+        self, container: Container, *, quiet: bool = False
+    ) -> None:
+        from ..isholate.claude import apply_claude_network_isolation as _impl
+
+        _impl(container, quiet=quiet)
