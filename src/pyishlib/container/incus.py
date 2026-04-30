@@ -274,17 +274,17 @@ class IncusContainer(Container):
     def start(self) -> None:
         _run(["incus", "start", self.name], check=True)
 
-    def stop(self, *, force: bool = True) -> None:
+    def stop(self, *, force: bool = True) -> bool:
         cmd = ["incus", "stop", self.name]
         if force:
             cmd.append("--force")
-        _run(cmd, check=False)
+        return _run(cmd, check=False).returncode == 0
 
-    def delete(self, *, force: bool = True) -> None:
+    def delete(self, *, force: bool = True) -> bool:
         cmd = ["incus", "delete", self.name]
         if force:
             cmd.append("--force")
-        _run(cmd, check=False)
+        return _run(cmd, check=False).returncode == 0
 
     def copy_to(self, dest_name: str) -> "IncusContainer":
         _run(["incus", "copy", self.name, dest_name], check=True)
@@ -479,23 +479,4 @@ class IncusBackend(ContainerBackend):
         create_config: List[str],
         set_config: Dict[str, str],
     ) -> None:
-        ensure_managed_network(
-            name, create_config=create_config, set_config=set_config
-        )
-
-    def apply_no_network(
-        self, container: Container, *, quiet: bool = False
-    ) -> None:
-        # Lazy import — the implementation lives next to the rest of the
-        # ``--claude`` machinery so claude-specific knowledge does not
-        # bleed into pyishlib.container.
-        from ..isholate.claude import apply_no_network as _impl
-
-        _impl(container, quiet=quiet)
-
-    def apply_claude_network_isolation(
-        self, container: Container, *, quiet: bool = False
-    ) -> None:
-        from ..isholate.claude import apply_claude_network_isolation as _impl
-
-        _impl(container, quiet=quiet)
+        ensure_managed_network(name, create_config=create_config, set_config=set_config)

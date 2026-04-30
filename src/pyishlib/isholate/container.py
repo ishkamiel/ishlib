@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from ..container import Container, get_backend
-from ..container import incus as _incus
 from ..ish_logging import log_level_from_args, log_level_to_cli_flags
 from .claude import (
     _add_claude_mounts,
@@ -186,7 +185,8 @@ def _exec_checked(
 ) -> "subprocess.CompletedProcess":
     """Run ``c.exec(cmd, check=True)`` and log a labelled error on failure.
 
-    Mirror of ``_incus._run_checked`` but for the abstraction.  The
+    Mirrors the labelled-error semantics of the backend's strict-run
+    helper but routes through ``Container.exec``.  The
     step label is written to the error log on a non-zero exit so the
     user knows which provisioning step broke before the
     ``CalledProcessError`` propagates.
@@ -491,9 +491,7 @@ def _add_mount(
     shift: bool = False,
 ) -> None:
     """Attach a disk device mapping host *src* → in-container *dst*."""
-    _container(name).add_mount(
-        device_name, src, dst, readonly=readonly, shift=shift
-    )
+    _container(name).add_mount(device_name, src, dst, readonly=readonly, shift=shift)
 
 
 def _add_home_mount(
@@ -669,7 +667,7 @@ def _pull_container_log(
     exited before creating it) and do not raise.
 
     Args:
-        container_name:    Incus container name.
+        container_name:    Container name.
         container_log_path: Absolute path inside the container (e.g.
                             ``/tmp/ishfiles-pass1.log``).
         host_dest:          Host file path to write the pulled log to.
@@ -971,20 +969,13 @@ def ensure_host_base(
                         "— forcing rebuild...",
                         quiet=quiet,
                     )
-                    del_r = _incus._run(
-                        ["incus", "delete", name, "--force"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    if _container_exists(name):
-                        detail = (del_r.stderr or del_r.stdout or "").strip()
+                    poisoned = _container(name)
+                    deleted = poisoned.delete(force=True)
+                    if poisoned.exists():
                         raise RuntimeError(
-                            f"failed to delete poisoned host base '{name}' "
-                            f"(incus delete exited with {del_r.returncode})"
-                            + (f": {detail}" if detail else "")
-                            + "; remove it manually with "
-                            "'incus delete --force' and retry"
+                            f"failed to delete poisoned host base '{name}'"
+                            + ("" if deleted else " (backend reported error)")
+                            + "; remove it manually and retry"
                         )
                     # Fall through to the create path below.
                 else:
@@ -1216,9 +1207,7 @@ def ensure_project_base(
             if started:
                 devices = c.list_devices()
                 if devices:
-                    log.info(
-                        "devices on '%s' at failure: %s", name, ", ".join(devices)
-                    )
+                    log.info("devices on '%s' at failure: %s", name, ", ".join(devices))
                 c.stop(force=True)
                 c.delete(force=True)
             raise
@@ -1612,16 +1601,20 @@ def _find_isholate_containers(
     include_bases: bool = False,
     all_users: bool = False,
 ) -> "List[dict]":
-    """Return isholate containers known to Incus.
+    """Return isholate containers visible to the active container backend.
 
-    Calls ``incus list --format=json`` and classifies entries by prefix.  When
-    *all_users* is False (the default), only containers owned by *username*
-    (after :func:`_sanitize_for_name`) are returned.
+    Calls :meth:`ContainerBackend.list_containers` and classifies entries
+    by name prefix.  Each backend entry must carry at least a ``name`` key
+    (and a ``status`` key when the backend tracks it); the listing is
+    backend-agnostic so adding a non-Incus backend later does not require
+    changes here.  When *all_users* is False (the default), only
+    containers owned by *username* (after :func:`_sanitize_for_name`) are
+    returned.
 
-    Each returned dict has keys ``name``, ``status``, ``kind``, and ``owner``.
-    ``kind`` is one of ``"ephemeral"``, ``"host-base"``, ``"project-base"``.
-    ``status`` is passed through verbatim from Incus (e.g. ``"Running"``,
-    ``"Stopped"``, ``"Frozen"``).
+    Each returned dict has keys ``name``, ``status``, ``kind``, and
+    ``owner``.  ``kind`` is one of ``"ephemeral"``, ``"host-base"``,
+    ``"project-base"``.  ``status`` is passed through verbatim from the
+    backend (e.g. ``"Running"``, ``"Stopped"``, ``"Frozen"`` for Incus).
     """
     safe_user = _sanitize_for_name(username)
 
@@ -1685,11 +1678,7 @@ def purge_containers(
     failed = False
     for name in containers:
         _say(f"deleting {name}...", quiet=quiet)
-        # Direct _run here so we can branch on the exit code.  Container.delete
-        # is "fire and forget"; surfacing the returncode would mean adding a
-        # capture-output variant to the ABC for one diagnostic call site.
-        r = _incus._run(["incus", "delete", name, "--force"], check=False)
-        if r.returncode != 0:
+        if not _container(name).delete(force=True):
             print(f"isholate: failed to delete {name}", file=sys.stderr)
             failed = True
 
@@ -1848,8 +1837,7 @@ def stop_containers(
 
     for name in targets:
         log.info("stopping %s...", name)
-        r = _incus._run(["incus", "stop", name, "--force"], check=False)
-        if r.returncode != 0:
+        if not _container(name).stop(force=True):
             log.error("failed to stop %s", name)
             failed = True
 

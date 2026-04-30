@@ -1465,6 +1465,7 @@ class TestProvisioning:
         path is actually exercised), and toggles the existence of the host's
         ``~/.claude`` directory and ``~/.claude.json`` file independently.
         """
+
         def fake_run(cmd, **kwargs):
             # device list returns valid (empty) JSON so the strict
             # _assert_no_isholate_devices check passes.
@@ -4096,7 +4097,10 @@ class TestCliPreflightClaudeHostTools:
         with (
             patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which),
             patch("pyishlib.isholate.cli.is_linux", return_value=True),
-            patch("pyishlib.isholate.cli.get_backend", return_value=SimpleNamespace(check_available=lambda: None)),
+            patch(
+                "pyishlib.isholate.cli.get_backend",
+                return_value=SimpleNamespace(check_available=lambda: None),
+            ),
             patch(
                 "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
@@ -4117,7 +4121,10 @@ class TestCliPreflightClaudeHostTools:
         with (
             patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which),
             patch("pyishlib.isholate.cli.is_linux", return_value=True),
-            patch("pyishlib.isholate.cli.get_backend", return_value=SimpleNamespace(check_available=lambda: None)),
+            patch(
+                "pyishlib.isholate.cli.get_backend",
+                return_value=SimpleNamespace(check_available=lambda: None),
+            ),
             patch(
                 "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
@@ -4155,7 +4162,10 @@ class TestCliPreflightClaudeHostTools:
         with (
             patch("pyishlib.isholate.claude.shutil.which", side_effect=fake_which),
             patch("pyishlib.isholate.cli.is_linux", return_value=True),
-            patch("pyishlib.isholate.cli.get_backend", return_value=SimpleNamespace(check_available=lambda: None)),
+            patch(
+                "pyishlib.isholate.cli.get_backend",
+                return_value=SimpleNamespace(check_available=lambda: None),
+            ),
             patch(
                 "pyishlib.isholate.commands.run.get_host_user_info",
                 return_value=("testuser", tmp_path, tmp_path),
