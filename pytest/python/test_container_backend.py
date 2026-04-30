@@ -68,7 +68,9 @@ class TestIncusBackendFactory:
 class TestIncusBackendCheckAvailable:
     def test_delegates_to_module_helper(self):
         # When incus reports OK, check_available returns None.
-        with patch("pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"):
+        with patch(
+            "pyishlib.container.incus.shutil.which", return_value="/usr/bin/incus"
+        ):
             with patch(
                 "pyishlib.container.incus._run",
                 return_value=_ok(returncode=0),
@@ -157,16 +159,4 @@ class TestContainerBackendDefaults:
 
     def test_ensure_managed_network_default_raises(self):
         with pytest.raises(NotImplementedError, match="managed networks"):
-            self._Stub().ensure_managed_network(
-                "x", create_config=[], set_config={}
-            )
-
-    def test_apply_no_network_default_raises(self):
-        with pytest.raises(NotImplementedError, match="--no-network"):
-            self._Stub().apply_no_network(object())  # type: ignore[arg-type]
-
-    def test_apply_claude_default_raises(self):
-        with pytest.raises(NotImplementedError, match="--claude"):
-            self._Stub().apply_claude_network_isolation(
-                object()  # type: ignore[arg-type]
-            )
+            self._Stub().ensure_managed_network("x", create_config=[], set_config={})

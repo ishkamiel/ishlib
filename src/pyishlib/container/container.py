@@ -57,12 +57,22 @@ class Container(ABC):
         """Start the container."""
 
     @abstractmethod
-    def stop(self, *, force: bool = True) -> None:
-        """Stop the container."""
+    def stop(self, *, force: bool = True) -> bool:
+        """Stop the container.
+
+        Returns True when the backend reports success, False otherwise.
+        Implementations must not raise on a non-zero exit so callers can
+        treat the return value as a status flag.
+        """
 
     @abstractmethod
-    def delete(self, *, force: bool = True) -> None:
-        """Delete the container."""
+    def delete(self, *, force: bool = True) -> bool:
+        """Delete the container.
+
+        Returns True when the backend reports success, False otherwise.
+        Implementations must not raise on a non-zero exit so callers can
+        treat the return value as a status flag.
+        """
 
     @abstractmethod
     def copy_to(self, dest_name: str) -> "Container":

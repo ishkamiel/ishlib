@@ -86,29 +86,3 @@ class ContainerBackend(ABC):
             f"{self.name or type(self).__name__}: backend does not support "
             "managed networks"
         )
-
-    def apply_no_network(
-        self, container: Container, *, quiet: bool = False
-    ) -> None:
-        """Detach the container's default network interface.
-
-        Default implementation raises :class:`NotImplementedError`.
-        Backends that support a ``--no-network`` mode override.
-        """
-        raise NotImplementedError(
-            f"{self.name or type(self).__name__}: --no-network is not "
-            "supported on this backend"
-        )
-
-    def apply_claude_network_isolation(
-        self, container: Container, *, quiet: bool = False
-    ) -> None:
-        """Apply ``--no-network --claude`` egress filtering.
-
-        Default implementation raises :class:`NotImplementedError`.
-        Backends that can host the Claude allowlist machinery override.
-        """
-        raise NotImplementedError(
-            f"{self.name or type(self).__name__}: --no-network --claude is "
-            "only supported with the Incus backend"
-        )
