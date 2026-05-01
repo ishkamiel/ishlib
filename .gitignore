@@ -6,3 +6,4 @@ docs/
 mkdocs.yml
 site/
 wiki/
+_failed_scenarios/

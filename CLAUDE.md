@@ -102,6 +102,44 @@ pytest pytest/shell/test_func-path.py::test_name  # one test function
 pytest -k "test_pattern"                          # by name pattern
 ```
 
+### System dependencies for tests
+
+Beyond the Python deps installed via `pip install --group test --group extras`,
+the test suite also relies on a handful of system binaries:
+
+| Binary | Lane | Notes |
+|---|---|---|
+| `bash`, `dash`, `sh`, `zsh` | `pytest/shell/` | Cross-shell parametrization; missing shells skip individually. |
+| `shellcheck` | `pytest/shell/` | Linting; missing skips the shellcheck tests only. |
+| `bwrap` (bubblewrap) | `pytest/integration/` | Per-scenario mount namespace. Without it the integration lane skips with an install hint; never falls back to unisolated execution. |
+| `git`, `prove` | misc | Already standard on Linux dev/CI. |
+
+Install on Debian/Ubuntu:
+
+```bash
+sudo apt-get install -y shellcheck dash zsh bubblewrap
+```
+
+CI (`.github/workflows/pytest.yml`) installs the same set. `pytest/integration/`
+is Linux-only by design (the macOS and Windows jobs already restrict to
+`pytest/python/`); on other platforms the integration lane is reported as
+skipped rather than failed.
+
+#### Ubuntu 24.04 caveat: unprivileged user namespaces
+
+Ubuntu 24.04 (noble) ships an AppArmor profile that blocks unprivileged user
+namespaces by default, which makes `bwrap` fail with `setting up uid map:
+Permission denied` even when invoked with `--unshare-user`.  CI works around
+this with one extra step before pytest.  For local dev on 24.04, run the
+same tweak once per boot:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
+The sysctl does not exist on older kernels and is irrelevant on 22.04 or
+on container hosts that already opt out of the restriction.
+
 ## Key Conventions
 
 ### Shell Code

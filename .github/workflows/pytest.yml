@@ -23,7 +23,15 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y shellcheck dash zsh
+        sudo apt-get install -y shellcheck dash zsh bubblewrap
+    - name: Allow unprivileged user namespaces for bubblewrap
+      # Ubuntu 24.04's AppArmor profile blocks unprivileged userns by
+      # default, which makes bwrap fail with "setting up uid map:
+      # Permission denied" even with --unshare-user.  Disabling the
+      # restriction is safe on the ephemeral CI VM.  The sysctl does
+      # not exist on older kernels, so treat its absence as success.
+      run: |
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
     - name: Install Python dependencies
       run: |
         python -m pip install -U 'pip>=25.1'
