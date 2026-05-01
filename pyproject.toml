@@ -14,6 +14,12 @@ extras = [
 test = [
   "pytest",
   "pytest-xdist",
+  # Non-Python test dependencies (cannot be expressed here, see CLAUDE.md
+  # > "System dependencies for tests" for the full list):
+  #   * shellcheck, dash, zsh -- pytest/shell/ cross-shell coverage
+  #   * bubblewrap (bwrap)    -- pytest/integration/ per-scenario sandbox
+  # Install on Debian/Ubuntu via:
+  #   sudo apt-get install -y shellcheck dash zsh bubblewrap
 ]
 
 docs = [
