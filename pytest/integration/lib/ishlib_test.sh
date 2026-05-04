@@ -16,6 +16,8 @@
 #   ISHLIB_SANDBOX  per-scenario sandbox directory (cwd of the script)
 #   ISHFILES        invocation prefix for the ishfiles CLI
 #                   (currently: "python3 -m pyishlib.ishfiles")
+#   ISHPROJECT      invocation prefix for the ishproject CLI
+#                   (currently: "python3 -m pyishlib.ishproject")
 #   PYTHONPATH      includes $ISHLIB_SRC
 #
 # The library exposes assertion helpers (it_assert_*) and sandbox
@@ -97,6 +99,28 @@ it_run_ishfiles() {
 it_run_ishfiles_capture() {
     set +e
     it_run_ishfiles "$@" \
+        > "$ISHLIB_SANDBOX/last.out" \
+        2> "$ISHLIB_SANDBOX/last.err"
+    _it_rc=$?
+    set -e
+    return $_it_rc
+}
+
+# -- ishproject invocation --------------------------------------------------
+
+# Run the ishproject CLI.  ishproject resolves source/target itself from
+# cwd (it expects to be invoked inside a project git-repo root), so no
+# -s/-t/-c flags are injected.  Scenarios should `cd` into the project
+# root before calling this helper.
+it_run_ishproject() {
+    # shellcheck disable=SC2086
+    $ISHPROJECT "$@"
+}
+
+# Like it_run_ishproject but captures stdout/stderr like it_run_ishfiles_capture.
+it_run_ishproject_capture() {
+    set +e
+    it_run_ishproject "$@" \
         > "$ISHLIB_SANDBOX/last.out" \
         2> "$ISHLIB_SANDBOX/last.err"
     _it_rc=$?
