@@ -36,6 +36,31 @@ def _make_file(path: Path, content: str = "hello\n") -> Path:
     return path
 
 
+def _git_init_and_commit(repo: Path, *files: str, message: str = "init") -> None:
+    """`git init` *repo* and commit *files* (already on disk) at HEAD.
+
+    Used by the add-command tests that need the source dir to be a real
+    git working tree so the dirty/clean classification can be exercised.
+    """
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=str(repo), check=True)
+    if files:
+        subprocess.run(["git", "add", "--", *files], cwd=str(repo), check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            message,
+        ],
+        cwd=str(repo),
+        check=True,
+    )
+
+
 def _make_args(**overrides):
     """Create a minimal argparse-like namespace."""
     defaults = {
@@ -1099,6 +1124,69 @@ class TestAddCommand:
 
             assert ret == 0
             assert (Path(src) / "dot_bashrc").read_text() == "new content\n"
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_clean_git_source_overwrites_without_force(self):
+        """Source is a clean git checkout; updating it must not require -f.
+
+        Regression for `ishproject add`: editing a target whose tracked
+        copy in the project dotfiles repo is committed cleanly should
+        succeed, since there are no uncommitted changes to lose.
+        """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "old content\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(Path(tgt) / ".bashrc", "new content\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "new content\n"
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_dirty_git_source_refuses_without_force(self, capsys):
+        """Source has uncommitted edits in git; refuse to clobber them."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "v1\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            # Local edit in the source repo, not yet committed -> dirty.
+            _make_file(Path(src) / "dot_bashrc", "v2 local\n")
+            _make_file(Path(tgt) / ".bashrc", "v3 target\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 1
+            assert (Path(src) / "dot_bashrc").read_text() == "v2 local\n"
+            captured = capsys.readouterr()
+            assert "Refusing to overwrite dirty file" in captured.err
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_dirty_git_source_with_force(self):
+        """`--force` still clobbers a dirty git source."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "v1\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(Path(src) / "dot_bashrc", "v2 local\n")
+            _make_file(Path(tgt) / ".bashrc", "v3 target\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "--force",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "v3 target\n"
 
     def test_add_dry_run(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
