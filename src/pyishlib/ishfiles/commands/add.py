@@ -102,8 +102,12 @@ class AddCommand(CliCommand):
         1. Resolve it to a :class:`DotFile` via :class:`DotfileFinder`.
         2. The target must exist on the filesystem.
         3. If the source already exists and is identical, warn and skip.
-        4. If the source exists and differs (dirty), refuse unless
-           ``--force`` is given.
+        4. If the source exists and differs from the target, classify
+           the source's git state: a clean tracked source is overwritten
+           (this is the normal *update* path), a source with uncommitted
+           edits is refused unless ``--force`` is given, and a source
+           outside any git repo is refused unless ``--force`` is given
+           (we can't tell what we'd lose).
         5. Copy the target file into the source directory.
 
         Returns:
@@ -116,6 +120,8 @@ class AddCommand(CliCommand):
         if not finder.source_dir.is_dir():
             log.error("Source directory does not exist: %s", finder.source_dir)
             return 1
+
+        source_repo, source_status = self._probe_source_repo(finder.source_dir)
 
         errors = 0
         added = 0
@@ -144,16 +150,28 @@ class AddCommand(CliCommand):
                     log.warning("Already tracked (identical): %s", dotfile.translated)
                     continue
 
-                if not force:
-                    log.error(
-                        "Refusing to overwrite dirty file in dotfiles repository: "
-                        "%s (use -f/--force to override)",
-                        dotfile.rel_path,
-                    )
+                if self._source_is_clean_in_git(
+                    dotfile.source, source_repo, source_status
+                ):
+                    log.info("Updating tracked file: %s", dotfile.rel_path)
+                elif not force:
+                    if source_repo is None:
+                        log.error(
+                            "Refusing to overwrite existing file in non-git "
+                            "dotfiles repository: %s "
+                            "(use -f/--force to override)",
+                            dotfile.rel_path,
+                        )
+                    else:
+                        log.error(
+                            "Refusing to overwrite dirty file in dotfiles "
+                            "repository: %s (use -f/--force to override)",
+                            dotfile.rel_path,
+                        )
                     errors += 1
                     continue
-
-                log.info("Overwriting (--force): %s", dotfile.rel_path)
+                else:
+                    log.info("Overwriting (--force): %s", dotfile.rel_path)
 
             dotfile.source.parent.mkdir(parents=True, exist_ok=True)
 
@@ -202,3 +220,46 @@ class AddCommand(CliCommand):
                 "git add returned non-zero exit code %d; files were copied but not staged",
                 result.returncode,
             )
+
+    @staticmethod
+    def _probe_source_repo(source_dir: Path):
+        """Resolve the git repo enclosing *source_dir* and snapshot its status.
+
+        Returns ``(repo, status)`` where ``repo`` is a :class:`GitRepo` or
+        ``None`` (when *source_dir* is not inside any git working tree),
+        and ``status`` is the result of :meth:`GitRepo.status_porcelain`
+        — a ``{rel_path: XY_code}`` dict. The status is collected once up
+        front so the per-file dirty check does not re-shell out to git.
+
+        ``include_ignored=True`` is required because ishproject worktrees
+        share their parent repo's ``.git/info/exclude``, which carries
+        ``/.ishlib/`` and any per-file dotfile patterns. Without it,
+        managed-but-not-tracked files would be invisible in the snapshot
+        and the dirty check would misclassify them as clean.
+        """
+        try:
+            repo = GitRepo.discover(source_dir)
+        except NotAGitRepoError:
+            return None, {}
+        return repo, repo.status_porcelain(include_ignored=True)
+
+    @staticmethod
+    def _source_is_clean_in_git(source_path: Path, repo, status: dict) -> bool:
+        """Return True iff *source_path* is tracked and clean in *repo*.
+
+        "Clean" means: the path lives inside the work tree and does not
+        appear in ``git status --porcelain`` output, i.e. it has no
+        uncommitted modifications, no staged changes, and is not
+        untracked. Returns False when there is no enclosing repo, when
+        the path resolves outside the work tree, or when git reports
+        any status code for it.
+        """
+        if repo is None:
+            return False
+        try:
+            rel = source_path.resolve().relative_to(repo.work_tree)
+        except ValueError:
+            return False
+        # ``status_porcelain`` returns POSIX-style paths from git; on
+        # Windows ``str(rel)`` would use backslashes and miss every key.
+        return rel.as_posix() not in status
