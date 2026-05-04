@@ -132,6 +132,7 @@ class ScenarioItem(pytest.Item):
         env["ISHLIB_LIB"] = str(_LIB_SCRIPT)
         env["ISHLIB_SANDBOX"] = str(sandbox)
         env["ISHFILES"] = "python3 -m pyishlib.ishfiles"
+        env["ISHPROJECT"] = "python3 -m pyishlib.ishproject"
         env["ISHLIB_SH"] = str(_REPO_ROOT / "ishlib.sh")
         # HOME and TMPDIR redirect well-behaved code that consults them
         # (Python tempfile, mktemp, etc.) into the writable sandbox; the
