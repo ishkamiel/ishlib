@@ -8,6 +8,7 @@ import argparse
 import sys
 
 from ...cli_command import CliCommand
+from ...command_runner import CommandRunner
 from ...git_repo import GitRepo, NotAGitRepoError
 from ..applier import make_finder
 
@@ -22,7 +23,8 @@ class CommitCommand(CliCommand):
     DESCRIPTION = (
         "Runs ``git commit -a`` on the dotfiles source directory.  "
         "Stages and commits all tracked modifications.  Defaults to the "
-        f"message ``{_DEFAULT_MESSAGE}``; override with ``-m``."
+        f"message ``{_DEFAULT_MESSAGE}``; override with ``-m``.  "
+        "Pass ``--push`` to also push after a successful commit."
     )
 
     @classmethod
@@ -33,6 +35,11 @@ class CommitCommand(CliCommand):
             default=_DEFAULT_MESSAGE,
             metavar="MSG",
             help=f"Commit message (default: {_DEFAULT_MESSAGE!r})",
+        )
+        parser.add_argument(
+            "--push",
+            action="store_true",
+            help="After committing, run `git push` on the dotfiles repository.",
         )
 
     def run(self) -> int:
@@ -54,6 +61,11 @@ class CommitCommand(CliCommand):
             )
             return 1
 
+        repo.runner = CommandRunner(self.cfg)
         message = self.cfg.get_opt("message", _DEFAULT_MESSAGE)
         result = repo.commit_all(message)
-        return result.returncode
+        if result.returncode != 0:
+            return result.returncode
+        if self.cfg.get_opt("push", False):
+            return repo.push().returncode
+        return 0
