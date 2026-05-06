@@ -2917,6 +2917,167 @@ class TestCommitCommand:
             rc = cli_main(["--source", src, "--target", tgt, "commit"])
         assert rc != 0
 
+    def test_commit_with_push_sends_commits(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as base:
+            base_path = Path(base)
+            src = base_path / "src"
+            remote = base_path / "remote.git"
+            tgt = base_path / "tgt"
+            src.mkdir()
+            tgt.mkdir()
+            _init_git_repo(src)
+            _make_bare_remote(remote)
+            _git_remote_add_and_push(src, remote)
+            _make_file(src / "dot_zshrc", "export X=1\n")
+            subprocess.run(
+                ["git", "-C", str(src), "add", "dot_zshrc"],
+                check=True,
+                capture_output=True,
+            )
+            rc = cli_main(
+                [
+                    "--source",
+                    str(src),
+                    "--target",
+                    str(tgt),
+                    "commit",
+                    "-m",
+                    "add zshrc",
+                    "--push",
+                ]
+            )
+            assert rc == 0
+            log_out = subprocess.run(
+                ["git", "-C", str(remote), "log", "--oneline"],
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "add zshrc" in log_out
+
+    def test_commit_without_push_does_not_send_commits(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as base:
+            base_path = Path(base)
+            src = base_path / "src"
+            remote = base_path / "remote.git"
+            tgt = base_path / "tgt"
+            src.mkdir()
+            tgt.mkdir()
+            _init_git_repo(src)
+            _make_bare_remote(remote)
+            _git_remote_add_and_push(src, remote)
+            remote_tip_before = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            _make_file(src / "dot_zshrc", "export X=1\n")
+            subprocess.run(
+                ["git", "-C", str(src), "add", "dot_zshrc"],
+                check=True,
+                capture_output=True,
+            )
+            rc = cli_main(
+                ["--source", str(src), "--target", str(tgt), "commit", "-m", "local"]
+            )
+            assert rc == 0
+            remote_tip_after = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            assert remote_tip_after == remote_tip_before
+
+    def test_commit_dry_run_with_push_does_not_send_commits(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as base:
+            base_path = Path(base)
+            src = base_path / "src"
+            remote = base_path / "remote.git"
+            tgt = base_path / "tgt"
+            src.mkdir()
+            tgt.mkdir()
+            _init_git_repo(src)
+            _make_bare_remote(remote)
+            _git_remote_add_and_push(src, remote)
+            remote_tip_before = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            _make_file(src / "dot_zshrc", "export X=1\n")
+            subprocess.run(
+                ["git", "-C", str(src), "add", "dot_zshrc"],
+                check=True,
+                capture_output=True,
+            )
+            rc = cli_main(
+                [
+                    "--source",
+                    str(src),
+                    "--target",
+                    str(tgt),
+                    "commit",
+                    "--dry-run",
+                    "-m",
+                    "would-be commit",
+                    "--push",
+                ]
+            )
+            assert rc == 0
+            remote_tip_after = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            assert remote_tip_after == remote_tip_before
+            src_log = subprocess.run(
+                ["git", "-C", str(src), "log", "--oneline"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+            assert "would-be commit" not in src_log
+
+    def test_commit_with_push_skips_push_when_nothing_to_commit(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as base:
+            base_path = Path(base)
+            src = base_path / "src"
+            remote = base_path / "remote.git"
+            tgt = base_path / "tgt"
+            src.mkdir()
+            tgt.mkdir()
+            _init_git_repo(src)
+            _make_bare_remote(remote)
+            _git_remote_add_and_push(src, remote)
+            remote_tip_before = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            rc = cli_main(
+                ["--source", str(src), "--target", str(tgt), "commit", "--push"]
+            )
+            assert rc != 0
+            remote_tip_after = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            assert remote_tip_after == remote_tip_before
+
 
 @pytest.mark.skipif(not shutil.which("git"), reason="git not available")
 class TestPushCommand:
