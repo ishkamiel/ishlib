@@ -17,11 +17,20 @@ log = logging.getLogger(__name__)
 
 
 def _display_target(dotfile_target: Path, home: Path) -> str:
-    """Return a display string for the deployed target path."""
+    """Return a display string for the deployed target path.
+
+    Prefers a ``./<rel>`` form when the target is under cwd, then ``~/<rel>``
+    when under ``$HOME``, and finally falls back to the absolute path.
+    """
     try:
-        rel = dotfile_target.relative_to(home)
+        rel_cwd = dotfile_target.resolve().relative_to(Path.cwd().resolve()).as_posix()
+        return f"./{rel_cwd}" if rel_cwd and rel_cwd != "." else "."
+    except (OSError, ValueError):
+        pass
+    try:
+        rel_home = dotfile_target.relative_to(home)
         prefix = "~" if home == Path.home() else str(home)
-        return f"{prefix}/{rel}"
+        return f"{prefix}/{rel_home}"
     except ValueError:
         return str(dotfile_target)
 
@@ -82,26 +91,18 @@ class StatusCommand(CliCommand):
         matched_paths: set = set()
 
         for dotfile in dotfiles:
-            source_rel = dotfile.rel_path.as_posix()
-            source_dirty = source_rel in dirty_paths
+            source_name = dotfile.rel_path.as_posix()
+            source_dirty = source_name in dirty_paths
             target_changed = dotfile.get_change_type() is not None
-            matched_paths.add(source_rel)
+            matched_paths.add(source_name)
 
             if not source_dirty and not target_changed:
                 continue
 
             display = _display_target(dotfile.target, home)
-            source_name = dotfile.rel_path.as_posix()
-
-            if source_dirty and target_changed:
-                annotation = "(dirty)"
-            elif target_changed:
-                annotation = "(unchanged)"
-            else:
-                annotation = "(source dirty)"
-
             op = "!=" if target_changed else "=="
-            print(f"{display} {op} {source_name} {annotation}")
+            suffix = " (source dirty)" if source_dirty else ""
+            print(f"{display} {op} {source_name}{suffix}")
 
         other = {p: xy for p, xy in dirty_paths.items() if p not in matched_paths}
         if other:

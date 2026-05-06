@@ -2741,8 +2741,26 @@ class TestStatusCommand:
         assert rc == 0
         assert captured.out.strip() == ""
 
-    def test_target_changed_shows_unchanged_annotation(self, capsys):
-        """Source committed, target drifted: (unchanged)."""
+    def test_target_under_cwd_uses_dot_slash_form(self, tmp_path, capsys, monkeypatch):
+        """Target under cwd is rendered as ./<rel> on the LHS of `!=`."""
+        # Use tmp_path (not tempfile.TemporaryDirectory) so monkeypatch's
+        # cwd-revert runs before pytest tears down the directory; otherwise
+        # Windows fails the tempdir cleanup with WinError 32.
+        src = tmp_path / "src"
+        tgt = tmp_path / "tgt"
+        src.mkdir()
+        tgt.mkdir()
+        _init_git_repo(src)
+        _make_file(src / "dot_zshrc", "export X=1\n")
+        _git_add_and_commit(src, "dot_zshrc")
+        _make_file(tgt / ".zshrc", "export X=2\n")
+        monkeypatch.chdir(tmp_path)
+        rc, captured = self._run(str(src), str(tgt), capsys)
+        assert rc == 0
+        assert "./tgt/.zshrc !=" in captured.out
+
+    def test_target_changed_clean_source_shows_no_annotation(self, capsys):
+        """Source committed, target drifted: line printed without annotation."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _init_git_repo(Path(src))
             _make_file(Path(src) / "dot_zshrc", "export X=1\n")
@@ -2752,8 +2770,10 @@ class TestStatusCommand:
             (Path(tgt) / ".zshrc").write_text("export X=2\n")
             rc, captured = self._run(src, tgt, capsys)
         assert rc == 0
-        assert "(unchanged)" in captured.out
         assert "!=" in captured.out
+        assert "(unchanged)" not in captured.out
+        assert "(source dirty)" not in captured.out
+        assert "(dirty)" not in captured.out
 
     def test_source_dirty_target_matches_shows_source_dirty(self, capsys):
         """Source modified but not committed, target matches dirty source: (source dirty)."""
@@ -2770,8 +2790,8 @@ class TestStatusCommand:
         assert rc == 0
         assert "(source dirty)" in captured.out
 
-    def test_both_dirty_shows_dirty_annotation(self, capsys):
-        """Source modified + target drifted independently: (dirty)."""
+    def test_both_dirty_shows_source_dirty_annotation(self, capsys):
+        """Source modified + target drifted independently: (source dirty)."""
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _init_git_repo(Path(src))
             _make_file(Path(src) / "dot_zshrc", "export X=1\n")
@@ -2782,7 +2802,8 @@ class TestStatusCommand:
             (Path(src) / "dot_zshrc").write_text("export X=3\n")
             rc, captured = self._run(src, tgt, capsys)
         assert rc == 0
-        assert "(dirty)" in captured.out
+        assert "!=" in captured.out
+        assert "(source dirty)" in captured.out
 
     def test_non_dotfile_change_shown_in_other_section(self, capsys):
         """Dirty non-dotfile path (in ishscripts/) appears under Other source changes."""
