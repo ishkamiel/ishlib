@@ -7,3 +7,6 @@ mkdocs.yml
 site/
 wiki/
 _failed_scenarios/
+build/
+dist/
+*.egg-info/
