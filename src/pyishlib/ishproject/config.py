@@ -32,7 +32,7 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Callable, Optional, Tuple, cast
+from typing import Callable, Iterator, Optional, Tuple, cast
 
 from ..git_repo import GitRepo, NotAGitRepoError
 from ..ish_config import IshConfig
@@ -151,6 +151,32 @@ class IshprojectConfig(IshConfig):
         folder = IshlibFolder(root)
         resolved_branch = branch or self.default_branch
         return self.worktree_path(folder, resolved_branch), folder.root
+
+    def iter_initialised_submodules(
+        self, parent_repo: GitRepo
+    ) -> Iterator[Tuple[GitRepo, Path, Path]]:
+        """Yield ``(sub_repo, source, target)`` for each ready submodule.
+
+        "Ready" means the submodule is initialised (so
+        :meth:`GitRepo.iter_submodule_repos` already yielded it), the
+        ishproject branch resolved for the submodule exists in its
+        locally-known refs (no fetches), and the worktree directory is
+        present on disk. Submodules failing either gate are silently
+        skipped so callers can iterate without per-submodule
+        conditionals — same gate ``status`` uses to decide whether a
+        submodule contributes a section to the report.
+        """
+        for sub_repo in parent_repo.iter_submodule_repos():
+            sub_root = sub_repo.work_tree
+            sub_branch = self.resolve_active_branch(sub_root)
+            sub_source, sub_target = self.resolve_project_paths(
+                sub_root, branch=sub_branch
+            )
+            if not sub_repo.branch_exists(sub_branch):
+                continue
+            if not sub_source.is_dir():
+                continue
+            yield sub_repo, sub_source, sub_target
 
     # -- helpers -----------------------------------------------------------
     def _middle_segment(self, branch: str) -> str:

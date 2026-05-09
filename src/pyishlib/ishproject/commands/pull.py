@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 
 from ...cli_command import CliCommand
+from ...git_repo import GitRepo, NotAGitRepoError
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
 
@@ -19,11 +20,13 @@ class PullCommand(CliCommand):
     """Pull (rebase) the project dotfiles repository from its remote."""
 
     NAME = "pull"
-    HELP = "Pull (rebase) the active ishproject dotfiles repository from its remote"
+    HELP = "Pull (rebase) the active ishproject dotfiles repository from remote"
     DESCRIPTION = (
         "Thin wrapper around `ishfiles pull` with --source and --target "
         "pointed at the current project.  All remaining arguments are "
-        "forwarded to ishfiles."
+        "forwarded to ishfiles.  With --recurse-submodules the same pull "
+        "also runs in every initialised submodule that has the ishproject "
+        "branch and worktree set up."
     )
 
     @staticmethod
@@ -36,6 +39,17 @@ class PullCommand(CliCommand):
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--recurse-submodules",
+            action="store_true",
+            default=False,
+            help=(
+                "After pulling the parent project, run `ishproject pull` "
+                "in every initialised submodule (recursively) that has the "
+                "ishproject branch and worktree set up. Submodules without "
+                "an ishproject worktree are silently skipped."
+            ),
+        )
         parser.add_argument(
             "rest",
             nargs=argparse.REMAINDER,
@@ -55,6 +69,24 @@ class PullCommand(CliCommand):
                 source,
             )
             return 1
+
+        rcs = [self._pull_one(source, target)]
+
+        if getattr(self.cfg, "recurse_submodules", False):
+            try:
+                parent_repo = GitRepo.discover(root, require_root=True)
+            except NotAGitRepoError:
+                parent_repo = None
+            if parent_repo is not None:
+                for sub_repo, sub_source, sub_target in cfg.iter_initialised_submodules(
+                    parent_repo
+                ):
+                    log.info("ishproject pull in submodule %s", sub_repo.work_tree)
+                    rcs.append(self._pull_one(sub_source, sub_target))
+
+        return max(rcs)
+
+    def _pull_one(self, source: Path, target: Path) -> int:
         return self.passthrough(
             "pull",
             self.cfg.rest,

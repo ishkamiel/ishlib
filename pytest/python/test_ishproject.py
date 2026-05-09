@@ -514,6 +514,147 @@ def _simulate_add(argv) -> int:
     return 0
 
 
+class TestAddUpdate(_ChdirTestCase):
+    """Cover the ``-u``/``--update`` flag on ``ishproject add``."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+    def test_update_alone_forwards_flag(self) -> None:
+        with patch(
+            "pyishlib.ishproject.commands.add.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["add", "-u"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--update", argv)
+        # No positional files were given.
+        self.assertGreater(argv.index("--update"), argv.index("add"))
+
+    def test_update_with_explicit_file_combines(self) -> None:
+        target_file = self.root / "src" / "foo.txt"
+        target_file.parent.mkdir(parents=True)
+        target_file.write_text("hi\n")
+        with patch(
+            "pyishlib.ishproject.commands.add.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["add", "-u", "src/foo.txt"])
+        self.assertEqual(rc, 0)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("--update", argv)
+        self.assertIn("src/foo.txt", argv)
+
+    def test_no_files_no_update_errors(self) -> None:
+        with patch("pyishlib.ishproject.commands.add.ishfiles_main") as mock_main:
+            rc = cli_main(["add"])
+        self.assertEqual(rc, 1)
+        mock_main.assert_not_called()
+
+
+class TestRecurseSubmodules(_ChdirTestCase):
+    """``--recurse-submodules`` recursion across commit/push/pull/apply.
+
+    Builds a parent repo with one initialised submodule that has the
+    ishproject branch and worktree present. Asserts the per-command
+    passthrough is called once per repo (parent + submodule) when the
+    flag is set, and only on the parent when it is not. ishfiles is
+    fully mocked so no real git push/pull/commit happens — the test
+    only checks the ishproject layer's iteration logic.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        # Submodule with its own bare remote + initial commit.
+        self.workspace = _bare_workspace(self)
+        self.child_bare = _make_submodule_source(self.workspace, "child")
+        _add_submodule(self.root, self.child_bare, "child")
+        # Both repos need the ishproject worktree to exist; the gate
+        # in IshprojectConfig.iter_initialised_submodules requires
+        # both branch_exists and source.is_dir().
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        _git("branch", DEFAULT_BRANCH, cwd=self.root)
+        sub = self.root / "child"
+        (sub / ".ishlib" / "ishproject").mkdir(parents=True)
+        _git("branch", DEFAULT_BRANCH, cwd=sub)
+
+    def _run_and_collect_sources(self, mock_path: str, argv: list) -> list:
+        with patch(mock_path, return_value=0) as mock_main:
+            rc = cli_main(argv)
+        self.assertEqual(rc, 0)
+        # Normalise to POSIX separators so substring assertions like
+        # ``"/child/.ishlib/" in s`` are platform-independent.  The
+        # whole file is currently skipped on win32 (see ``pytestmark``
+        # at module top), but the helper should not depend on that.
+        return [
+            Path(call.args[0][call.args[0].index("--source") + 1]).as_posix()
+            for call in mock_main.call_args_list
+        ]
+
+    def test_commit_recurse_runs_per_repo(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            ["commit", "--recurse-submodules"],
+        )
+        self.assertEqual(len(sources), 2)
+        # Submodule source path lives under <root>/child/.ishlib/.
+        self.assertTrue(any("/child/.ishlib/" in s for s in sources))
+
+    def test_commit_no_recurse_runs_only_parent(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            ["commit"],
+        )
+        self.assertEqual(len(sources), 1)
+        self.assertNotIn("/child/.ishlib/", sources[0])
+
+    def test_push_recurse_runs_per_repo(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.push.ishfiles_main",
+            ["push", "--recurse-submodules"],
+        )
+        self.assertEqual(len(sources), 2)
+        self.assertTrue(any("/child/.ishlib/" in s for s in sources))
+
+    def test_pull_recurse_runs_per_repo(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.pull.ishfiles_main",
+            ["pull", "--recurse-submodules"],
+        )
+        self.assertEqual(len(sources), 2)
+        self.assertTrue(any("/child/.ishlib/" in s for s in sources))
+
+    def test_apply_recurse_runs_per_repo(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            ["apply", "--recurse-submodules"],
+        )
+        self.assertEqual(len(sources), 2)
+        self.assertTrue(any("/child/.ishlib/" in s for s in sources))
+
+    def test_apply_no_recurse_runs_only_parent(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.apply.ishfiles_main",
+            ["apply"],
+        )
+        self.assertEqual(len(sources), 1)
+
+    def test_recurse_skips_submodule_without_branch(self) -> None:
+        # Drop the ishproject branch from the submodule. The gate must
+        # silently skip it so only the parent runs.
+        _git("branch", "-D", DEFAULT_BRANCH, cwd=self.root / "child")
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            ["commit", "--recurse-submodules"],
+        )
+        self.assertEqual(len(sources), 1)
+        self.assertNotIn("/child/.ishlib/", sources[0])
+
+
 class TestAddEndToEnd(_ChdirTestCase):
     """End-to-end: add stays hidden in main but is staged in the ishproject worktree.
 

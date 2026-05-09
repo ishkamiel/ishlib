@@ -186,6 +186,61 @@ class TestListSubmodules(GitRepoTestCase):
         self.assertEqual(paths, [(self.root / "sub").resolve()])
 
 
+class TestIterSubmoduleRepos(GitRepoTestCase):
+    """Cover ``GitRepo.iter_submodule_repos`` for the recursion code path."""
+
+    def _add_submodule(self, child: Path, sub_path: str) -> None:
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "protocol.file.allow=always",
+                "-c",
+                "commit.gpgsign=false",
+                "submodule",
+                "add",
+                str(child),
+                sub_path,
+            ],
+            cwd=str(self.root),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        _git("commit", "-m", f"add submodule {sub_path}", cwd=self.root)
+
+    def test_no_submodules_yields_nothing(self) -> None:
+        repo = GitRepo.discover(self.root)
+        self.assertEqual(list(repo.iter_submodule_repos()), [])
+
+    def test_yields_one_repo_per_initialised_submodule(self) -> None:
+        child_tmp = _make_tempdir()
+        self.addCleanup(child_tmp.cleanup)
+        child = Path(child_tmp.name).resolve()
+        _make_repo(child)
+        self._add_submodule(child, "sub")
+
+        repo = GitRepo.discover(self.root)
+        sub_repos = list(repo.iter_submodule_repos())
+        self.assertEqual(len(sub_repos), 1)
+        self.assertEqual(sub_repos[0].work_tree, (self.root / "sub").resolve())
+
+    def test_recursive_parity_with_list_submodules(self) -> None:
+        # iter_submodule_repos is a thin wrapper around list_submodules,
+        # so the work_tree paths it yields must be identical to the
+        # paths list_submodules returns at the same recursion setting.
+        child_tmp = _make_tempdir()
+        self.addCleanup(child_tmp.cleanup)
+        child = Path(child_tmp.name).resolve()
+        _make_repo(child)
+        self._add_submodule(child, "sub")
+
+        repo = GitRepo.discover(self.root)
+        from_list = repo.list_submodules(recursive=False)
+        from_iter = [r.work_tree for r in repo.iter_submodule_repos(recursive=False)]
+        self.assertEqual(from_iter, from_list)
+
+
 class TestBranchExists(GitRepoTestCase):
     def test_local_branch_present(self) -> None:
         _git("branch", "feature/x", cwd=self.root)
