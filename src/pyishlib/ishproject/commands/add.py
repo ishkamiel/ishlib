@@ -46,7 +46,7 @@ class AddCommand(CliCommand):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         files_arg = parser.add_argument(
             "files",
-            nargs="+",
+            nargs="*",
             help="File(s) to add to the project dotfiles repository.",
         )
         files_arg.complete = _COMPLETE_FILE  # type: ignore[attr-defined]
@@ -56,6 +56,18 @@ class AddCommand(CliCommand):
             action="store_true",
             default=False,
             help="Overwrite dirty files in the project dotfiles repository.",
+        )
+        parser.add_argument(
+            "-u",
+            "--update",
+            action="store_true",
+            default=False,
+            help=(
+                "Re-add every file already tracked in the project "
+                "dotfiles repository. Identical files are skipped, so "
+                "only changed files are actually copied. Combine with "
+                "explicit FILES to include extra paths."
+            ),
         )
         parser.set_defaults(rest=[])
 
@@ -72,6 +84,12 @@ class AddCommand(CliCommand):
             )
             return 1
 
+        update = bool(getattr(self.cfg, "update", False))
+        explicit_files = list(self.cfg.files or [])
+        if not explicit_files and not update:
+            log.error("No files given (specify FILES or use -u/--update).")
+            return 1
+
         try:
             repo = GitRepo.discover(target)
         except NotAGitRepoError:
@@ -79,7 +97,7 @@ class AddCommand(CliCommand):
             return 1
 
         repo.ensure_exclude_pattern(f"/{PROJECT_DIR_NAME}/")
-        for f in self.cfg.files:
+        for f in explicit_files:
             try:
                 repo.ensure_path_excluded(Path(f))
             except ValueError as exc:
@@ -89,7 +107,9 @@ class AddCommand(CliCommand):
         remainder = list(self.cfg.rest)
         if self.cfg.force:
             remainder.append("--force")
-        remainder.extend(self.cfg.files)
+        if update:
+            remainder.append("--update")
+        remainder.extend(explicit_files)
         rc = self.passthrough(
             "add",
             remainder,
@@ -114,7 +134,15 @@ class AddCommand(CliCommand):
         finder = DotfileFinder(
             IshConfig(defaults={"source": str(source), "target": str(target)})
         )
-        rel_paths = [str(p) for p in finder.get_rel_paths(self.cfg.files)]
+        if update:
+            # In -u mode ishfiles re-adds every dotfile already in the
+            # source. Stage those same paths in the worktree so the
+            # project repo sees them as committed work, not untracked.
+            rel_paths = [
+                str(df.rel_path) for df in finder.discover() if df.target.is_file()
+            ]
+        else:
+            rel_paths = [str(p) for p in finder.get_rel_paths(explicit_files)]
         if not rel_paths:
             return 0
 

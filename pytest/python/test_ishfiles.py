@@ -1464,6 +1464,120 @@ class TestAddCommand:
             assert self._staged_files(src) == ["dot_bashrc"]
 
 
+class TestAddUpdate:
+    """Cover the ``-u``/``--update`` flag on ``ishfiles add``.
+
+    ``-u`` is the bulk-refresh path: existing tracked files in the
+    dotfiles source get their target re-copied. Real usage runs against
+    a git-tracked source so the "clean tracked source" branch in
+    ``add.py`` overwrites without ``--force``; mirror that here so the
+    tests exercise the same code path users will hit.
+    """
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_update_alone_re_adds_every_tracked_file(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "old\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(Path(tgt) / ".bashrc", "new\n")
+
+            ret = cli_main(["--source", src, "--target", tgt, "add", "-u"])
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "new\n"
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_update_skips_identical_files(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "same\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(Path(tgt) / ".bashrc", "same\n")
+
+            ret = cli_main(["--source", src, "--target", tgt, "add", "-u"])
+
+            assert ret == 0
+            captured = capsys.readouterr()
+            assert "already tracked" in (captured.out + captured.err).lower()
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_update_skips_files_with_missing_targets(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            # Tracked file with no matching target on disk: must be skipped
+            # silently, not reported as an error.
+            _make_file(Path(src) / "dot_bashrc", "stale\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+
+            ret = cli_main(["--source", src, "--target", tgt, "add", "-u"])
+
+            assert ret == 0
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_update_with_explicit_files_combines(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "old\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(Path(tgt) / ".bashrc", "new bash\n")
+            _make_file(Path(tgt) / ".vimrc", "new vim\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "-u",
+                    str(Path(tgt) / ".vimrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "new bash\n"
+            assert (Path(src) / "dot_vimrc").read_text() == "new vim\n"
+
+    def test_no_files_no_update_errors(self, capsys):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            ret = cli_main(["--source", src, "--target", tgt, "add"])
+            assert ret == 1
+            captured = capsys.readouterr()
+            assert "no files given" in (captured.out + captured.err).lower()
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_update_dedups_explicit_alias_of_tracked_file(self, capsys):
+        """Explicit arg + ``-u`` referencing the same dotfile must dedup.
+
+        Regression for the ``-u`` dedup path: an explicit ``.bashrc``
+        and the absolute target path ``-u`` discovers should resolve
+        to the same dotfile via ``DotfileFinder.translate_arg`` and be
+        processed once, not twice. The pre-fix code compared raw
+        strings and processed both, producing duplicate "already
+        tracked" or "Added" log lines.
+        """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "same\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(Path(tgt) / ".bashrc", "same\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "-u",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            captured = capsys.readouterr()
+            # "already tracked" is logged once per processing pass; the
+            # dedup must keep it to a single occurrence.
+            text = (captured.out + captured.err).lower()
+            assert text.count("already tracked") == 1
+
+
 # ---------------------------------------------------------------------------
 # diff/apply with file arguments
 # ---------------------------------------------------------------------------

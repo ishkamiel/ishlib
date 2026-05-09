@@ -36,7 +36,9 @@ class ApplyCommand(CliCommand):
         "remaining arguments are forwarded to ishfiles. Before "
         "forwarding, each target path is appended to the project "
         "repo's .git/info/exclude so applied files do not appear as "
-        "untracked."
+        "untracked. With --recurse-submodules the same apply also runs "
+        "in every initialised submodule that has the ishproject branch "
+        "and worktree set up."
     )
 
     @staticmethod
@@ -50,13 +52,44 @@ class ApplyCommand(CliCommand):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "--recurse-submodules",
+            action="store_true",
+            default=False,
+            help=(
+                "After applying to the parent project, run `ishproject apply` "
+                "in every initialised submodule (recursively) that has the "
+                "ishproject branch and worktree set up. Submodules without "
+                "an ishproject worktree are silently skipped."
+            ),
+        )
+        parser.add_argument(
             "rest",
             nargs=argparse.REMAINDER,
             help="Arguments forwarded to `ishfiles apply`.",
         )
 
     def run(self) -> int:
-        return self.run_project_apply(self.cfg.ishproject_cfg, rest=self.cfg.rest)
+        cfg = self.cfg.ishproject_cfg
+        rest = self.cfg.rest
+        rcs = [self.run_project_apply(cfg, rest=rest)]
+
+        if getattr(self.cfg, "recurse_submodules", False):
+            try:
+                parent_repo = GitRepo.discover(Path.cwd(), require_root=True)
+            except NotAGitRepoError:
+                parent_repo = None
+            if parent_repo is not None:
+                for (
+                    sub_repo,
+                    _sub_source,
+                    _sub_target,
+                ) in cfg.iter_initialised_submodules(parent_repo):
+                    log.info("ishproject apply in submodule %s", sub_repo.work_tree)
+                    rcs.append(
+                        self.run_project_apply(cfg, rest=rest, root=sub_repo.work_tree)
+                    )
+
+        return max(rcs)
 
     # ------------------------------------------------------------------
     # Shared entry point — also called from InitCommand --apply.

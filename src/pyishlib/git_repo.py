@@ -16,7 +16,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Iterator, Optional
 
 from .command_runner import CommandRunner
 
@@ -315,6 +315,23 @@ class GitRepo:
             if p.is_dir():
                 paths.append(p)
         return paths
+
+    def iter_submodule_repos(self, *, recursive: bool = True) -> Iterator["GitRepo"]:
+        """Yield a :class:`GitRepo` for every initialised submodule.
+
+        Wraps :meth:`list_submodules` and runs :meth:`discover` against
+        each path with ``require_root=True``. Submodule entries that
+        fail to resolve to a git working tree (rare; e.g. a stale
+        checkout left behind after the submodule was deinitialised) are
+        silently skipped so callers can iterate without try/except
+        boilerplate.
+        """
+        for sub_path in self.list_submodules(recursive=recursive):
+            try:
+                yield GitRepo.discover(sub_path, require_root=True)
+            except NotAGitRepoError:
+                log.debug("Skipping submodule path %s: not a git repo", sub_path)
+                continue
 
     def status_porcelain(self, *, include_ignored: bool = False) -> dict:
         """Return the working-tree status as ``{relative_path: XY_code}``.

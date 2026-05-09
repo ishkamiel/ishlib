@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 
 from ...cli_command import CliCommand
+from ...git_repo import GitRepo, NotAGitRepoError
 from ...ishfiles.cli import build_parser as ishfiles_build_parser
 from ...ishfiles.cli import main as ishfiles_main
 
@@ -23,7 +24,9 @@ class PushCommand(CliCommand):
     DESCRIPTION = (
         "Thin wrapper around `ishfiles push` with --source and --target "
         "pointed at the current project.  All remaining arguments are "
-        "forwarded to ishfiles."
+        "forwarded to ishfiles.  With --recurse-submodules the same push "
+        "also runs in every initialised submodule that has the ishproject "
+        "branch and worktree set up."
     )
 
     @staticmethod
@@ -36,6 +39,17 @@ class PushCommand(CliCommand):
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--recurse-submodules",
+            action="store_true",
+            default=False,
+            help=(
+                "After pushing the parent project, run `ishproject push` "
+                "in every initialised submodule (recursively) that has the "
+                "ishproject branch and worktree set up. Submodules without "
+                "an ishproject worktree are silently skipped."
+            ),
+        )
         parser.add_argument(
             "rest",
             nargs=argparse.REMAINDER,
@@ -55,6 +69,24 @@ class PushCommand(CliCommand):
                 source,
             )
             return 1
+
+        rcs = [self._push_one(source, target)]
+
+        if getattr(self.cfg, "recurse_submodules", False):
+            try:
+                parent_repo = GitRepo.discover(root, require_root=True)
+            except NotAGitRepoError:
+                parent_repo = None
+            if parent_repo is not None:
+                for sub_repo, sub_source, sub_target in cfg.iter_initialised_submodules(
+                    parent_repo
+                ):
+                    log.info("ishproject push in submodule %s", sub_repo.work_tree)
+                    rcs.append(self._push_one(sub_source, sub_target))
+
+        return max(rcs)
+
+    def _push_one(self, source: Path, target: Path) -> int:
         return self.passthrough(
             "push",
             self.cfg.rest,

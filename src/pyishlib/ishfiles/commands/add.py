@@ -75,7 +75,7 @@ class AddCommand(CliCommand):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         files_arg = parser.add_argument(
             "files",
-            nargs="+",
+            nargs="*",
             help="File(s) to add to the dotfiles repository",
         )
         files_arg.complete = _COMPLETE_FILE  # type: ignore[attr-defined]
@@ -85,6 +85,19 @@ class AddCommand(CliCommand):
             action="store_true",
             default=False,
             help="Overwrite dirty files in the dotfiles repository",
+        )
+        parser.add_argument(
+            "-u",
+            "--update",
+            action="store_true",
+            default=False,
+            help=(
+                "Re-add every file already tracked in the dotfiles "
+                "repository. Identical files are skipped (existing "
+                "duplicate detection), so only changed files are "
+                "actually copied. Combine with explicit FILES to "
+                "include extra paths."
+            ),
         )
         parser.add_argument(
             "--no-git-add",
@@ -115,11 +128,34 @@ class AddCommand(CliCommand):
         """
         finder = make_finder(self.cfg)
         force = self.cfg.get_opt("force", False)
-        files = _expand_directory_args(self.cfg.get_opt("files", []), finder)
+        update = self.cfg.get_opt("update", False)
+        explicit = list(self.cfg.get_opt("files", []) or [])
 
         if not finder.source_dir.is_dir():
             log.error("Source directory does not exist: %s", finder.source_dir)
             return 1
+
+        if not explicit and not update:
+            log.error("No files given (specify FILES or use -u/--update).")
+            return 1
+
+        files = _expand_directory_args(explicit, finder)
+        if update:
+            # Canonicalise dedup keys via DotfileFinder.translate_arg so the
+            # same dotfile referenced two different ways (explicit
+            # ``.bashrc`` vs. update-discovered ``/home/u/.bashrc``, or
+            # source-relative ``dot_bashrc`` vs. absolute target path)
+            # collapses to a single entry instead of being processed twice.
+            seen = {finder.translate_arg(p) for p in files}
+            for df in finder.discover():
+                if not df.target.is_file():
+                    continue
+                path = str(df.target)
+                key = finder.translate_arg(path)
+                if key in seen:
+                    continue
+                files.append(path)
+                seen.add(key)
 
         source_repo, source_status = self._probe_source_repo(finder.source_dir)
 
