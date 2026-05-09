@@ -65,7 +65,12 @@ def _probe(dep: _OptionalDep) -> _ProbeResult:
     except Exception as exc:  # noqa: BLE001
         return _ProbeResult("error", f"import check failed: {exc!s}")
     if spec is None:
-        return _ProbeResult("missing", f"install with: pip install {dep.distribution}")
+        return _ProbeResult(
+            "missing",
+            f"install with: pipx inject ishlib {dep.distribution}  "
+            f"(or `pip install --user {dep.distribution}`, or rerun "
+            f"`bin/ishlib-install --full` for the in-tree install)",
+        )
     try:
         version = importlib.metadata.version(dep.distribution)
     except importlib.metadata.PackageNotFoundError:
