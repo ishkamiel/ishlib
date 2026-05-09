@@ -246,6 +246,41 @@ def collect_metadata_packages(
     return []
 
 
+def has_metadata(file_path: Union[str, Path]) -> bool:
+    '''Return True if *file_path* carries ``__ISH__`` metadata.
+
+    Detects every embed form supported by :func:`read_metadata` —
+    shell heredoc, Python ``__ish__ = """..."""`` assignment,
+    PowerShell block comment, comment-prefixed block — and the
+    sidecar ``.ish`` file convention.  Unlike :func:`read_metadata`
+    this is a cheap *presence* check: TOML is not parsed, so it
+    cannot fail on malformed metadata, and callers that just need
+    to know "is there templating to lose?" do not pay the parse
+    cost.
+
+    Args:
+        file_path: Path to inspect.
+
+    Returns:
+        True if any embed form is detected, False otherwise (also
+        False on read errors and binary content).
+    '''
+    file_path = Path(file_path)
+    try:
+        text = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        text = None
+    if text is not None and _extract_embedded(text) is not None:
+        return True
+    # _read_sidecar() does an unguarded read_text() and can raise on
+    # unreadable / non-UTF-8 sidecars; honour the docstring's "False on
+    # read errors" promise by swallowing those here.
+    try:
+        return _read_sidecar(file_path) is not None
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def remove_metadata_blocks(text: str) -> str:
     """Remove all ``__ISH__`` metadata blocks from *text*.
 

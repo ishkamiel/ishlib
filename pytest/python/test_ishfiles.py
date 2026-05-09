@@ -1463,6 +1463,261 @@ class TestAddCommand:
             assert (Path(src) / "dot_bashrc").read_text() == "new content\n"
             assert self._staged_files(src) == ["dot_bashrc"]
 
+    # ---- templated source protection -------------------------------------
+
+    def test_add_skips_when_preprocessed_source_matches_target(self, capsys, caplog):
+        """Source has a ${__ish_*} reference; target holds the expanded value.
+
+        The live target was produced by a prior ``apply``, so there is
+        nothing new to add — and certainly nothing worth clobbering the
+        template for.  Without the new check, ``add`` would happily
+        overwrite ``name = ${__ish_username}`` with ``name = alice``.
+
+        The skip is logged at ``INFO`` (consistent with ``diff`` reporting
+        "everything is up to date" for the same file), so the assertion
+        uses ``caplog`` rather than stderr — at the default verbosity the
+        message is intentionally suppressed.
+        """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "name = ${__ish_username}\n")
+            _make_file(Path(tgt) / ".bashrc", "name = alice\n")
+
+            with caplog.at_level("INFO", logger="pyishlib.ishfiles.commands.add"):
+                ret = cli_main(
+                    [
+                        "--source",
+                        src,
+                        "--target",
+                        tgt,
+                        "--custom-username",
+                        "alice",
+                        "add",
+                        str(Path(tgt) / ".bashrc"),
+                    ]
+                )
+
+            assert ret == 0
+            assert (
+                Path(src) / "dot_bashrc"
+            ).read_text() == "name = ${__ish_username}\n"
+            assert any(
+                "after preprocessing" in rec.getMessage().lower()
+                for rec in caplog.records
+            )
+            captured = capsys.readouterr()
+            # Default verbosity: the skip is silent on the terminal.
+            assert "after preprocessing" not in captured.err.lower()
+
+    def test_add_refuses_templated_source_with_real_changes(self, capsys):
+        """Templated source + live edit → refused without ``--overwrite-template``.
+
+        The user appended a new line to the live target, so preprocessing
+        no longer reproduces it.  The template variable must not be lost
+        as collateral damage of capturing that edit.
+        """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "name = ${__ish_username}\n")
+            _make_file(
+                Path(tgt) / ".bashrc",
+                "name = alice\nextra line\n",
+            )
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "--custom-username",
+                    "alice",
+                    "add",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 1
+            # Source is preserved verbatim, including the template token.
+            assert (
+                Path(src) / "dot_bashrc"
+            ).read_text() == "name = ${__ish_username}\n"
+            captured = capsys.readouterr()
+            assert "templated source" in captured.err.lower()
+            assert "--overwrite-template" in captured.err
+
+    @pytest.mark.skipif(not _has_git, reason="git not available")
+    def test_add_overwrite_template_flag_allows_clobber(self):
+        """``--overwrite-template`` opts the user into losing template syntax.
+
+        Source is committed cleanly so the dirty-source guard does not
+        also fire; only the template guard is in play.
+        """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "name = ${__ish_username}\n")
+            _git_init_and_commit(Path(src), "dot_bashrc")
+            _make_file(
+                Path(tgt) / ".bashrc",
+                "name = alice\nextra line\n",
+            )
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "--custom-username",
+                    "alice",
+                    "add",
+                    "--overwrite-template",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (
+                Path(src) / "dot_bashrc"
+            ).read_text() == "name = alice\nextra line\n"
+
+    def test_add_detects_at_ish_directive(self, capsys):
+        """``@ish`` directive lines also count as templating worth guarding."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(
+                Path(src) / "dot_bashrc",
+                "#@ish set editor=vim\nplain config\n",
+            )
+            _make_file(Path(tgt) / ".bashrc", "edited config\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 1
+            assert (
+                (Path(src) / "dot_bashrc")
+                .read_text()
+                .startswith("#@ish set editor=vim")
+            )
+            captured = capsys.readouterr()
+            assert "@ish directives" in captured.err
+
+    def test_add_detects_ish_metadata_block(self, capsys):
+        """An ``__ISH__`` metadata block triggers the template guard too."""
+        source_text = "# __ISH__\n# only_on = ['linux']\n# __ISH__\nplain config\n"
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", source_text)
+            _make_file(Path(tgt) / ".bashrc", "edited config\n")
+
+            ret = cli_main(
+                ["--source", src, "--target", tgt, "add", str(Path(tgt) / ".bashrc")]
+            )
+
+            assert ret == 1
+            assert (Path(src) / "dot_bashrc").read_text() == source_text
+            captured = capsys.readouterr()
+            assert "__ISH__" in captured.err
+
+    def test_add_non_templated_source_unaffected(self):
+        """A non-templated source still goes through the existing dirty path.
+
+        Regression guard: the new template check must be a no-op when the
+        existing source has no templating.
+        """
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", "old content\n")
+            _make_file(Path(tgt) / ".bashrc", "new content\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    "--force",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 0
+            assert (Path(src) / "dot_bashrc").read_text() == "new content\n"
+
+    def test_add_detects_python_ish_metadata_assignment(self, capsys):
+        '''The Python ``__ish__ = """..."""`` embed form is also guarded.
+
+        The detection helper now goes through ``ish_metadata.has_metadata``,
+        which understands every embed form the preprocessor does — not just
+        the comment-prefixed ``# __ISH__`` block.  This regression guards
+        against a Python source whose metadata would otherwise be silently
+        clobbered by a byte copy.
+        '''
+        source_text = '__ish__ = """\nonly_on = ["linux"]\n"""\nprint(\'hello\')\n'
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_local/script.py", source_text)
+            _make_file(Path(tgt) / ".local/script.py", "print('edited')\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "add",
+                    str(Path(tgt) / ".local" / "script.py"),
+                ]
+            )
+
+            assert ret == 1
+            assert (Path(src) / "dot_local" / "script.py").read_text() == source_text
+            captured = capsys.readouterr()
+            assert "__ISH__ metadata" in captured.err
+
+    def test_add_skips_equality_check_when_source_has_prompt_directive(
+        self, capsys, monkeypatch
+    ):
+        """Sources with ``@ish prompt*`` must not block the add command.
+
+        If the equality fast-path naively ran the preprocessor, an
+        ``@ish prompt`` directive would block on stdin.  ``add`` should
+        skip the fast-path in that case (the templated source is still
+        guarded by the regular refusal path).  We patch the prompt
+        primitive to fail loudly so any accidental invocation surfaces
+        as a test error rather than a hang.
+        """
+
+        from pyishlib.dotfile_context import DotfileContext
+
+        def _boom(*_args, **_kwargs):
+            raise AssertionError("prompt should not have been invoked")
+
+        # Catch every interactive entry point on DotfileContext — the
+        # @ish prompt* directives all funnel through these methods.
+        monkeypatch.setattr(DotfileContext, "prompt", _boom)
+        monkeypatch.setattr(DotfileContext, "prompt_bool", _boom)
+        monkeypatch.setattr(DotfileContext, "prompt_choice", _boom)
+
+        source_text = '#@ish prompt editor "Editor?" "vim"\nname = ${__ish_username}\n'
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            _make_file(Path(src) / "dot_bashrc", source_text)
+            _make_file(Path(tgt) / ".bashrc", "name = alice\nedited\n")
+
+            ret = cli_main(
+                [
+                    "--source",
+                    src,
+                    "--target",
+                    tgt,
+                    "--custom-username",
+                    "alice",
+                    "add",
+                    str(Path(tgt) / ".bashrc"),
+                ]
+            )
+
+            assert ret == 1
+            assert (Path(src) / "dot_bashrc").read_text() == source_text
+            captured = capsys.readouterr()
+            assert "templated source" in captured.err.lower()
+
 
 class TestAddUpdate:
     """Cover the ``-u``/``--update`` flag on ``ishfiles add``.

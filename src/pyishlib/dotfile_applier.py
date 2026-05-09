@@ -304,6 +304,33 @@ class DotfileApplier:
                 log.debug("Unchanged: %s", dotfile.target)
         return changed
 
+    def is_target_up_to_date(self, dotfile: DotFile) -> bool:
+        """Return True iff applying *dotfile* would produce no change.
+
+        Runs :meth:`prepare` on a single dotfile and inspects the
+        resulting :meth:`DotFile.get_change_type`.  Comparison is done
+        in the same way as the real apply pipeline — byte-for-byte for
+        plain files, semantic JSON match for ``mergejson_`` sources,
+        and including the executable-bit check for ``executable_``
+        files.  Useful for callers like ``ishfiles add`` that want to
+        detect "nothing to do" before writing back into the source.
+
+        Note:
+            This invokes the full preprocessing pipeline, including
+            any ``@ish`` directives the source may contain.  Callers
+            that need to avoid interactive ``@ish prompt*`` directives
+            should pre-check the source themselves (see
+            :func:`pyishlib.file_preprocessor.has_prompt_directives`)
+            and only call this method when it is safe to preprocess
+            non-interactively.
+        """
+        prepared = self.prepare([dotfile])
+        if not prepared:
+            # OS-filtered or otherwise dropped — we can't say it's up
+            # to date, so let the caller decide what to do.
+            return False
+        return prepared[0].get_change_type() is None
+
     def print_changes(self, changes: List[DotFile]) -> None:
         """Print a human-readable summary of pending changes."""
         if not changes:

@@ -10,17 +10,55 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Sequence, Tuple
 
 from ...cli_command import CliCommand
 from ...command_runner import CommandRunner
 from ...completions import FILE as _COMPLETE_FILE
 from ...dotfile_finder import DotfileFinder
+from ...file_preprocessor import (
+    has_directives,
+    has_prompt_directives,
+    has_variable_refs,
+)
 from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
-from ..applier import make_finder
+from ...ish_metadata import has_metadata
+from ..applier import make_applier, make_finder
 
 log = logging.getLogger(__name__)
+
+
+def _detect_template_constructs(source: Path) -> Tuple[List[str], bool]:
+    '''Return ``(labels, has_prompts)`` for templating in *source*.
+
+    *labels* is a list of human-readable descriptions of every
+    templating construct found — variable references, ``@ish``
+    directives, ``__ISH__`` metadata (any embed form, including the
+    Python ``__ish__ = """..."""`` assignment, plus the ``.ish``
+    sidecar).  *has_prompts* is True when the source contains an
+    interactive ``@ish prompt*`` directive that would block the
+    preprocessor on stdin; callers using the equality fast-path can
+    skip it in that case.
+
+    Both values are derived from the central detection helpers in
+    :mod:`pyishlib.file_preprocessor` and :mod:`pyishlib.ish_metadata`
+    so this command stays in sync with whatever the preprocessor
+    actually understands.
+    '''
+    try:
+        text = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        text = ""
+    found: List[str] = []
+    if text and has_variable_refs(text):
+        found.append("${__ish_*} variable references")
+    if text and has_directives(text):
+        found.append("@ish directives")
+    if has_metadata(source):
+        found.append("__ISH__ metadata")
+    prompts = bool(text) and has_prompt_directives(text)
+    return found, prompts
 
 
 def _expand_directory_args(
@@ -100,6 +138,17 @@ class AddCommand(CliCommand):
             ),
         )
         parser.add_argument(
+            "--overwrite-template",
+            action="store_true",
+            default=False,
+            help=(
+                "Allow overwriting an existing source file that contains "
+                "templating constructs (${__ish_*} references, @ish "
+                "directives, or __ISH__ metadata). Refused by default to "
+                "prevent silent loss of template syntax."
+            ),
+        )
+        parser.add_argument(
             "--no-git-add",
             dest="git_add",
             action="store_false",
@@ -115,20 +164,36 @@ class AddCommand(CliCommand):
         1. Resolve it to a :class:`DotFile` via :class:`DotfileFinder`.
         2. The target must exist on the filesystem.
         3. If the source already exists and is identical, warn and skip.
-        4. If the source exists and differs from the target, classify
+        4. If the source carries templating (``${__ish_*}`` references,
+           ``@ish`` directives, or an ``__ISH__`` metadata block in any
+           embed form), guard the overwrite:
+
+           a. If the source has no interactive ``@ish prompt*``
+              directives, ask the applier whether the live target is
+              already up to date with the preprocessed source — if so,
+              log at ``info`` and skip (the target was produced by a
+              prior ``apply`` and there is nothing new to capture; the
+              skip is intentionally quiet at default verbosity, matching
+              ``diff``'s "everything is up to date" report).
+           b. Otherwise refuse unless ``--overwrite-template`` is
+              given, since a blind byte copy would silently destroy
+              the template syntax.
+        5. If the source exists and differs from the target, classify
            the source's git state: a clean tracked source is overwritten
            (this is the normal *update* path), a source with uncommitted
            edits is refused unless ``--force`` is given, and a source
            outside any git repo is refused unless ``--force`` is given
            (we can't tell what we'd lose).
-        5. Copy the target file into the source directory.
+        6. Copy the target file into the source directory.
 
         Returns:
             0 on success, 1 if any file could not be added.
         """
         finder = make_finder(self.cfg)
+        applier = make_applier(self.cfg, finder=finder)
         force = self.cfg.get_opt("force", False)
         update = self.cfg.get_opt("update", False)
+        overwrite_template = self.cfg.get_opt("overwrite_template", False)
         explicit = list(self.cfg.get_opt("files", []) or [])
 
         if not finder.source_dir.is_dir():
@@ -184,6 +249,32 @@ class AddCommand(CliCommand):
             if dotfile.source.exists():
                 if filecmp.cmp(str(dotfile.source), str(dotfile.target), shallow=False):
                     log.warning("Already tracked (identical): %s", dotfile.translated)
+                    continue
+
+                template_constructs, has_prompts = _detect_template_constructs(
+                    dotfile.source
+                )
+                # Equality fast-path: only meaningful for templated sources
+                # (a non-templated source can't reduce to anything other
+                # than itself, and filecmp above already covered that
+                # case).  Skip it when prompt directives are present so
+                # the preprocessor never blocks waiting for stdin.
+                if template_constructs and not has_prompts:
+                    if applier.is_target_up_to_date(dotfile):
+                        log.info(
+                            "Already tracked (identical after preprocessing): %s",
+                            dotfile.translated,
+                        )
+                        continue
+
+                if template_constructs and not overwrite_template:
+                    log.error(
+                        "Refusing to overwrite templated source file: %s "
+                        "(contains %s; use --overwrite-template to override)",
+                        dotfile.rel_path,
+                        ", ".join(template_constructs),
+                    )
+                    errors += 1
                     continue
 
                 if self._source_is_clean_in_git(
