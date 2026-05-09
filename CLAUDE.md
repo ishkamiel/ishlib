@@ -19,7 +19,7 @@ src/
       commands/   # One module per subcommand: add, apply, cd, diff,
                   #   external, git, init, install, log, pd, runscripts
     isholate/     # isholate CLI (Incus container launcher): cli, config, container
-  schema/         # Config schemas (JSON)
+    schema/       # Config schemas (JSON), shipped with the package
   docs/           # Documentation *sources* (intro templates etc.)
 pytest/
   shell/          # Shell function tests (parametrized across bash, dash, sh, zsh)

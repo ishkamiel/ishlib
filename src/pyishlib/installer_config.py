@@ -82,9 +82,7 @@ class InstallerConfig:
 class InstallerConfigJSON(InstallerConfig):
     """Class for handling installer configuration from a JSON file"""
 
-    SCHEMA: Path = (
-        Path(__file__).parent.parent / "schema" / "installer_config_json.json"
-    )
+    SCHEMA: Path = Path(__file__).parent / "schema" / "installer_config_json.json"
 
     def __init__(self, config_fn: Path, cfg: Optional[Any] = None, **kwargs) -> None:
         # Load JSON config
