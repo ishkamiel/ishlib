@@ -72,6 +72,45 @@ _RE_DIRECTIVE = re.compile(
 # Variable reference: ${__ish_<name>}
 _RE_VAR_REF = re.compile(r"\$\{__ish_(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)\}")
 
+# MULTILINE-anchored variants of the directive regex used by the
+# detection helpers below.  The canonical ``_RE_DIRECTIVE`` is matched
+# line-by-line in :meth:`FilePreprocessor._process_directives` so it
+# does not need (or carry) the ``re.MULTILINE`` flag; these helpers
+# take whole-file text instead, so they need ``^``/``$`` to match at
+# every line boundary.
+_RE_DIRECTIVE_DETECT = re.compile(
+    r"^[ \t]*(?:[#;%]|//|--)@ish\s+\S",
+    re.MULTILINE,
+)
+# Subset of directives that can trigger interactive user input
+# (`@ish prompt`, `@ish prompt_bool`, `@ish prompt_choice`).  Detection
+# helpers expose this so callers running the preprocessor in a
+# non-interactive context (e.g. equality checks for `ishfiles add`)
+# can bail out before the prompt fires.
+_RE_PROMPT_DIRECTIVE = re.compile(
+    r"^[ \t]*(?:[#;%]|//|--)@ish\s+prompt(?:_bool|_choice)?\b",
+    re.MULTILINE,
+)
+
+
+def has_variable_refs(text: str) -> bool:
+    """Return True if *text* contains any ``${__ish_*}`` reference."""
+    return bool(_RE_VAR_REF.search(text))
+
+
+def has_directives(text: str) -> bool:
+    """Return True if *text* contains any ``@ish`` directive line."""
+    return bool(_RE_DIRECTIVE_DETECT.search(text))
+
+
+def has_prompt_directives(text: str) -> bool:
+    """Return True if *text* contains any interactive ``@ish prompt*`` directive.
+
+    Used by callers that want to know whether running the preprocessor
+    on *text* could block waiting for user input.
+    """
+    return bool(_RE_PROMPT_DIRECTIVE.search(text))
+
 
 # ---------------------------------------------------------------------------
 # Helpers (kept module-level for testability)

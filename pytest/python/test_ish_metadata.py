@@ -14,6 +14,7 @@ from pyishlib.ish_metadata import (
     HAS_TOML,
     _extract_embedded,
     _strip_comment_prefix,
+    has_metadata,
     merge_metadata,
     read_metadata,
     scan_directory,
@@ -567,6 +568,38 @@ __ISH__
         with tempfile.TemporaryDirectory() as tmpdir:
             ret = _cli_main(["meta-scan", tmpdir])
             assert ret == 1
+
+
+class TestHasMetadata(unittest.TestCase):
+    """``has_metadata`` is documented as a safe presence check.
+
+    The sidecar branch in particular must not raise on unreadable files
+    or on bytes that cannot be decoded as UTF-8 — callers like
+    ``ishfiles add`` rely on it returning ``False`` in that case.
+    """
+
+    def test_unreadable_sidecar_returns_false(self):
+        """A sidecar with invalid UTF-8 bytes must not propagate an error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "config"
+            target.write_text("plain text\n")
+            sidecar = Path(tmpdir) / "config.ish"
+            # 0x80 is a continuation byte with no leading byte — invalid UTF-8.
+            sidecar.write_bytes(b"\x80\x81\x82")
+
+            assert has_metadata(target) is False
+
+    def test_missing_file_returns_false(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert has_metadata(Path(tmpdir) / "does-not-exist") is False
+
+    def test_sidecar_present_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "config"
+            target.write_text("plain text\n")
+            (Path(tmpdir) / "config.ish").write_text("[vars]\nx = 1\n")
+
+            assert has_metadata(target) is True
 
 
 if __name__ == "__main__":
