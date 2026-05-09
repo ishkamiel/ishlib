@@ -202,7 +202,7 @@ class InitCommand(CliCommand):
         if not recurse:
             # Standalone callers asked about one specific repo. "Not
             # configured" is still a non-success outcome (so the shell
-            # exit is non-zero), but the user already got an info-level
+            # exit is non-zero), but the user already got a warning-level
             # message from `_init_project_worktree` explaining exactly
             # what happened.
             if parent_not_configured:
@@ -234,7 +234,7 @@ class InitCommand(CliCommand):
                 failures.append(str(sub))
 
         if skipped:
-            log.info(
+            log.warning(
                 "ishproject not configured in %d repo(s) (no %s branch): %s",
                 len(skipped),
                 branch,
@@ -354,7 +354,7 @@ class InitCommand(CliCommand):
             return 0
 
         if not args.create:
-            log.info(
+            log.warning(
                 "%s ishproject not configured (no %s branch on %s); "
                 "pass --create to bootstrap.",
                 _repo_tag(root),
