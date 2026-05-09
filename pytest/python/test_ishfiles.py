@@ -1567,6 +1567,8 @@ class TestInstallCommand:
 
     def test_install_dry_run_shows_packages(self, capsys):
         """Dry-run lists packages that would be installed without running anything."""
+        from pyishlib.installer import Installer
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
@@ -1574,7 +1576,10 @@ class TestInstallCommand:
                 '{"nonexistent-test-pkg": {"apt": "nonexistent-test-pkg", "cmd": "nonexistent_test_cmd_12345"}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "install", "--dry-run"])
+            with patch.object(Installer, "pkg_is_available", return_value=True):
+                ret = cli_main(
+                    ["--source", src, "--target", tgt, "install", "--dry-run"]
+                )
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1582,6 +1587,8 @@ class TestInstallCommand:
 
     def test_install_dry_run_toml(self, capsys):
         """Dry-run works with TOML package config."""
+        from pyishlib.installer import Installer
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
@@ -1589,7 +1596,10 @@ class TestInstallCommand:
                 '[nonexistent-toml-pkg]\napt = "nonexistent-toml-pkg"\ncmd = "nonexistent_toml_cmd_12345"\n'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "install", "--dry-run"])
+            with patch.object(Installer, "pkg_is_available", return_value=True):
+                ret = cli_main(
+                    ["--source", src, "--target", tgt, "install", "--dry-run"]
+                )
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1597,6 +1607,8 @@ class TestInstallCommand:
 
     def test_install_specific_packages(self, capsys):
         """Restricting to named packages only installs those."""
+        from pyishlib.installer import Installer
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
@@ -1605,9 +1617,18 @@ class TestInstallCommand:
                 '"pkg-b": {"apt": "pkg-b", "cmd": "nonexistent_b_12345"}}'
             )
 
-            ret = cli_main(
-                ["--source", src, "--target", tgt, "install", "--dry-run", "pkg-a"]
-            )
+            with patch.object(Installer, "pkg_is_available", return_value=True):
+                ret = cli_main(
+                    [
+                        "--source",
+                        src,
+                        "--target",
+                        tgt,
+                        "install",
+                        "--dry-run",
+                        "pkg-a",
+                    ]
+                )
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1656,6 +1677,8 @@ class TestInstallCommand:
 
     def test_install_toml_preferred_over_json(self, capsys):
         """TOML config takes priority when both exist."""
+        from pyishlib.installer import Installer
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             config_dir = Path(src) / "ishconfig"
             config_dir.mkdir()
@@ -1666,7 +1689,10 @@ class TestInstallCommand:
                 '{"json-only-pkg": {"cmd": "nonexistent_json_only_12345"}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "install", "--dry-run"])
+            with patch.object(Installer, "pkg_is_available", return_value=True):
+                ret = cli_main(
+                    ["--source", src, "--target", tgt, "install", "--dry-run"]
+                )
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -1682,6 +1708,8 @@ class TestInstallCommand:
 class TestApplyWithInstall:
     def test_apply_runs_install(self, capsys):
         """apply also triggers package installation."""
+        from pyishlib.installer import Installer
+
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
             _make_file(Path(src) / "dot_bashrc", "content\n")
             config_dir = Path(src) / "ishconfig"
@@ -1690,7 +1718,8 @@ class TestApplyWithInstall:
                 '{"nonexistent-apply-pkg": {"apt": "nonexistent-apply-pkg", "cmd": "nonexistent_apply_cmd_12345"}}'
             )
 
-            ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
+            with patch.object(Installer, "pkg_is_available", return_value=True):
+                ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
 
         assert ret == 0
         captured = capsys.readouterr()
@@ -2657,6 +2686,171 @@ class TestRunInstallAvailabilityFiltering:
         assert "Packages to install (1)" in captured.out
         assert "tldr" in captured.out
         assert "ulauncher" not in captured.out
+
+    def test_unavailable_required_prompts_user_abort(self, tmp_path):
+        """Required packages not in repos prompt the user; 'no' aborts."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        unavailable_required = {"name": "glow", "apt": "glow"}
+
+        with (
+            patch.object(
+                Installer, "get_missing_pkgs", return_value=[unavailable_required]
+            ),
+            patch.object(Installer, "pkg_is_available", return_value=False),
+            patch.object(Installer, "install_pkgs") as mock_install,
+            patch(
+                "pyishlib.ishfiles.installer_helper.prompt_bool", return_value=False
+            ) as mock_prompt,
+        ):
+            ret = run_install(cfg, extra_packages=[unavailable_required])
+
+        assert ret == 1
+        mock_prompt.assert_called_once()
+        mock_install.assert_not_called()
+
+    def test_unavailable_required_prompts_user_continue(self, tmp_path):
+        """Required packages not in repos prompt the user; 'yes' drops them."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        unavailable_required = {"name": "glow", "apt": "glow"}
+
+        with (
+            patch.object(
+                Installer, "get_missing_pkgs", return_value=[unavailable_required]
+            ),
+            patch.object(Installer, "pkg_is_available", return_value=False),
+            patch.object(Installer, "install_pkgs") as mock_install,
+            patch(
+                "pyishlib.ishfiles.installer_helper.prompt_bool", return_value=True
+            ) as mock_prompt,
+        ):
+            ret = run_install(cfg, extra_packages=[unavailable_required])
+
+        assert ret == 0
+        mock_prompt.assert_called_once()
+        mock_install.assert_not_called()
+
+    def test_unavailable_required_with_yes_skips_prompt(self, tmp_path):
+        """--yes auto-accepts the unavailable-required prompt."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        cfg = load_config(
+            args=_make_args(source=str(source), home=str(home), yes=True),
+            config_file=tmp_path / "config.toml",
+        )
+
+        unavailable_required = {"name": "glow", "apt": "glow"}
+
+        with (
+            patch.object(
+                Installer, "get_missing_pkgs", return_value=[unavailable_required]
+            ),
+            patch.object(Installer, "pkg_is_available", return_value=False),
+            patch.object(Installer, "install_pkgs") as mock_install,
+            patch("pyishlib.ishfiles.installer_helper.prompt_bool") as mock_prompt,
+        ):
+            ret = run_install(cfg, extra_packages=[unavailable_required])
+
+        assert ret == 0
+        mock_prompt.assert_not_called()
+        mock_install.assert_not_called()
+
+    def test_install_failure_prompts_continue(self, tmp_path):
+        """A required-install failure prompts; 'yes' returns 0 and continues."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        required = {"name": "git", "apt": "git"}
+
+        with (
+            patch.object(Installer, "get_missing_pkgs", return_value=[required]),
+            patch.object(Installer, "pkg_is_available", return_value=True),
+            patch.object(
+                Installer,
+                "install_pkgs",
+                side_effect=subprocess.CalledProcessError(1, ["apt"]),
+            ),
+            patch(
+                "pyishlib.ishfiles.installer_helper.prompt_bool", return_value=True
+            ) as mock_prompt,
+        ):
+            ret = run_install(cfg, extra_packages=[required])
+
+        assert ret == 0
+        mock_prompt.assert_called_once()
+
+    def test_install_failure_prompts_abort(self, tmp_path):
+        """A required-install failure prompts; 'no' returns 1."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        cfg = self._make_cfg(tmp_path, source)
+
+        required = {"name": "git", "apt": "git"}
+
+        with (
+            patch.object(Installer, "get_missing_pkgs", return_value=[required]),
+            patch.object(Installer, "pkg_is_available", return_value=True),
+            patch.object(
+                Installer,
+                "install_pkgs",
+                side_effect=subprocess.CalledProcessError(1, ["apt"]),
+            ),
+            patch(
+                "pyishlib.ishfiles.installer_helper.prompt_bool", return_value=False
+            ) as mock_prompt,
+        ):
+            ret = run_install(cfg, extra_packages=[required])
+
+        assert ret == 1
+        mock_prompt.assert_called_once()
+
+    def test_install_failure_with_yes_skips_prompt(self, tmp_path):
+        """--yes auto-continues past a required-install failure."""
+        from pyishlib.ishfiles.installer_helper import run_install
+        from pyishlib.installer import Installer
+
+        source = self._make_source(tmp_path)
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        cfg = load_config(
+            args=_make_args(source=str(source), home=str(home), yes=True),
+            config_file=tmp_path / "config.toml",
+        )
+
+        required = {"name": "git", "apt": "git"}
+
+        with (
+            patch.object(Installer, "get_missing_pkgs", return_value=[required]),
+            patch.object(Installer, "pkg_is_available", return_value=True),
+            patch.object(
+                Installer,
+                "install_pkgs",
+                side_effect=subprocess.CalledProcessError(1, ["apt"]),
+            ),
+            patch("pyishlib.ishfiles.installer_helper.prompt_bool") as mock_prompt,
+        ):
+            ret = run_install(cfg, extra_packages=[required])
+
+        assert ret == 0
+        mock_prompt.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

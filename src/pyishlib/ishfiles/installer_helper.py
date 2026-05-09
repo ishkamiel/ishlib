@@ -25,6 +25,7 @@ from ..environment import normalise_os
 from ..installer import Installer
 from ..installer_config import InstallerConfigJSON, InstallerConfigTOML
 from ..ish_config import IshConfig
+from ..userio import prompt_bool
 
 log = logging.getLogger(__name__)
 
@@ -173,8 +174,18 @@ def run_install(
     """Install packages defined in the ishfiles package config.
 
     Discovers all package config files (main + tagged), loads and merges
-    them, then installs missing packages.  Required packages raise on
-    failure; optional packages log a warning and continue.
+    them, then installs missing packages.
+
+    Each missing package is first checked against
+    :meth:`Installer.pkg_is_available`.  Optional packages that are not
+    available in the configured repos are silently skipped with a
+    warning.  Required packages that are not available, or whose install
+    actually fails, prompt the user (via :func:`prompt_bool`) whether to
+    continue or abort -- the function returns 1 on abort, 0 on continue.
+    Optional install failures still log a warning and continue.
+
+    The ``--yes`` config flag (set by ``ishfiles apply --yes``) skips
+    both prompts and treats them as "continue".
 
     Args:
         cfg:            Resolved ishfiles configuration.
@@ -183,7 +194,9 @@ def run_install(
                         to merge with the main config packages.
 
     Returns:
-        0 on success or when no packages are found, 1 on errors.
+        0 on success, on user-confirmed continue past a required failure,
+        or when no packages need installing; 1 on user-aborted required
+        failure or unknown requested package names.
     """
     source_dir = Path(cfg.get_opt("source")).expanduser().resolve()
     configs = find_package_configs(cfg, source_dir)
@@ -217,7 +230,9 @@ def run_install(
 
     runner = CommandRunner(cfg=cfg)
     installer = Installer(cfg=cfg, runner=runner)
-    missing = list(installer.get_missing_pkgs(all_pkgs))
+    missing: List[Dict[str, Any]] = [
+        dict(p) for p in installer.get_missing_pkgs(all_pkgs)
+    ]
 
     if not missing:
         if cfg.verbose:
@@ -228,9 +243,19 @@ def run_install(
     required = [p for p in missing if not p.get("optional")]
     optional = [p for p in missing if p.get("optional")]
 
-    # Pre-filter optional packages by repo availability so we don't prompt
-    # for packages that can't be installed (e.g. need a PPA that isn't configured).
-    available_optional: List[Any] = []
+    # Pre-filter both required and optional by repo availability so we don't
+    # try to install packages the configured backends report as unknown
+    # (e.g. an apt package that's actually only on snap, or a package that
+    # needs a PPA that isn't configured).
+    available_required: List[Dict[str, Any]] = []
+    unavailable_required: List[Dict[str, Any]] = []
+    for pkg in required:
+        if installer.pkg_is_available(pkg):
+            available_required.append(pkg)
+        else:
+            unavailable_required.append(pkg)
+
+    available_optional: List[Dict[str, Any]] = []
     for pkg in optional:
         if installer.pkg_is_available(pkg):
             available_optional.append(pkg)
@@ -240,7 +265,20 @@ def run_install(
                 pkg["name"],
             )
 
-    to_install = required + available_optional
+    yes_flag = bool(cfg.get_opt("yes", default=False))
+
+    if unavailable_required:
+        unavailable_names = ", ".join(p["name"] for p in unavailable_required)
+        log.error(
+            "Required package(s) not available in configured repos: %s",
+            unavailable_names,
+        )
+        if not yes_flag and not prompt_bool(
+            "Continue without these packages?", default=False
+        ):
+            return 1
+
+    to_install = available_required + available_optional
 
     if not to_install:
         if cfg.verbose:
@@ -257,14 +295,17 @@ def run_install(
     if cfg.dry_run:
         return 0
 
-    if required:
+    if available_required:
         try:
-            installer.install_pkgs(required)
+            installer.install_pkgs(available_required)
         except UserDeclinedError:
             log.warning("Skipping required packages (user declined sudo)")
         except (subprocess.CalledProcessError, OSError) as exc:
-            log.error("Package installation failed: %s", exc)
-            return 1
+            log.error("Required package installation failed: %s", exc)
+            if not yes_flag and not prompt_bool(
+                "Continue despite install failure?", default=False
+            ):
+                return 1
 
     if available_optional:
         try:
