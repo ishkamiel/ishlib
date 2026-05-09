@@ -860,9 +860,29 @@ class TestInit(_ChdirTestCase):
         # No branch and no --create → rc=1 (no remote origin configured in
         # the fresh tempdir repo, and we're non-interactive).
         _init_repo(self.root)
-        rc = cli_main(["init"])
+        with self.assertLogs(
+            "pyishlib.ishproject.commands.init", level="ERROR"
+        ) as cm:
+            rc = cli_main(["init"])
         self.assertEqual(rc, 1)
         self.assertFalse((self.root / ".ishlib" / "ishproject").exists())
+        self.assertIn("No `origin` remote configured", "\n".join(cm.output))
+
+    def test_init_missing_branch_on_configured_remote_warns(self) -> None:
+        # Configured remote, but no ishproject branch on it and no --create.
+        # The user must see a warning telling them how to recover, not a
+        # silent rc=1.
+        _init_repo(self.root)
+        _git("remote", "add", "origin", str(self.bare), cwd=self.root)
+        with self.assertLogs(
+            "pyishlib.ishproject.commands.init", level="WARNING"
+        ) as cm:
+            rc = cli_main(["init"])
+        self.assertEqual(rc, 1)
+        self.assertFalse((self.root / ".ishlib" / "ishproject").exists())
+        joined = "\n".join(cm.output)
+        self.assertIn("ishproject not configured", joined)
+        self.assertIn("pass --create to bootstrap", joined)
 
     def test_init_create_pushes_to_configured_remote(self) -> None:
         _init_repo(self.root)
