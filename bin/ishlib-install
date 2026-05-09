@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 # Bootstrap: install ishlib tool launchers into ~/.local/bin/.
+#
+# Picks an interpreter using the same precedence as the generated launchers
+# (see src/pyishlib/launchers/_template.py), so the bootstrap and the
+# installed launchers always agree on which python ends up running.
 set -eu
 
 _self="$0"
@@ -15,5 +19,27 @@ done
 _bin_dir=$(cd -P "$(dirname -- "$_self")" && pwd)
 _repo_src=$(cd -P "$_bin_dir/.." && pwd)/src
 
+_pick_python() {
+    if [ -n "${ISHLIB_PYTHON:-}" ] && [ -x "${ISHLIB_PYTHON}" ]; then
+        printf '%s' "$ISHLIB_PYTHON"; return
+    fi
+    if command -v pyenv >/dev/null 2>&1; then
+        _v=$(pyenv global 2>/dev/null | head -n1 || true)
+        if [ -n "$_v" ] && [ "$_v" != "system" ]; then
+            _p="$(pyenv root)/versions/$_v/bin/python3"
+            [ -x "$_p" ] && { printf '%s' "$_p"; return; }
+        fi
+    fi
+    [ -x /usr/bin/python3 ] && { printf '%s' /usr/bin/python3; return; }
+    command -v python3
+}
+
+py=$(_pick_python) || { echo "error: no python3 interpreter found" >&2; exit 1; }
+
+# Drop active venv state but keep user-site visible: ``--full`` shells
+# out to ``pip install --user`` of the optional extras, and the launchers
+# this writes need to be able to import them at runtime.
+unset PYTHONHOME VIRTUAL_ENV
 export PYTHONPATH="$_repo_src${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m pyishlib.launchers "$@"
+
+exec "$py" -m pyishlib.launchers "$@"
