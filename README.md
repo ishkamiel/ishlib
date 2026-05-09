@@ -57,6 +57,45 @@ Or run it directly for the built-in help:
 ./ishlib.sh -h
 ```
 
+## Installing the Python tools (`ishfiles`, `isholate`, `ishproject`)
+
+Pick whichever fits your environment.  Options 1 and 2 install ishlib
+as a real Python package and put launchers on `$PATH` that are
+independent of the repo's location — moving or deleting the source
+tree leaves them working.  Option 3 keeps a hard link back to this
+checkout: it is the developer/live-edit path and breaks if you move
+the repo.
+
+1. **pipx (recommended).** Creates a dedicated virtualenv under
+   `~/.local/pipx/venvs/ishlib/` and shims on `$PATH`.  Independent of
+   any active venv, pyenv shell, or current working directory.
+
+   ```sh
+   pipx install '/path/to/ishlib[full]'   # all extras
+   pipx install /path/to/ishlib            # minimal
+   pipx install --editable '/path/to/ishlib[full]'   # live edits
+   ```
+
+2. **`pip install --user`.** Same shape, lives in `--user` site instead
+   of a private venv.  Use this when pipx is unavailable.
+
+   ```sh
+   pip install --user '.[full]'
+   ```
+
+3. **In-tree launchers (developer fallback).** Generates wrappers in
+   `~/.local/bin/` that bake in this repo's `src/` path.  Works without
+   pipx/pip-install permissions but breaks if you move the repo.
+
+   ```sh
+   bin/ishlib-install --full     # also pip-installs the optional extras
+   bin/ishlib-install            # launchers only
+   ```
+
+After installing, run `ishfiles doctor` to verify the optional
+packages (`shtab`, `cerberus`, `jsonschema`, `PyYAML`, `tomli_w`)
+resolved against the active interpreter.
+
 ## Building
 
 ```bash
