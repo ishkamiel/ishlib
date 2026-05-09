@@ -4,6 +4,7 @@
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -96,14 +97,37 @@ def toml_escape_basic_string(value: str) -> str:
     """Escape *value* for inclusion in a TOML basic string literal.
 
     Protects a generated config against input that contains quotes,
-    backslashes, newlines, or other C0 control characters; ``tomllib``
-    round-trips the escape sequences back to the original string on the
-    next load.
+    backslashes, newlines, or other characters the TOML spec forbids
+    inside basic strings (C0 control chars `< 0x20`, plus `DEL`
+    (`U+007F`)).  ``tomllib`` round-trips the escape sequences back to
+    the original string on the next load.
     """
-    return "".join(
-        _TOML_BASIC_ESCAPES.get(ch, ch if ord(ch) >= 0x20 else f"\\u{ord(ch):04x}")
-        for ch in value
-    )
+
+    def _escape_char(ch: str) -> str:
+        mapped = _TOML_BASIC_ESCAPES.get(ch)
+        if mapped is not None:
+            return mapped
+        codepoint = ord(ch)
+        if codepoint < 0x20 or codepoint == 0x7F:
+            return f"\\u{codepoint:04x}"
+        return ch
+
+    return "".join(_escape_char(ch) for ch in value)
+
+
+# TOML 1.0 bare-key grammar: ALPHA / DIGIT / "-" / "_" (one or more).
+_TOML_BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def is_toml_bare_key(name: str) -> bool:
+    """Return True iff *name* is a valid TOML bare key.
+
+    Matches the TOML 1.0 grammar:
+    https://toml.io/en/v1.0.0#keys -- ``ALPHA / DIGIT / "-" / "_"``.
+    Quoted keys (``"a key"`` / ``'a key'``) and dotted keys
+    (``a.b.c``) are deliberately rejected.
+    """
+    return bool(_TOML_BARE_KEY_RE.match(name))
 
 
 def atomic_write_text(path: Path, text: str) -> None:

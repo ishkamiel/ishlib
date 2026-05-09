@@ -252,12 +252,6 @@ def _parse_data_section(text: str) -> Dict[str, str]:
 
 def _replace_or_append_data_section(text: str, data_block: str) -> str:
     """Replace an existing ``[data]`` section in *text*, or append one."""
-    import re
+    from .._toml_edit import replace_or_append_section
 
-    # Match from [data] up to (but not including) the next section header or EOF.
-    pattern = re.compile(r"(\[data\][^\[]*)", re.DOTALL)
-    if pattern.search(text):
-        return pattern.sub(data_block, text)
-
-    # No existing [data] section — append.
-    return text.rstrip("\n") + ("\n\n" if text.strip() else "") + data_block
+    return replace_or_append_section(text, "data", data_block)
