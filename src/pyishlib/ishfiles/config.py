@@ -51,13 +51,11 @@ def _xdg_externals_cache_dir(home: Path) -> Path:
 
 
 _SCHEMA: Path = (
-    Path(__file__).resolve().parent.parent.parent / "schema" / "ishfiles_config.json"
+    Path(__file__).resolve().parent.parent / "schema" / "ishfiles_config.json"
 )
 
 _REPO_SCHEMA: Path = (
-    Path(__file__).resolve().parent.parent.parent
-    / "schema"
-    / "ishfiles_repo_config.json"
+    Path(__file__).resolve().parent.parent / "schema" / "ishfiles_repo_config.json"
 )
 
 # Read-only config options registered on every IshConfig built by

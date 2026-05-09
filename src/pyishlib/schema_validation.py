@@ -3,7 +3,7 @@
 """Shared schema validation for installer configs and ``__ISH__`` metadata.
 
 Provides Cerberus-based validation helpers that load schema fragments from
-``src/schema/`` and expose them to both :mod:`installer_config` (for
+``pyishlib/schema/`` and expose them to both :mod:`installer_config` (for
 ``packages.toml`` / ``packages.json``) and :mod:`ish_metadata` (for
 ``[packages]`` sections embedded in file metadata).
 
@@ -44,7 +44,7 @@ except ImportError:
 # Schema directory
 # ---------------------------------------------------------------------------
 
-SCHEMA_DIR: Path = Path(__file__).parent.parent / "schema"
+SCHEMA_DIR: Path = Path(__file__).parent / "schema"
 
 
 # ---------------------------------------------------------------------------

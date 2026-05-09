@@ -46,7 +46,7 @@ DEFAULT_PREFIX = "ishlib"
 DEFAULT_POSTFIX = "ishproject"
 
 _SCHEMA: Path = (
-    Path(__file__).resolve().parent.parent.parent / "schema" / "ishproject_config.json"
+    Path(__file__).resolve().parent.parent / "schema" / "ishproject_config.json"
 )
 
 
