@@ -860,9 +860,7 @@ class TestInit(_ChdirTestCase):
         # No branch and no --create → rc=1 (no remote origin configured in
         # the fresh tempdir repo, and we're non-interactive).
         _init_repo(self.root)
-        with self.assertLogs(
-            "pyishlib.ishproject.commands.init", level="ERROR"
-        ) as cm:
+        with self.assertLogs("pyishlib.ishproject.commands.init", level="ERROR") as cm:
             rc = cli_main(["init"])
         self.assertEqual(rc, 1)
         self.assertFalse((self.root / ".ishlib" / "ishproject").exists())
