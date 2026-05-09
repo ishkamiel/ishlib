@@ -16,7 +16,11 @@ sys.path.insert(
 )
 
 from pyishlib.launchers import install_all, render_launcher  # noqa: E402
-from pyishlib.launchers.__main__ import _build_parser  # noqa: E402
+from pyishlib.launchers.__main__ import (  # noqa: E402
+    _FULL_EXTRAS,
+    _build_parser,
+    _pick_python,
+)
 from pyishlib.tools import TOOLS, get as get_tool  # noqa: E402
 
 
@@ -41,6 +45,11 @@ class TestRenderLauncher(unittest.TestCase):
     def test_no_placeholders_remain(self):
         for placeholder in ("__TOOL_NAME__", "__TOOL_MODULE__", "__SOURCE_DIR__"):
             self.assertNotIn(placeholder, self.content)
+
+    def test_contains_source_dir_self_heal(self):
+        """Generated launcher should refuse to run if its baked source dir is gone."""
+        self.assertIn("pyishlib/__init__.py", self.content)
+        self.assertIn("ishlib source dir not found", self.content)
 
     def test_all_registered_tools(self):
         for tool in TOOLS:
@@ -135,6 +144,7 @@ class TestParser(unittest.TestCase):
         ns = self.parser.parse_args([])
         self.assertFalse(ns.verbose)
         self.assertFalse(ns.debug)
+        self.assertFalse(ns.full)
 
     def test_short_verbose(self):
         ns = self.parser.parse_args(["-v"])
@@ -147,6 +157,18 @@ class TestParser(unittest.TestCase):
     def test_debug(self):
         ns = self.parser.parse_args(["--debug"])
         self.assertTrue(ns.debug)
+
+    def test_full_flag(self):
+        ns = self.parser.parse_args(["--full"])
+        self.assertTrue(ns.full)
+
+    def test_minimal_flag(self):
+        ns = self.parser.parse_args(["--minimal"])
+        self.assertFalse(ns.full)
+
+    def test_full_and_minimal_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            self.parser.parse_args(["--full", "--minimal"])
 
     def test_rejects_removed_flags(self):
         # --dest, --source, -n, -q, --log-file, and the "install" subcommand
@@ -162,6 +184,44 @@ class TestParser(unittest.TestCase):
             with self.subTest(argv=argv):
                 with self.assertRaises(SystemExit):
                     self.parser.parse_args(argv)
+
+
+class TestPickPython(unittest.TestCase):
+    """The in-tree --full path picks the same interpreter the launchers use."""
+
+    def test_ishlib_python_env_takes_precedence(self):
+        """ISHLIB_PYTHON wins when set and executable."""
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "py"
+            target.write_text("#!/bin/sh\nexit 0\n")
+            target.chmod(0o755)
+            old = os.environ.get("ISHLIB_PYTHON")
+            os.environ["ISHLIB_PYTHON"] = str(target)
+            try:
+                picked = _pick_python()
+            finally:
+                if old is None:
+                    os.environ.pop("ISHLIB_PYTHON", None)
+                else:
+                    os.environ["ISHLIB_PYTHON"] = old
+        self.assertEqual(picked, target)
+
+    def test_returns_path_or_none(self):
+        old = os.environ.pop("ISHLIB_PYTHON", None)
+        try:
+            picked = _pick_python()
+        finally:
+            if old is not None:
+                os.environ["ISHLIB_PYTHON"] = old
+        self.assertTrue(picked is None or isinstance(picked, Path))
+
+    def test_full_extras_lists_known_packages(self):
+        """The in-tree --full extras list mirrors pyproject.toml's `full` extra."""
+        names = {pkg.split(">=")[0].split("==")[0].lower() for pkg in _FULL_EXTRAS}
+        self.assertEqual(
+            names,
+            {"shtab", "cerberus", "jsonschema", "pyyaml", "tomli_w"},
+        )
 
 
 if __name__ == "__main__":

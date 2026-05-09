@@ -14,6 +14,19 @@ set -eu
 
 : "${ISHLIB_SRC:=__SOURCE_DIR__}"
 
+if [ ! -f "${ISHLIB_SRC}/pyishlib/__init__.py" ]; then
+    cat >&2 <<EOF
+__TOOL_NAME__: ishlib source dir not found at: ${ISHLIB_SRC}
+The repo it points at may have been moved or deleted.
+
+Fix it by re-running the bootstrap from the new location:
+    /path/to/ishlib/bin/ishlib-install
+or override the source dir for one invocation:
+    ISHLIB_SRC=/path/to/ishlib/src __TOOL_NAME__ ...
+EOF
+    exit 1
+fi
+
 _pick_python() {
     if [ -n "${ISHLIB_PYTHON:-}" ] && [ -x "${ISHLIB_PYTHON}" ]; then
         printf '%s' "$ISHLIB_PYTHON"; return
@@ -31,8 +44,11 @@ _pick_python() {
 
 py=$(_pick_python) || { echo "error: no python3 interpreter found" >&2; exit 1; }
 
+# Drop active venv state but keep user-site visible so `pip install --user`
+# (and the `--full` extras the bootstrap installs there) actually load.
+# ${ISHLIB_SRC} is prepended to PYTHONPATH so this repo's pyishlib still
+# wins over anything else on user-site.
 unset PYTHONHOME VIRTUAL_ENV
-export PYTHONNOUSERSITE=1
 export PYTHONPATH="${ISHLIB_SRC}${PYTHONPATH:+:$PYTHONPATH}"
 
 exec "$py" -m __TOOL_MODULE__ "$@"
