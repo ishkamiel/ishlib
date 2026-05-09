@@ -159,5 +159,62 @@ class TestIsExplicit(unittest.TestCase):
         self.assertTrue(cfg.is_explicit("log_file"))
 
 
+class TestPersistUserValue(unittest.TestCase):
+    """Cover IshConfig.persist_user_value file-write semantics."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp_path = Path(self._tmp.name)
+
+    def _make_cfg(self, cfg_path: Path) -> IshConfig:
+        cfg = IshConfig()
+        cfg.set_constant("config_file", cfg_path)
+        return cfg
+
+    def test_writes_to_resolved_config_file(self) -> None:
+        cfg_path = self.tmp_path / "config.toml"
+        cfg = self._make_cfg(cfg_path)
+
+        returned = cfg.persist_user_value("ishfiles", "source", "/tmp/foo")
+
+        self.assertEqual(returned, cfg_path)
+        self.assertTrue(cfg_path.is_file())
+        self.assertIn('source = "/tmp/foo"', cfg_path.read_text())
+
+    def test_creates_missing_parent_directories(self) -> None:
+        cfg_path = self.tmp_path / "deep" / "nested" / "config.toml"
+        cfg = self._make_cfg(cfg_path)
+
+        cfg.persist_user_value("data", "email", "me@example.com")
+
+        self.assertTrue(cfg_path.is_file())
+
+    def test_preserves_other_sections_and_keys(self) -> None:
+        cfg_path = self.tmp_path / "config.toml"
+        cfg_path.write_text(
+            "[ishfiles]\n"
+            'source = "/keep"\n'
+            "\n"
+            "[data]\n"
+            "count = 42\n"
+            'email = "old@example.com"\n'
+        )
+        cfg = self._make_cfg(cfg_path)
+
+        cfg.persist_user_value("data", "email", "new@example.com")
+
+        text = cfg_path.read_text()
+        self.assertIn('source = "/keep"', text)
+        self.assertIn("count = 42", text)  # non-string sibling preserved
+        self.assertIn('email = "new@example.com"', text)
+        self.assertNotIn("old@example.com", text)
+
+    def test_raises_when_config_file_missing(self) -> None:
+        cfg = IshConfig()  # no config_file constant
+        with self.assertRaises(RuntimeError):
+            cfg.persist_user_value("data", "x", "y")
+
+
 if __name__ == "__main__":
     unittest.main()

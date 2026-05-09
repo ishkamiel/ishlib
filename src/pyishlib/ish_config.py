@@ -384,6 +384,86 @@ class IshConfig:
             return self.defaults[name]
         return None if default is _MISSING else default
 
+    def get_origin(self, name: str) -> Tuple[str, Optional[str]]:
+        """Return the layer that supplies *name* under :meth:`get_opt`.
+
+        Walks the same chain as :meth:`get_opt` so the two never
+        disagree.  Returns a ``(layer, source)`` tuple where *layer* is
+        one of ``"constant"``, ``"cli"``, ``"user-config"``,
+        ``"repo-config"``, ``"default"``, or ``"unset"``, and *source*
+        is the originating file path (as a string) when applicable
+        (``user-config`` / ``repo-config``) or ``None`` otherwise.
+        """
+        if name in self.constants:
+            return ("constant", None)
+        if self.args is not None and hasattr(self.args, name):
+            return ("cli", None)
+        if self.conf is not None and hasattr(self.conf, name):
+            cfg_file = self.get_opt("config_file")
+            return ("user-config", str(cfg_file) if cfg_file is not None else None)
+        if self.repo_conf is not None and hasattr(self.repo_conf, name):
+            source = self.get_opt("source")
+            if source is not None:
+                repo_path: Optional[str] = str(
+                    Path(source)
+                    / self.get_opt("config_dir")
+                    / self.get_opt("repo_config_file")
+                )
+            else:
+                repo_path = None
+            return ("repo-config", repo_path)
+        if name in self.defaults:
+            return ("default", None)
+        return ("unset", None)
+
+    # -- user-config persistence ----------------------------------------------
+
+    def persist_user_value(
+        self,
+        section: str,
+        leaf: str,
+        value: str,
+    ) -> Path:
+        """Write ``[<section>] <leaf> = "<value>"`` to the user-config TOML.
+
+        Targets the path stored under ``self.constants["config_file"]``,
+        i.e. whatever was resolved at startup (default
+        ``~/.config/ishfiles/config.toml`` for ishfiles, etc.).  The
+        edit is line-targeted via
+        :func:`pyishlib._toml_edit.set_kv_in_text` so siblings of any
+        TOML value type and any comments / blank lines survive.
+
+        The write is atomic
+        (:func:`pyishlib._compat.atomic_write_text`); parent directories
+        are created on demand.
+
+        Args:
+            section: Top-level table name (e.g. ``"ishfiles"``,
+                     ``"data"``).
+            leaf:    Bare-key name within the section.
+            value:   Scalar string value; escaped internally.
+
+        Returns:
+            The path written.
+
+        Raises:
+            RuntimeError: If no ``config_file`` is registered.
+        """
+        cfg_file = self.get_opt("config_file")
+        if cfg_file is None:
+            raise RuntimeError(
+                "IshConfig.persist_user_value: no 'config_file' constant registered"
+            )
+        path = Path(cfg_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        from ._compat import atomic_write_text
+        from ._toml_edit import set_kv_in_text
+
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        atomic_write_text(path, set_kv_in_text(existing, section, leaf, value))
+        return path
+
     # -- convenience properties ------------------------------------------------
 
     @property

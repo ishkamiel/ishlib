@@ -17,6 +17,7 @@ from .commands.add import AddCommand
 from .commands.apply import ApplyCommand
 from .commands.cd import CdCommand
 from .commands.commit import CommitCommand
+from .commands.config import ConfigCommand
 from .commands.diff import DiffCommand
 from .commands.doctor import DoctorCommand
 from .commands.external import ExternalCommand
@@ -43,6 +44,7 @@ class IshfilesCLI(BaseCLI):
         ApplyCommand,
         CdCommand,
         CommitCommand,
+        ConfigCommand,
         DiffCommand,
         DoctorCommand,
         ExternalCommand,

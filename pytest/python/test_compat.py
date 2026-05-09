@@ -17,7 +17,13 @@ sys.path.insert(
 )
 
 from pyishlib import _compat
-from pyishlib._compat import HAS_TOML, load_toml_file, load_toml_file_strict
+from pyishlib._compat import (
+    HAS_TOML,
+    is_toml_bare_key,
+    load_toml_file,
+    load_toml_file_strict,
+    toml_escape_basic_string,
+)
 
 
 class TestLoadTomlFile(unittest.TestCase):
@@ -149,6 +155,41 @@ class TestLoadTomlFileStrict(unittest.TestCase):
         missing = self.tmp_path / "nope.toml"
         with self.assertRaises(OSError):
             load_toml_file_strict(missing)
+
+
+class TestTomlEscapeBasicString(unittest.TestCase):
+    @unittest.skipUnless(HAS_TOML, "tomllib not available")
+    def test_round_trips_plain_strings(self) -> None:
+        # Use _compat.tomllib so the fallback to `tomli` on 3.9/3.10 wins.
+        for s in ["hello", 'a"b', "back\\slash", "tab\there", "new\nline"]:
+            wrapped = f'k = "{toml_escape_basic_string(s)}"\n'
+            self.assertEqual(_compat.tomllib.loads(wrapped), {"k": s})
+
+    @unittest.skipUnless(HAS_TOML, "tomllib not available")
+    def test_escapes_del(self) -> None:
+        # 0x7F (DEL) is forbidden unescaped in TOML basic strings.
+        s = "before\x7fafter"
+        escaped = toml_escape_basic_string(s)
+        self.assertNotIn("\x7f", escaped)
+        wrapped = f'k = "{escaped}"\n'
+        self.assertEqual(_compat.tomllib.loads(wrapped), {"k": s})
+
+
+class TestIsTomlBareKey(unittest.TestCase):
+    def test_accepts_alpha_digit_dash_underscore(self) -> None:
+        for k in ["foo", "Foo", "foo_bar", "foo-bar", "foo123", "_foo", "-foo", "a"]:
+            self.assertTrue(is_toml_bare_key(k), k)
+
+    def test_rejects_empty(self) -> None:
+        self.assertFalse(is_toml_bare_key(""))
+
+    def test_rejects_spaces_and_dots(self) -> None:
+        for k in ["foo bar", "foo.bar", " foo", "foo "]:
+            self.assertFalse(is_toml_bare_key(k), k)
+
+    def test_rejects_special_chars(self) -> None:
+        for k in ["foo/bar", "foo+bar", "foo!", "foo@bar"]:
+            self.assertFalse(is_toml_bare_key(k), k)
 
 
 if __name__ == "__main__":
