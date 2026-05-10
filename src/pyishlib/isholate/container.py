@@ -36,6 +36,10 @@ import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
+# Parent of the pyishlib package directory — valid as a PYTHONPATH root
+# regardless of install layout (pipx venv, plain pip, source checkout).
+import pyishlib as _pyishlib
+
 from ..container import Container, get_backend
 from ..ish_logging import log_level_from_args, log_level_to_cli_flags
 from .claude import (
@@ -48,10 +52,8 @@ from .locks import base_build_lock
 
 log = logging.getLogger(__name__)
 
-
-# Root of the ishlib checkout — used to mount the ishfiles CLI into containers.
-# Path: container.py -> isholate/ -> pyishlib/ -> src/ -> ishlib/
-_ISHLIB_ROOT: Path = Path(__file__).resolve().parents[3]
+_PYISHLIB_PARENT: Path = Path(_pyishlib.__file__).resolve().parent.parent
+del _pyishlib
 
 # Path inside the container where isholate mounts its helper files.
 _ISHOLATE_RUN_DIR = "/run/isholate"
@@ -560,11 +562,11 @@ def _bootstrap_base(
         stdin=subprocess.DEVNULL,
     )
 
-    # Mount ishlib checkout so ishfiles CLI is reachable without pip.
+    # Mount the pyishlib package parent so the container can import pyishlib.
     _add_mount(
         name,
         "isholate-ishlib",
-        _ISHLIB_ROOT,
+        _PYISHLIB_PARENT,
         f"{_ISHOLATE_RUN_DIR}/ishlib",
         readonly=True,
     )
@@ -708,7 +710,6 @@ def _apply_host_ishfiles(
     """
     _say("applying host ishfiles (pass 1)...", quiet=quiet)
     container_home = f"/home/{username}"
-    ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_log = "/tmp/isholate-ishfiles-pass1.log"
     c = _container(name)
 
@@ -719,11 +720,15 @@ def _apply_host_ishfiles(
         f"{_ISHOLATE_RUN_DIR}/ishsrc",
         readonly=True,
     )
+    # Split flags: verbosity/logging go to the subcommand; the rest are global.
+    _SUBCMD_FLAG_SET = {"-v", "--verbose", "-q", "--quiet", "--debug"}
+    top_flags = [f for f in ishfiles_flags if f not in _SUBCMD_FLAG_SET]
+    sub_flags = [f for f in ishfiles_flags if f in _SUBCMD_FLAG_SET]
     pass1_cmd: List[str] = [
-        ishfiles_bin,
-        *ishfiles_flags,
-        "--log-file",
-        container_log,
+        "/usr/bin/python3",
+        "-m",
+        "pyishlib.ishfiles",
+        *top_flags,
         "--home",
         container_home,
         "-s",
@@ -738,7 +743,14 @@ def _apply_host_ishfiles(
             readonly=True,
         )
         pass1_cmd += ["-c", f"{_ISHOLATE_RUN_DIR}/ishconf/config.toml"]
-    pass1_cmd += ["apply", "--isholate", "--yes"]
+    pass1_cmd += [
+        "apply",
+        *sub_flags,
+        "--log-file",
+        container_log,
+        "--isholate",
+        "--yes",
+    ]
     try:
         _exec_checked(
             c,
@@ -746,7 +758,7 @@ def _apply_host_ishfiles(
             "ishfiles apply (pass 1: host dotfiles)",
             env={
                 "HOME": container_home,
-                "ISHLIB_PYTHON": "/usr/bin/python3",
+                "PYTHONPATH": f"{_ISHOLATE_RUN_DIR}/ishlib",
             },
             stdin=subprocess.DEVNULL,
         )
@@ -787,7 +799,6 @@ def _apply_project_overlay(
     """
     _say("applying project overlay (pass 2)...", quiet=quiet)
     container_home = f"/home/{username}"
-    ishfiles_bin = f"{_ISHOLATE_RUN_DIR}/ishlib/bin/ishfiles"
     container_log = "/tmp/isholate-ishfiles-pass2.log"
     c = _container(name)
 
@@ -799,25 +810,31 @@ def _apply_project_overlay(
         readonly=True,
     )
     try:
+        _SUBCMD_FLAG_SET = {"-v", "--verbose", "-q", "--quiet", "--debug"}
+        top_flags = [f for f in ishfiles_flags if f not in _SUBCMD_FLAG_SET]
+        sub_flags = [f for f in ishfiles_flags if f in _SUBCMD_FLAG_SET]
         _exec_checked(
             c,
             [
-                ishfiles_bin,
-                *ishfiles_flags,
-                "--log-file",
-                container_log,
+                "/usr/bin/python3",
+                "-m",
+                "pyishlib.ishfiles",
+                *top_flags,
                 "--home",
                 container_home,
                 "-s",
                 f"{_ISHOLATE_RUN_DIR}/ishsrc-project",
                 "apply",
+                *sub_flags,
+                "--log-file",
+                container_log,
                 "--isholate",
                 "--yes",
             ],
             "ishfiles apply (pass 2: project overlay)",
             env={
                 "HOME": container_home,
-                "ISHLIB_PYTHON": "/usr/bin/python3",
+                "PYTHONPATH": f"{_ISHOLATE_RUN_DIR}/ishlib",
             },
             stdin=subprocess.DEVNULL,
         )
@@ -1177,11 +1194,11 @@ def ensure_project_base(
                 stdin=subprocess.DEVNULL,
             )
 
-            # Re-mount the ishlib so the ishfiles CLI is available.
+            # Re-mount the pyishlib parent so the container can import pyishlib.
             _add_mount(
                 name,
                 "isholate-ishlib",
-                _ISHLIB_ROOT,
+                _PYISHLIB_PARENT,
                 f"{_ISHOLATE_RUN_DIR}/ishlib",
                 readonly=True,
             )

@@ -59,6 +59,19 @@ _GIT_HERMETIC_ENV: dict[str, str] = {
     "GIT_COMMITTER_EMAIL": "test@example.com",
 }
 
+# Git dir-override variables set by pre-commit (and git hooks in general)
+# that must be stripped before spawning scenarios.  If left in the
+# environment, `git init` inside the sandbox tries to re-init the
+# *parent* repo's git dir (which is read-only inside bwrap), producing
+# "could not lock config file … Read-only file system" failures.
+# This mirrors what CommandRunner.git() does in production code paths.
+_GIT_DIR_VARS: tuple[str, ...] = (
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_WORK_TREE",
+    "GIT_OBJECT_DIRECTORY",
+)
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
@@ -127,6 +140,8 @@ class ScenarioItem(pytest.Item):
 
         env = os.environ.copy()
         env.update(_GIT_HERMETIC_ENV)
+        for _var in _GIT_DIR_VARS:
+            env.pop(_var, None)
         env["ISHLIB_REPO"] = str(_REPO_ROOT)
         env["ISHLIB_SRC"] = str(_REPO_ROOT / "src")
         env["ISHLIB_LIB"] = str(_LIB_SCRIPT)
