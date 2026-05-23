@@ -187,7 +187,7 @@ class TestSourceFingerprint:
     state of files under the given source path.
     """
 
-    _FAKE_SOURCE = Path("/work/myproject/.ishlib/ishfiles")
+    _FAKE_SOURCE = Path("/work/myproject/.ishlib/isholate/ishfiles")
 
     def _fake_git_runner(self, *, log_stdout="cafebabe", status_stdout=""):
         """Return (fake_run, calls) where fake_run records git invocations."""
@@ -1262,7 +1262,7 @@ class TestProvisioning:
             # ``id -u`` lookups now route through Container.exec → _run.
             return _fake_subprocess_run(cmd, **kwargs)
 
-        project_root = overlay.parent.parent if overlay is not None else None
+        project_root = overlay.parent.parent.parent if overlay is not None else None
 
         with patch(
             "pyishlib.isholate.container.get_host_user_info",
@@ -1334,7 +1334,7 @@ class TestProvisioning:
     def test_overlay_only_falls_back_to_one_shot(self):
         """Overlay with no host source falls back to one-shot provisioning."""
         args = _make_args()
-        fake_overlay = Path("/work/myproject/.ishlib/ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/isholate/ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
@@ -1345,7 +1345,7 @@ class TestProvisioning:
 
     def test_overlay_runs_ishfiles_apply_with_source_flag(self):
         args = _make_args()
-        fake_overlay = Path("/work/myproject/.ishlib/ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/isholate/ishfiles")
         calls, _ = self._run_with_mocks(args, overlay=fake_overlay)
         cmds = self._cmds(calls)
 
@@ -1359,7 +1359,7 @@ class TestProvisioning:
     def test_both_sources_run_two_apply_passes(self):
         args = _make_args()
         fake_src = Path("/home/testuser/.local/share/ishfiles")
-        fake_overlay = Path("/work/myproject/.ishlib/ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/isholate/ishfiles")
         calls, _ = self._run_with_mocks(
             args, host_source=fake_src, overlay=fake_overlay
         )
@@ -2734,7 +2734,7 @@ class TestParser:
 
     def test_project_config_overrides_image_default(self, tmp_path):
         """Image from .ishlib/isholate/config.toml becomes the argparse default."""
-        overlay = tmp_path / ".ishlib" / "ishfiles"
+        overlay = tmp_path / ".ishlib" / "isholate" / "ishfiles"
         (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
         (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text(
             'image = "images:debian/12"\n'
@@ -2806,7 +2806,7 @@ class TestParser:
 
     def test_project_root_picks_up_overlay_outside_cwd(self, tmp_path):
         """--project-root causes overlay discovery to use the given dir, not cwd."""
-        overlay = tmp_path / ".ishlib" / "ishfiles"
+        overlay = tmp_path / ".ishlib" / "isholate" / "ishfiles"
         overlay.mkdir(parents=True)
         other_cwd = tmp_path / "other"
         other_cwd.mkdir()
@@ -2885,7 +2885,7 @@ class TestParser:
 
 class TestDiscoverProjectOverlay:
     def test_finds_ishfiles_in_cwd(self, tmp_path):
-        overlay = tmp_path / ".ishlib" / "ishfiles"
+        overlay = tmp_path / ".ishlib" / "isholate" / "ishfiles"
         overlay.mkdir(parents=True)
         result = discover_project_overlay(tmp_path)
         assert result == overlay
@@ -2895,17 +2895,60 @@ class TestDiscoverProjectOverlay:
         assert result is None
 
     def test_does_not_search_parent_dirs(self, tmp_path):
-        (tmp_path / ".ishlib" / "ishfiles").mkdir(parents=True)
+        (tmp_path / ".ishlib" / "isholate" / "ishfiles").mkdir(parents=True)
         subdir = tmp_path / "subdir" / "deep"
         subdir.mkdir(parents=True)
         result = discover_project_overlay(subdir)
         assert result is None
 
-    def test_returns_none_when_only_isholate_dir_exists(self, tmp_path):
-        """Overlay discovery is independent of the isholate config dir."""
+    def test_returns_none_when_isholate_dir_has_no_ishfiles_child(self, tmp_path):
+        """Overlay requires .ishlib/isholate/ishfiles/ — isholate/ alone is not enough."""
         (tmp_path / ".ishlib" / "isholate").mkdir(parents=True)
         result = discover_project_overlay(tmp_path)
         assert result is None
+
+    def test_falls_back_to_legacy_path_with_warning(self, tmp_path, caplog):
+        """``.ishlib/ishfiles/`` is still recognised, with a migration warning."""
+        from pyishlib.isholate import config as _cfg
+
+        _cfg._legacy_overlay_warned.clear()
+        legacy = tmp_path / ".ishlib" / "ishfiles"
+        legacy.mkdir(parents=True)
+
+        with caplog.at_level(logging.WARNING, logger="pyishlib.isholate.config"):
+            result = discover_project_overlay(tmp_path)
+
+        assert result == legacy.resolve()
+        assert any("legacy project overlay" in r.message for r in caplog.records)
+
+    def test_new_path_preferred_when_both_exist(self, tmp_path, caplog):
+        """When both layouts exist, the new path wins and no warning fires."""
+        from pyishlib.isholate import config as _cfg
+
+        _cfg._legacy_overlay_warned.clear()
+        new = tmp_path / ".ishlib" / "isholate" / "ishfiles"
+        new.mkdir(parents=True)
+        legacy = tmp_path / ".ishlib" / "ishfiles"
+        legacy.mkdir(parents=True)
+
+        with caplog.at_level(logging.WARNING, logger="pyishlib.isholate.config"):
+            result = discover_project_overlay(tmp_path)
+
+        assert result == new
+        assert not any("legacy project overlay" in r.message for r in caplog.records)
+
+    def test_legacy_warning_emitted_once_per_root(self, tmp_path, caplog):
+        from pyishlib.isholate import config as _cfg
+
+        _cfg._legacy_overlay_warned.clear()
+        (tmp_path / ".ishlib" / "ishfiles").mkdir(parents=True)
+
+        with caplog.at_level(logging.WARNING, logger="pyishlib.isholate.config"):
+            discover_project_overlay(tmp_path)
+            discover_project_overlay(tmp_path)
+
+        warnings = [r for r in caplog.records if "legacy project overlay" in r.message]
+        assert len(warnings) == 1
 
 
 class TestLoadProjectConfig:
@@ -2934,7 +2977,7 @@ class TestLoadProjectConfig:
         (tmp_path / ".ishlib" / "isholate" / "config.toml").write_text(
             'image = "images:debian/12"\n'
         )
-        assert not (tmp_path / ".ishlib" / "ishfiles").exists()
+        assert not (tmp_path / ".ishlib" / "isholate" / "ishfiles").exists()
         result = load_project_config(tmp_path)
         assert result["image"] == "images:debian/12"
 

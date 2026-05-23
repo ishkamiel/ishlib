@@ -124,7 +124,7 @@ class RunCommand(CliCommand):
             default=None,
             help=(
                 "Directory to treat as the project root when looking for "
-                ".ishlib/ishfiles/ and .ishlib/isholate/config.toml. "
+                ".ishlib/isholate/ishfiles/ and .ishlib/isholate/config.toml. "
                 "Defaults to the current working directory. The lookup is "
                 "not recursive — only the given directory is checked."
             ),
@@ -146,7 +146,7 @@ class RunCommand(CliCommand):
             "--no-project-ishfiles",
             action="store_true",
             default=False,
-            help="Skip applying the project .ishlib/ishfiles/ source tree inside the container",
+            help="Skip applying the project .ishlib/isholate/ishfiles/ source tree inside the container",
         )
 
         parser.add_argument(

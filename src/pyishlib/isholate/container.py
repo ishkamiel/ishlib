@@ -279,7 +279,7 @@ def _source_fingerprint(source: Path) -> str:
 
     When *source* is inside a git repo, the fingerprint is **path-scoped**:
     it only reflects state of files under *source*, not the whole repo.
-    This matters when *source* is a subdirectory (e.g. ``.ishlib/ishfiles/``)
+    This matters when *source* is a subdirectory (e.g. ``.ishlib/isholate/ishfiles/``)
     of a larger, actively developed repo — unrelated commits or working-tree
     changes elsewhere in the repo must not invalidate the cache.
 
@@ -793,7 +793,7 @@ def _apply_project_overlay(
         name:            Container name.
         username:        Container username.
         uid:             Container user UID (for the final chown).
-        project_overlay: Project ``.ishlib/ishfiles/`` directory path.
+        project_overlay: Project ``.ishlib/isholate/ishfiles/`` directory path.
         ishfiles_flags:  Global flags to pass to the ishfiles command.
         quiet:           Suppress isholate's own progress messages.
     """
@@ -874,7 +874,7 @@ def _provision(
         uid:             UID of the container user (for final chown).
         host_config_dir: Host ``~/.config/ishfiles/`` directory.
         host_source:     Host ishfiles source tree (pass 1).  ``None`` skips pass 1.
-        project_overlay: Project ``.ishlib/ishfiles/`` directory (pass 2).  ``None`` skips pass 2.
+        project_overlay: Project ``.ishlib/isholate/ishfiles/`` directory (pass 2).  ``None`` skips pass 2.
         log_level:       Terminal log level; propagated to the in-container
                          ishfiles invocation as ``--debug``/``-v``/``-q``.
         quiet:           Suppress isholate progress messages.
@@ -1097,7 +1097,7 @@ def ensure_project_base(
     Args:
         host_base:        Name of the (stopped) host-base container.
         username:         Host username (already mirrored from the host base).
-        project_overlay:  Project ``.ishlib/ishfiles/`` directory.
+        project_overlay:  Project ``.ishlib/isholate/ishfiles/`` directory.
         project_root:     Project root directory (the dir containing
                           ``.ishlib/``). Used for stable container naming.
         log_level:        Terminal log level; propagated to the in-container
@@ -1895,7 +1895,7 @@ def launch_and_exec(
               rebuild_base, rebuild_project_base.
         host_ishfiles_source: Host ishfiles source tree (pass 1).
             ``None`` skips the host-base layer.
-        project_overlay: Project ``.ishlib/ishfiles/`` directory (pass 2).
+        project_overlay: Project ``.ishlib/isholate/ishfiles/`` directory (pass 2).
             ``None`` skips the project-base layer.
         project_root: Project root directory (the dir containing
             ``.ishlib/``). Required only when building a cached
