@@ -6,8 +6,8 @@ Project-local state lives under an ``.ishlib/`` umbrella in the project
 root directory (by default the current working directory, but overridable
 via ``--project-root``):
 
-- ``.ishlib/ishfiles/`` — project-local ishfiles source tree, mounted into
-  the container as pass 2 of provisioning.
+- ``.ishlib/isholate/ishfiles/`` — project-local ishfiles source tree,
+  mounted into the container as pass 2 of provisioning.
 - ``.ishlib/isholate/config.toml`` — isholate project config (image, shell).
 
 The two subdirectories are independent — either may exist without the other.
@@ -15,7 +15,9 @@ The two subdirectories are independent — either may exist without the other.
 Provides four helpers:
 
 - :func:`discover_project_overlay` — checks a project root directory for
-  ``.ishlib/ishfiles/`` (the project-local ishfiles source tree).
+  ``.ishlib/isholate/ishfiles/`` (the project-local ishfiles source tree).
+  Falls back to the pre-rename location ``.ishlib/ishfiles/`` with a
+  one-time migration warning when only the legacy path exists.
 - :func:`load_project_config` — reads ``.ishlib/isholate/config.toml``
   from a project root directory and returns its contents as a plain
   ``dict``. Returns an empty dict if the file is absent.
@@ -31,11 +33,20 @@ Provides four helpers:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .._compat import load_toml_file
-from ..ishlib_folder import IshlibFolder
+from ..ishlib_folder import IshlibFolder, PROJECT_DIR_NAME
+
+log = logging.getLogger(__name__)
+
+# Pre-rename location of the project-local ishfiles overlay, kept as a
+# fallback so projects that have not migrated yet still work. Discovery
+# emits a one-time warning per project root when this path is used.
+_LEGACY_OVERLAY_SUBDIR = "ishfiles"
+_legacy_overlay_warned: set[Path] = set()
 
 # Filename of isholate's per-project config inside ``.ishlib/isholate/``.
 ISHOLATE_CONFIG_FILE = "config.toml"
@@ -53,18 +64,36 @@ LOCKS_STATE_DIR = Path(".local") / "state" / "isholate" / "locks"
 
 
 def discover_project_overlay(root: Path) -> Optional[Path]:
-    """Check *root* for a ``.ishlib/ishfiles/`` project-local ishfiles dir.
+    """Check *root* for a ``.ishlib/isholate/ishfiles/`` project overlay dir.
 
-    Thin wrapper around :meth:`IshlibFolder.discover_tool` kept under
-    its historical name for the isholate call sites.
+    The current path is ``.ishlib/isholate/ishfiles/``. As a transitional
+    fallback, the pre-rename path ``.ishlib/ishfiles/`` is still
+    recognised and emits a one-time migration warning per *root*. The new
+    path always wins when both exist.
 
     Args:
         root: Directory to check.
 
     Returns:
-        Absolute path to the ``.ishlib/ishfiles/`` directory, or ``None``.
+        Absolute path to the overlay dir, or ``None``.
     """
-    return IshlibFolder(root).discover_tool("ishfiles")
+    overlay = IshlibFolder(root).tool_dir("isholate") / "ishfiles"
+    if overlay.is_dir():
+        return overlay
+
+    legacy = Path(root).resolve() / PROJECT_DIR_NAME / _LEGACY_OVERLAY_SUBDIR
+    if legacy.is_dir():
+        if legacy not in _legacy_overlay_warned:
+            _legacy_overlay_warned.add(legacy)
+            log.warning(
+                "isholate: using legacy project overlay at %s; "
+                "rename to %s to silence this warning",
+                legacy,
+                overlay,
+            )
+        return legacy
+
+    return None
 
 
 def load_project_config(root: Path) -> Dict[str, Any]:
@@ -74,8 +103,8 @@ def load_project_config(root: Path) -> Dict[str, Any]:
     when the file is absent or when no TOML library is available.
 
     Loading is independent of the project overlay: the isholate config
-    may be present without a ``.ishlib/ishfiles/`` directory, and vice
-    versa.
+    may be present without a ``.ishlib/isholate/ishfiles/`` directory,
+    and vice versa.
 
     Recognised keys (all optional):
 

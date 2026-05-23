@@ -540,7 +540,7 @@ Key modules:
   (stop running containers). The `run` subcommand discovers project-local
   config under an `.ishlib/` umbrella in cwd (no parent search) so
   image/shell overrides take effect. The umbrella has two independent
-  subdirectories: `.ishlib/ishfiles/` is the project-local ishfiles source
+  paths: `.ishlib/isholate/ishfiles/` is the project-local ishfiles source
   tree (mounted in pass 2), and `.ishlib/isholate/config.toml` holds
   isholate's own project config (`image`, `shell`). Either may exist
   without the other.
