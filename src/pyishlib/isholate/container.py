@@ -749,6 +749,8 @@ def _apply_host_ishfiles(
         "--log-file",
         container_log,
         "--isholate",
+        "--launcher-source-dir",
+        f"{_ISHOLATE_RUN_DIR}/ishlib",
         "--yes",
     ]
     try:
@@ -829,6 +831,8 @@ def _apply_project_overlay(
                 "--log-file",
                 container_log,
                 "--isholate",
+                "--launcher-source-dir",
+                f"{_ISHOLATE_RUN_DIR}/ishlib",
                 "--yes",
             ],
             "ishfiles apply (pass 2: project overlay)",
@@ -1287,6 +1291,22 @@ def _launch_ephemeral_from_base(
                 check=True,
             )
             container_uid = int(uid_result.stdout.strip())
+
+        # Re-mount the pyishlib parent so the baked ISHLIB_SRC in launchers
+        # (set to /run/isholate/ishlib during provisioning) resolves correctly.
+        _exec_checked(
+            c,
+            ["mkdir", "-p", _ISHOLATE_RUN_DIR],
+            "create staging directory",
+            stdin=subprocess.DEVNULL,
+        )
+        _add_mount(
+            name,
+            "isholate-ishlib",
+            _PYISHLIB_PARENT,
+            f"{_ISHOLATE_RUN_DIR}/ishlib",
+            readonly=True,
+        )
 
         # Bind-mount cwd if requested.
         if args.rw_cwd:

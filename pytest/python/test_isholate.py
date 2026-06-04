@@ -1331,6 +1331,19 @@ class TestProvisioning:
         assert "/run/isholate/ishsrc" in pass1
         assert "--isholate" in pass1
 
+    def test_pass1_includes_launcher_source_dir(self):
+        """Pass 1 apply must bake the persistent /run/isholate/ishlib path."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls, _ = self._run_with_mocks(args, host_source=fake_src)
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        pass1 = apply_cmds[0]
+        assert "--launcher-source-dir" in pass1
+        lsd_idx = pass1.index("--launcher-source-dir")
+        assert pass1[lsd_idx + 1] == "/run/isholate/ishlib"
+
     def test_overlay_only_falls_back_to_one_shot(self):
         """Overlay with no host source falls back to one-shot provisioning."""
         args = _make_args()
@@ -1355,6 +1368,23 @@ class TestProvisioning:
         assert "-s" in overlay_apply
         assert "/run/isholate/ishsrc-project" in overlay_apply
         assert "--isholate" in overlay_apply
+
+    def test_pass2_includes_launcher_source_dir(self):
+        """Pass 2 (project overlay) apply must also bake the persistent path."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        fake_overlay = Path("/work/myproject/.ishlib/isholate/ishfiles")
+        calls, _ = self._run_with_mocks(
+            args, host_source=fake_src, overlay=fake_overlay
+        )
+        cmds = self._cmds(calls)
+
+        apply_cmds = [c for c in cmds if "ishfiles" in str(c) and "apply" in c]
+        assert len(apply_cmds) == 2
+        pass2 = apply_cmds[1]
+        assert "--launcher-source-dir" in pass2
+        lsd_idx = pass2.index("--launcher-source-dir")
+        assert pass2[lsd_idx + 1] == "/run/isholate/ishlib"
 
     def test_both_sources_run_two_apply_passes(self):
         args = _make_args()
@@ -1752,6 +1782,40 @@ class TestBaseManagement:
         delete_cmds = [c for c in cmds if c[:2] == ["incus", "delete"]]
         # At least one delete (for the ephemeral; possibly one for a stale base)
         assert len(delete_cmds) >= 1
+
+    def test_ephemeral_remounts_ishlib(self):
+        """Ephemeral must re-add isholate-ishlib so baked launchers work."""
+        args = _make_args()
+        fake_src = Path("/home/testuser/.local/share/ishfiles")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[:4] == ["incus", "config", "device", "list"]:
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            return _fake_subprocess_run(cmd, **kwargs)
+
+        with patch(
+            "pyishlib.isholate.container.get_host_user_info",
+            return_value=_fake_user_info(),
+        ):
+            with patch("pyishlib.container.incus._run", side_effect=fake_run):
+                with patch(
+                    "pyishlib.container.incus.subprocess.run",
+                    side_effect=_fake_subprocess_run,
+                ):
+                    with patch.object(Path, "is_dir", return_value=True):
+                        launch_and_exec(args, host_ishfiles_source=fake_src)
+
+        # Find the incus copy command; all device adds after it belong to the
+        # ephemeral phase.
+        copy_idx = next(i for i, c in enumerate(calls) if c[:2] == ["incus", "copy"])
+        ephemeral_cmds = calls[copy_idx:]
+        device_adds = [c for c in ephemeral_cmds if "device" in c and "add" in c]
+        assert any("isholate-ishlib" in c for c in device_adds), (
+            "Expected isholate-ishlib device to be added in the ephemeral; "
+            f"device adds found: {device_adds}"
+        )
 
 
 # ---------------------------------------------------------------------------

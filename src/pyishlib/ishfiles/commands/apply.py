@@ -27,8 +27,10 @@ def _install_launchers(cfg: IshConfig) -> int:
     """Generate and install tool launcher scripts into ``~/.local/bin``.
 
     Delegates to :func:`pyishlib.launchers.install_all` with paths derived
-    from *cfg*.  The source directory is ``<source>/ishlib/src``; the
-    destination is ``<target>/.local/bin``.
+    from *cfg*.  The source directory defaults to ``<source>/ishlib/src``
+    but can be overridden via ``--launcher-source-dir`` (used by isholate
+    to bake a stable in-container path instead of the transient mount).
+    The destination is ``<target>/.local/bin``.
 
     Returns 0 on success or when the source directory simply does not
     exist (a normal condition for project worktrees that don't bundle
@@ -36,7 +38,8 @@ def _install_launchers(cfg: IshConfig) -> int:
     """
     source = Path(cfg.get_opt("source")).expanduser()
     target = Path(cfg.get_opt("target")).expanduser()
-    source_dir = source / "ishlib" / "src"
+    override = cfg.get_opt("launcher_source_dir", default=None)
+    source_dir = Path(override) if override else source / "ishlib" / "src"
     dest_dir = target / ".local" / "bin"
     if not source_dir.is_dir():
         log.info("Skipping launcher installation: %s does not exist", source_dir)
@@ -116,6 +119,13 @@ class ApplyCommand(CliCommand):
             "--isholate",
             action="store_true",
             default=False,
+            help=argparse.SUPPRESS,
+        )
+        parser.add_argument(
+            "--launcher-source-dir",
+            default=None,
+            dest="launcher_source_dir",
+            metavar="PATH",
             help=argparse.SUPPRESS,
         )
 

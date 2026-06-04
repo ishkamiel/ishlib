@@ -446,6 +446,61 @@ class TestCli:
                 ret = cli_main(["--source", src, "--target", tgt, "apply", "--dry-run"])
             assert ret == 1
 
+    def test_apply_launcher_source_dir_override(self):
+        """--launcher-source-dir must be passed through to install_all."""
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            override_dir = Path(tgt) / "custom_src"
+            override_dir.mkdir()
+            (override_dir / "pyishlib").mkdir()
+            (override_dir / "pyishlib" / "__init__.py").touch()
+
+            captured = {}
+
+            def fake_install_all(dest_dir, source_dir, *, dry_run=False):
+                captured["source_dir"] = source_dir
+                return 0
+
+            with patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers_impl",
+                side_effect=fake_install_all,
+            ):
+                ret = cli_main(
+                    [
+                        "--source",
+                        src,
+                        "--target",
+                        tgt,
+                        "apply",
+                        "--dry-run",
+                        "--launcher-source-dir",
+                        str(override_dir),
+                    ]
+                )
+            assert ret == 0
+            assert captured.get("source_dir") == override_dir
+
+    def test_apply_launcher_source_dir_skipped_when_missing(self):
+        """--launcher-source-dir points at a nonexistent path → skip silently."""
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+            with patch(
+                "pyishlib.ishfiles.commands.apply._install_launchers_impl"
+            ) as mock_impl:
+                ret = cli_main(
+                    [
+                        "--source",
+                        src,
+                        "--target",
+                        tgt,
+                        "apply",
+                        "--dry-run",
+                        "--launcher-source-dir",
+                        "/nonexistent/path/that/does/not/exist",
+                    ]
+                )
+            assert ret == 0
+            mock_impl.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # reverse translation
