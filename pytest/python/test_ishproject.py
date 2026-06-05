@@ -137,6 +137,34 @@ class TestParser(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 parser.parse_args(["clean-rebase"])
 
+    def test_recurse_submodules_short_flag(self) -> None:
+        """`-R` is the short alias for `--recurse-submodules` on every
+        subcommand that exposes the flag."""
+        parser = build_parser()
+        cases = {
+            "add": ["add", "-R", "-u"],
+            "commit": ["commit", "-R"],
+            "push": ["push", "-R"],
+            "pull": ["pull", "-R"],
+            "apply": ["apply", "-R"],
+            "init": ["init", "-R"],
+        }
+        for cmd, argv in cases.items():
+            args = parser.parse_args(argv)
+            self.assertTrue(
+                getattr(args, "recurse_submodules", False),
+                f"{cmd}: -R did not set recurse_submodules",
+            )
+
+    def test_commit_push_flag(self) -> None:
+        parser = build_parser()
+        # Default is False
+        args = parser.parse_args(["commit"])
+        self.assertFalse(getattr(args, "push", False))
+        # --push sets it
+        args = parser.parse_args(["commit", "--push"])
+        self.assertTrue(getattr(args, "push", False))
+
     def test_add_files_positional_has_file_completion_hint(self) -> None:
         """`ishproject add <path><tab>` must complete file paths.
 
@@ -653,6 +681,140 @@ class TestRecurseSubmodules(_ChdirTestCase):
         )
         self.assertEqual(len(sources), 1)
         self.assertNotIn("/child/.ishlib/", sources[0])
+
+    def test_add_recurse_runs_per_repo(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.add.ishfiles_main",
+            ["add", "-u", "-R"],
+        )
+        self.assertEqual(len(sources), 2)
+        self.assertTrue(any("/child/.ishlib/" in s for s in sources))
+
+    def test_add_no_recurse_runs_only_parent(self) -> None:
+        sources = self._run_and_collect_sources(
+            "pyishlib.ishproject.commands.add.ishfiles_main",
+            ["add", "-u"],
+        )
+        self.assertEqual(len(sources), 1)
+        self.assertNotIn("/child/.ishlib/", sources[0])
+
+
+class TestCommitPush(_ChdirTestCase):
+    """`ishproject commit --push` commits then pushes per repo.
+
+    Push is gated on the commit step returning 0; with
+    `--recurse-submodules` each repo's push is evaluated independently.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+
+    def test_commit_push_runs_push_after_commit(self) -> None:
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["commit", "--push", "-m", "msg"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_main.call_count, 2)
+        commit_argv, push_argv = (c.args[0] for c in mock_main.call_args_list)
+        # First call is commit with -m msg forwarded.
+        self.assertIn("commit", commit_argv)
+        self.assertIn("-m", commit_argv)
+        self.assertIn("msg", commit_argv)
+        # Second call is push WITHOUT the commit-only rest forwarded.
+        self.assertIn("push", push_argv)
+        self.assertNotIn("-m", push_argv)
+        self.assertNotIn("msg", push_argv)
+        # Both invocations targeted the same source/target.
+        self.assertLess(push_argv.index("--source"), push_argv.index("push"))
+
+    def test_commit_push_skipped_on_commit_failure(self) -> None:
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            return_value=1,
+        ) as mock_main:
+            rc = cli_main(["commit", "--push", "-m", "msg"])
+        self.assertEqual(rc, 1)
+        # Only the commit ran; push must not be invoked.
+        self.assertEqual(mock_main.call_count, 1)
+        argv = mock_main.call_args.args[0]
+        self.assertIn("commit", argv)
+        self.assertNotIn("push", argv)
+
+    def test_commit_no_push_flag_does_not_push(self) -> None:
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["commit", "-m", "msg"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_main.call_count, 1)
+
+
+class TestCommitPushRecurse(_ChdirTestCase):
+    """`commit -R --push` recurses across parent + submodules, per-repo gated."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _init_repo(self.root)
+        self.workspace = _bare_workspace(self)
+        self.child_bare = _make_submodule_source(self.workspace, "child")
+        _add_submodule(self.root, self.child_bare, "child")
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        _git("branch", DEFAULT_BRANCH, cwd=self.root)
+        sub = self.root / "child"
+        (sub / ".ishlib" / "ishproject").mkdir(parents=True)
+        _git("branch", DEFAULT_BRANCH, cwd=sub)
+
+    @staticmethod
+    def _subcommand_of(argv: list) -> str:
+        # ishfiles passthrough composes argv as
+        #   [--source <p> --target <p> [pre-sub flags...] <subcommand> ...rest]
+        # So scan for the first token that is one of the known subcommands.
+        for tok in argv:
+            if tok in ("commit", "push"):
+                return tok
+        raise AssertionError(f"no commit/push subcommand found in {argv!r}")
+
+    def test_commit_recurse_push_runs_per_repo(self) -> None:
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            return_value=0,
+        ) as mock_main:
+            rc = cli_main(["commit", "-R", "--push", "-m", "msg"])
+        self.assertEqual(rc, 0)
+        # Two repos × (commit + push) = 4 calls.
+        self.assertEqual(mock_main.call_count, 4)
+        # Order: commit-parent, push-parent, commit-sub, push-sub.
+        subs = [self._subcommand_of(c.args[0]) for c in mock_main.call_args_list]
+        self.assertEqual(subs, ["commit", "push", "commit", "push"])
+
+    def test_commit_recurse_push_skipped_per_repo_on_failure(self) -> None:
+        # Fail the *parent* commit; the parent push must be skipped but
+        # the submodule still gets its own commit + push attempt.
+        calls: list[list[str]] = []
+
+        def _side(argv):
+            calls.append(list(argv))
+            sub = argv[argv.index("--source") + 1]
+            is_parent = "/child/" not in Path(sub).as_posix()
+            if is_parent and TestCommitPushRecurse._subcommand_of(argv) == "commit":
+                return 1
+            return 0
+
+        with patch(
+            "pyishlib.ishproject.commands.commit.ishfiles_main",
+            side_effect=_side,
+        ):
+            rc = cli_main(["commit", "-R", "--push", "-m", "msg"])
+        # Parent commit failed → overall non-zero.
+        self.assertEqual(rc, 1)
+        # 3 calls: commit-parent (fail), commit-sub, push-sub. No push-parent.
+        self.assertEqual(len(calls), 3)
+        subs = [self._subcommand_of(c) for c in calls]
+        self.assertEqual(subs, ["commit", "commit", "push"])
 
 
 class TestAddEndToEnd(_ChdirTestCase):
