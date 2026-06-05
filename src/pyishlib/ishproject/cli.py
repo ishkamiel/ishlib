@@ -30,6 +30,7 @@ from .commands.init import InitCommand
 from .commands.merge import MergeCommand
 from .commands.pull import PullCommand
 from .commands.push import PushCommand
+from .commands.state import StateCommand
 from .commands.status import StatusCommand
 from .config import load_config
 
@@ -50,6 +51,7 @@ class IshprojectCLI(BaseCLI):
         MergeCommand,
         PullCommand,
         PushCommand,
+        StateCommand,
         StatusCommand,
     )
     # The passthrough commands (add/apply/diff) delegate flag handling to
@@ -58,7 +60,10 @@ class IshprojectCLI(BaseCLI):
     COLLECT_UNKNOWN = True
 
     def resolve_config(self, args: argparse.Namespace) -> argparse.Namespace:
-        args.ishproject_cfg = load_config()
+        # `state` runs from shell prompts, so bootstrap must never block
+        # on stdin even when the user's terminal is a TTY.
+        interactive = False if args.command == "state" else None
+        args.ishproject_cfg = load_config(interactive=interactive)
         return args
 
 

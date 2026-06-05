@@ -121,6 +121,7 @@ class TestParser(unittest.TestCase):
             "merge",
             "pull",
             "push",
+            "state",
             "status",
         ):
             args = parser.parse_args([cmd, *extras.get(cmd, [])])
@@ -2521,6 +2522,153 @@ class TestPrecommitGuardIntegration(_ChdirTestCase):
             f"PRE_COMMIT_ALLOW_NO_CONFIG was not set for every commit: {env_at_commits}",
         )
         self.assertNotIn("PRE_COMMIT_ALLOW_NO_CONFIG", os.environ)
+
+
+def _setup_ishproject_worktree(root: Path) -> Path:
+    """Create a real `.ishlib/ishproject` worktree on the default branch.
+
+    Unlike the lightweight stub in :class:`TestRecurseSubmodules` (which
+    only needs an empty directory + branch ref to satisfy the
+    ``iter_initialised_submodules`` gate), ``state`` runs ``git status``
+    inside the worktree, so the path must be a real git-managed
+    worktree.
+    """
+    _git("branch", DEFAULT_BRANCH, cwd=root)
+    source = root / ".ishlib" / "ishproject"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    _git("worktree", "add", str(source), DEFAULT_BRANCH, cwd=root)
+    return source
+
+
+def _capture_cli(argv: list) -> tuple:
+    """Run ``cli_main`` capturing stdout. Returns ``(rc, stdout)``."""
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cli_main(argv)
+    return rc, buf.getvalue()
+
+
+class TestStateCommand(_ChdirTestCase):
+    """``ishproject state`` — compact dirty-count token for shell prompts."""
+
+    def test_not_a_git_repo_emits_nothing(self) -> None:
+        # self.root is a fresh tempdir with no `git init`.
+        rc, out = _capture_cli(["state"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "")
+
+    def test_repo_without_worktree_emits_nothing(self) -> None:
+        _init_repo(self.root)
+        rc, out = _capture_cli(["state"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "")
+
+    def test_clean_worktree_emits_nothing(self) -> None:
+        _init_repo(self.root)
+        _setup_ishproject_worktree(self.root)
+        rc, out = _capture_cli(["state"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "")
+
+    def test_dirty_worktree_emits_count(self) -> None:
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "foo").write_text("a\n")
+        (source / "bar").write_text("b\n")
+        rc, out = _capture_cli(["state"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.strip(), "±2")
+
+    def test_works_from_subdirectory(self) -> None:
+        # State should not require running from the repo root — a prompt
+        # could fire at any cwd inside the repo.
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "foo").write_text("a\n")
+        sub = self.root / "deep" / "nested"
+        sub.mkdir(parents=True)
+        os.chdir(sub)
+        rc, out = _capture_cli(["state"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.strip(), "±1")
+
+    def test_recurse_aggregates_submodule_dirty_count(self) -> None:
+        _init_repo(self.root)
+        parent_source = _setup_ishproject_worktree(self.root)
+
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+        child_root = self.root / "child"
+        child_source = _setup_ishproject_worktree(child_root)
+
+        (parent_source / "p1").write_text("1\n")
+        (parent_source / "p2").write_text("2\n")
+        (child_source / "c1").write_text("3\n")
+
+        # Without -R only the parent's dirty count is reported.
+        rc, out = _capture_cli(["state"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.strip(), "±2")
+
+        # With -R the submodule's dirty count folds into the same token.
+        rc, out = _capture_cli(["state", "-R"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.strip(), "±3")
+
+    def test_recurse_with_clean_submodule_does_not_change_count(self) -> None:
+        _init_repo(self.root)
+        parent_source = _setup_ishproject_worktree(self.root)
+
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+        _setup_ishproject_worktree(self.root / "child")
+
+        (parent_source / "p1").write_text("1\n")
+
+        rc, out = _capture_cli(["state", "--recurse-submodules"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.strip(), "±1")
+
+    def test_recurse_skips_submodule_without_worktree(self) -> None:
+        # Submodule has no ishproject worktree: must be silently skipped
+        # even when -R is set (matches `iter_initialised_submodules`).
+        _init_repo(self.root)
+        parent_source = _setup_ishproject_worktree(self.root)
+
+        workspace = _bare_workspace(self)
+        child_bare = _make_submodule_source(workspace, "child")
+        _add_submodule(self.root, child_bare, "child")
+
+        (parent_source / "p1").write_text("1\n")
+
+        rc, out = _capture_cli(["state", "-R"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.strip(), "±1")
+
+    def test_state_loads_config_non_interactively(self) -> None:
+        # `state` must never block on stdin even when the user's terminal
+        # is a TTY and the config file is missing on first run.
+        with patch("pyishlib.ishproject.cli.load_config") as m:
+            m.return_value = _default_cfg()
+            cli_main(["state"])
+        m.assert_called_once_with(interactive=False)
+
+    def test_other_commands_still_load_config_interactively(self) -> None:
+        # Sanity check: only `state` opts out; other subcommands keep
+        # `load_config()`'s TTY-driven default so first-run bootstrap
+        # prompts the user as before.
+        with patch("pyishlib.ishproject.cli.load_config") as m, patch(
+            "pyishlib.ishproject.commands.status.StatusCommand.run",
+            return_value=0,
+        ):
+            m.return_value = _default_cfg()
+            cli_main(["status"])
+        m.assert_called_once_with(interactive=None)
 
 
 if __name__ == "__main__":
