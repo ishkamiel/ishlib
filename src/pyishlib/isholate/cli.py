@@ -2,12 +2,13 @@
 # Copyright (C) 2026 Hans Liljestrand <hans@liljestrand.dev>
 """Command-line interface for isholate.
 
-Entry point for the ``isholate`` tool.  Exposes four subcommands:
+Entry point for the ``isholate`` tool.  Exposes five subcommands:
 
-* ``run``   — launch a container and exec a command (or interactive shell).
-* ``purge`` — delete the user's isholate containers.
-* ``list``  — print a table of isholate containers.
-* ``stop``  — stop running isholate containers.
+* ``run``         — launch a container and exec a command (or interactive shell).
+* ``purge``       — delete the user's isholate containers.
+* ``list``        — print a table of isholate containers.
+* ``stop``        — stop running isholate containers.
+* ``dump-script`` — print a standalone bash script that re-creates a container.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import List, Optional
 from ..cli_base import BaseCLI
 from ..container import get_backend
 from ..environment import is_linux
+from .commands.dump_script import DumpScriptCommand
 from .commands.list import ListCommand
 from .commands.purge import PurgeCommand
 from .commands.run import DEFAULT_IMAGE, DEFAULT_SHELL, RunCommand
@@ -44,7 +46,13 @@ class IsholateCLI(BaseCLI):
         "Persistent base containers cache expensive provisioning steps so "
         "subsequent runs start in seconds."
     )
-    COMMANDS = (RunCommand, PurgeCommand, ListCommand, StopCommand)
+    COMMANDS = (
+        RunCommand,
+        PurgeCommand,
+        ListCommand,
+        StopCommand,
+        DumpScriptCommand,
+    )
     SUBPARSER_DEST = "subcommand"
     SUBPARSER_METAVAR = "COMMAND"
     SUBPARSER_REQUIRED = True
@@ -57,6 +65,8 @@ class IsholateCLI(BaseCLI):
         if not is_linux():
             log.critical("isholate is only supported on Linux")
             return 1
+        if args.subcommand == DumpScriptCommand.NAME:
+            return None
         guidance = get_backend().check_available()
         if guidance is not None:
             log.error("%s", guidance)
