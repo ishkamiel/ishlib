@@ -537,7 +537,9 @@ Key modules:
 
 - `cli.py` — argparse front-end. Subcommands: `run` (launch + exec),
   `purge` (delete user's containers), `list` (table of containers), `stop`
-  (stop running containers). The `run` subcommand discovers project-local
+  (stop running containers), `dump-script` (print a standalone bash script
+  that creates/provisions a container and enters it with only `incus`, no
+  ishlib; rendered by `dump_script_template.py`). The `run` subcommand discovers project-local
   config under an `.ishlib/` umbrella in cwd (no parent search) so
   image/shell overrides take effect. The umbrella has two independent
   paths: `.ishlib/isholate/ishfiles/` is the project-local ishfiles source
