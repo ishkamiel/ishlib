@@ -2662,9 +2662,12 @@ class TestStateCommand(_ChdirTestCase):
         # Sanity check: only `state` opts out; other subcommands keep
         # `load_config()`'s TTY-driven default so first-run bootstrap
         # prompts the user as before.
-        with patch("pyishlib.ishproject.cli.load_config") as m, patch(
-            "pyishlib.ishproject.commands.status.StatusCommand.run",
-            return_value=0,
+        with (
+            patch("pyishlib.ishproject.cli.load_config") as m,
+            patch(
+                "pyishlib.ishproject.commands.status.StatusCommand.run",
+                return_value=0,
+            ),
         ):
             m.return_value = _default_cfg()
             cli_main(["status"])
