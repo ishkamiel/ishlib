@@ -173,6 +173,7 @@ class InitCommand(CliCommand):
             ),
         )
         parser.add_argument(
+            "-R",
             "--recurse-submodules",
             action="store_true",
             default=False,

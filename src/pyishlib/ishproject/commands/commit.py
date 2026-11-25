@@ -41,6 +41,7 @@ class CommitCommand(CliCommand):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "-R",
             "--recurse-submodules",
             action="store_true",
             default=False,
@@ -49,6 +50,17 @@ class CommitCommand(CliCommand):
                 "in every initialised submodule (recursively) that has the "
                 "ishproject branch and worktree set up. Submodules without "
                 "an ishproject worktree are silently skipped."
+            ),
+        )
+        parser.add_argument(
+            "--push",
+            action="store_true",
+            default=False,
+            help=(
+                "After a successful commit in each repo, also push it "
+                "(runs `ishfiles push` for the same source/target). With "
+                "--recurse-submodules each repo's push is gated on its own "
+                "commit succeeding; a failed commit skips only that push."
             ),
         )
         parser.add_argument(
@@ -71,7 +83,15 @@ class CommitCommand(CliCommand):
             )
             return 1
 
-        rcs = [self._commit_one(source, target)]
+        push = bool(getattr(self.cfg, "push", False))
+
+        def _commit_then_push(src: Path, tgt: Path) -> int:
+            rc = self._commit_one(src, tgt)
+            if push and rc == 0:
+                rc = max(rc, self._push_one(src, tgt))
+            return rc
+
+        rcs = [_commit_then_push(source, target)]
 
         if getattr(self.cfg, "recurse_submodules", False):
             try:
@@ -83,7 +103,7 @@ class CommitCommand(CliCommand):
                     parent_repo
                 ):
                     log.info("ishproject commit in submodule %s", sub_repo.work_tree)
-                    rcs.append(self._commit_one(sub_source, sub_target))
+                    rcs.append(_commit_then_push(sub_source, sub_target))
 
         return max(rcs)
 
@@ -94,3 +114,10 @@ class CommitCommand(CliCommand):
                 self.cfg.rest,
                 global_args=["--source", str(source), "--target", str(target)],
             )
+
+    def _push_one(self, source: Path, target: Path) -> int:
+        return self.passthrough(
+            "push",
+            [],
+            global_args=["--source", str(source), "--target", str(target)],
+        )

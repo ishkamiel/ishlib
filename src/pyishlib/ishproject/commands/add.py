@@ -69,6 +69,20 @@ class AddCommand(CliCommand):
                 "explicit FILES to include extra paths."
             ),
         )
+        parser.add_argument(
+            "-R",
+            "--recurse-submodules",
+            action="store_true",
+            default=False,
+            help=(
+                "After adding to the parent project, run `ishproject add` "
+                "in every initialised submodule (recursively) that has the "
+                "ishproject branch and worktree set up. Submodules without "
+                "an ishproject worktree are silently skipped. Primarily "
+                "intended for `-u/--update`; explicit FILES are passed to "
+                "each submodule unchanged."
+            ),
+        )
         parser.set_defaults(rest=[])
 
     def run(self) -> int:
@@ -89,6 +103,26 @@ class AddCommand(CliCommand):
         if not explicit_files and not update:
             log.error("No files given (specify FILES or use -u/--update).")
             return 1
+
+        rcs = [self._add_one(source, target)]
+
+        if getattr(self.cfg, "recurse_submodules", False):
+            try:
+                parent_repo = GitRepo.discover(root, require_root=True)
+            except NotAGitRepoError:
+                parent_repo = None
+            if parent_repo is not None:
+                for sub_repo, sub_source, sub_target in cfg.iter_initialised_submodules(
+                    parent_repo
+                ):
+                    log.info("ishproject add in submodule %s", sub_repo.work_tree)
+                    rcs.append(self._add_one(sub_source, sub_target))
+
+        return max(rcs)
+
+    def _add_one(self, source: Path, target: Path) -> int:
+        update = bool(getattr(self.cfg, "update", False))
+        explicit_files = list(self.cfg.files or [])
 
         try:
             repo = GitRepo.discover(target)

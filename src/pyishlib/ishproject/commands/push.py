@@ -40,6 +40,7 @@ class PushCommand(CliCommand):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "-R",
             "--recurse-submodules",
             action="store_true",
             default=False,
