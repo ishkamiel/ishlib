@@ -2674,5 +2674,323 @@ class TestStateCommand(_ChdirTestCase):
         m.assert_called_once_with(interactive=None)
 
 
+_SRC_DIR = Path(__file__).resolve().parents[2] / "src"
+_STATE_FAST = _SRC_DIR / "pyishlib" / "ishproject" / "state_fast.py"
+
+
+def _run_py(args: list, cwd: Path, **env_extra: str) -> subprocess.CompletedProcess:
+    """Run *args* under the current interpreter with an explicit PYTHONPATH.
+
+    ``pytest/conftest.py`` strips PYTHONPATH from ``os.environ``, so
+    subprocesses that import ``pyishlib`` must set it themselves.
+    """
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_SRC_DIR)
+    env.update(env_extra)
+    return subprocess.run(
+        [sys.executable, *args],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+class TestStateFastParity(_ChdirTestCase):
+    """The stdlib-only fast path must agree with the full implementation."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from pyishlib.ishproject import state_fast
+
+        self.fast = state_fast
+
+    def test_worktree_path_matches_config(self) -> None:
+        from pyishlib.ishlib_folder import IshlibFolder
+
+        cases = [
+            (DEFAULT_PREFIX, DEFAULT_POSTFIX),
+            ("my pre", "post/fix"),
+            ("a", "b"),
+        ]
+        for prefix, postfix in cases:
+            cfg = IshprojectConfig(defaults={"prefix": prefix, "postfix": postfix})
+            branches = [
+                cfg.default_branch,
+                cfg.branch_for("main"),
+                cfg.branch_for("feature/x"),
+                cfg.branch_for("feature_x"),
+                cfg.branch_for("we!rd name"),
+                cfg.branch_for("ünï/cødé"),
+                "custom/branch",
+            ]
+            for branch in branches:
+                with self.subTest(prefix=prefix, postfix=postfix, branch=branch):
+                    expected = cfg.worktree_path(IshlibFolder(self.root), branch)
+                    got = self.fast.worktree_path(
+                        str(self.root), branch, prefix, postfix
+                    )
+                    self.assertEqual(Path(got), expected)
+
+    def test_count_matches_cli_with_submodule(self) -> None:
+        _init_repo(self.root)
+        parent_source = _setup_ishproject_worktree(self.root)
+        workspace = _bare_workspace(self)
+        _add_submodule(self.root, _make_submodule_source(workspace, "child"), "child")
+        child_source = _setup_ishproject_worktree(self.root / "child")
+        (parent_source / "p1").write_text("1\n")
+        (child_source / "c1").write_text("2\n")
+        (child_source / "c2").write_text("3\n")
+
+        for recurse, argv in ((False, ["state"]), (True, ["state", "-R"])):
+            with self.subTest(recurse=recurse):
+                _rc, out = _capture_cli(argv)
+                self.assertEqual(
+                    self.fast.format_token(
+                        self.fast.count_dirty(str(self.root), recurse=recurse)
+                    ),
+                    out.strip(),
+                )
+
+    def test_per_branch_worktree_is_preferred(self) -> None:
+        # A <prefix>/<current>/<postfix> branch + worktree wins over the default.
+        _init_repo(self.root)
+        default_source = _setup_ishproject_worktree(self.root)
+        (default_source / "d1").write_text("1\n")
+        rc = cli_main(["branch"])
+        self.assertEqual(rc, 0)
+        branch_source = next((self.root / ".ishlib").glob("ishproject-main-*"))
+        (branch_source / "b1").write_text("1\n")
+        (branch_source / "b2").write_text("2\n")
+
+        _rc, out = _capture_cli(["state"])
+        self.assertEqual(out.strip(), "±2")
+        self.assertEqual(self.fast.count_dirty(str(self.root)), 2)
+
+    def test_bare_ishlib_dir_does_not_fall_through_to_parent_repo(self) -> None:
+        # An empty .ishlib/ishproject directory (not a git root) must not
+        # report the enclosing repository's status.
+        _init_repo(self.root)
+        _git("branch", DEFAULT_BRANCH, cwd=self.root)
+        (self.root / ".ishlib" / "ishproject").mkdir(parents=True)
+        (self.root / "untracked").write_text("x\n")
+        self.assertEqual(self.fast.count_dirty(str(self.root)), 0)
+
+    def test_renames_count_once(self) -> None:
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "old").write_text("content\n")
+        _git("add", "old", cwd=source)
+        _git("commit", "-m", "add old", cwd=source)
+        _git("mv", "old", "new", cwd=source)
+        self.assertEqual(self.fast.count_dirty(str(self.root)), 1)
+
+    def test_non_repo_is_zero(self) -> None:
+        self.assertEqual(self.fast.count_dirty(str(self.root)), 0)
+
+    def test_recurse_skips_submodule_probe_without_gitmodules(self) -> None:
+        _init_repo(self.root)
+        with patch.object(self.fast, "_git") as m:
+            self.assertEqual(self.fast._submodules(str(self.root)), [])
+        m.assert_not_called()
+
+    def test_subprocess_fallback_matches_posix_spawn(self) -> None:
+        # Platforms without os.posix_spawnp use subprocess; same results.
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "a").write_text("a\n")
+        (source / "b").write_text("b\n")
+        self.assertEqual(self.fast.count_dirty(str(self.root)), 2)
+
+        saved = os.posix_spawnp
+        del os.posix_spawnp
+        try:
+            self.assertEqual(self.fast.count_dirty(str(self.root)), 2)
+            rc, out = self.fast._git(str(self.root), "rev-parse", "--show-toplevel")
+            self.assertEqual(rc, 0)
+            self.assertEqual(Path(out.strip()).resolve(), self.root)
+        finally:
+            os.posix_spawnp = saved
+
+    def test_missing_git_binary_is_zero(self) -> None:
+        _init_repo(self.root)
+        with patch.dict(os.environ, {"PATH": str(self.root / "nope")}):
+            self.assertIsNone(self.fast._git(str(self.root), "status"))
+            self.assertEqual(self.fast.count_dirty(str(self.root)), 0)
+
+    def test_script_runs_bare_with_isolated_interpreter(self) -> None:
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "a").write_text("a\n")
+        res = _run_py(["-S", "-I", str(_STATE_FAST)], cwd=self.root)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), "±1")
+        self.assertEqual(res.stderr, "")
+
+    def test_script_with_c_locale_does_not_raise(self) -> None:
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "a").write_text("a\n")
+        res = _run_py(
+            ["-S", "-I", str(_STATE_FAST)],
+            cwd=self.root,
+            LC_ALL="C",
+            PYTHONIOENCODING="ascii",
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), "±1")
+
+
+class TestStateFastConfig(unittest.TestCase):
+    """``read_config`` parses just the two keys it needs."""
+
+    def setUp(self) -> None:
+        from pyishlib.ishproject import state_fast
+
+        self.fast = state_fast
+        self._tmp = _make_tempdir()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "ishproject.toml"
+
+    def _read(self, text: str) -> tuple:
+        self.path.write_text(text, encoding="utf-8")
+        return self.fast.read_config(str(self.path))
+
+    def test_missing_file_gives_defaults(self) -> None:
+        self.assertEqual(
+            self.fast.read_config(str(self.path)),
+            (DEFAULT_PREFIX, DEFAULT_POSTFIX),
+        )
+
+    def test_reads_both_keys(self) -> None:
+        self.assertEqual(
+            self._read('[ishproject]\nprefix = "pre"\npostfix = "post"\n'),
+            ("pre", "post"),
+        )
+
+    def test_partial_config_keeps_other_default(self) -> None:
+        self.assertEqual(
+            self._read('[ishproject]\nprefix = "pre"  # comment\n'),
+            ("pre", DEFAULT_POSTFIX),
+        )
+
+    def test_other_sections_are_ignored(self) -> None:
+        self.assertEqual(
+            self._read('[other]\nprefix = "nope"\n[ishproject]\npostfix = "p"\n'),
+            (DEFAULT_PREFIX, "p"),
+        )
+
+    def test_escapes_and_literal_strings(self) -> None:
+        self.assertEqual(
+            self._read('[ishproject]\nprefix = "a\\"b\\\\c"\npostfix = \'x\\y\'\n'),
+            ('a"b\\c', "x\\y"),
+        )
+
+    def test_matches_full_loader(self) -> None:
+        from pyishlib.ishproject.config import load_config
+
+        text = '[ishproject]\nprefix = "my-pre"\npostfix = "my-post"\n'
+        self.path.write_text(text, encoding="utf-8")
+        cfg = load_config(self.path, interactive=False)
+        self.assertEqual(
+            self.fast.read_config(str(self.path)), (cfg.prefix, cfg.postfix)
+        )
+
+
+class TestLauncherFastPath(_ChdirTestCase):
+    """The generated bash launcher routes ``state`` around the full CLI."""
+
+    def _launcher(self, tool_name: str = "ishproject") -> Path:
+        from pyishlib import tools
+        from pyishlib.launchers import render_launcher
+
+        path = self.root / f"{tool_name}-launcher"
+        path.write_text(
+            render_launcher(tools.get(tool_name), _SRC_DIR), encoding="utf-8"
+        )
+        path.chmod(0o755)
+        return path
+
+    def _stub_python(self) -> Path:
+        """An 'interpreter' that just prints the argv it was called with."""
+        stub = self.root / "stub-python"
+        stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*"\n', encoding="utf-8")
+        stub.chmod(0o755)
+        return stub
+
+    def _run(self, launcher: Path, *args: str, **env_extra: str) -> str:
+        env = os.environ.copy()
+        env.update(env_extra)
+        res = subprocess.run(
+            ["bash", str(launcher), *args],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout.strip()
+
+    def test_state_uses_fast_script(self) -> None:
+        out = self._run(
+            self._launcher(), "state", ISHLIB_PYTHON=str(self._stub_python())
+        )
+        self.assertEqual(out, f"-S -I {_STATE_FAST}")
+
+    def test_state_recurse_flags_are_forwarded(self) -> None:
+        for flag in ("-R", "--recurse-submodules"):
+            with self.subTest(flag=flag):
+                out = self._run(
+                    self._launcher(),
+                    "state",
+                    flag,
+                    ISHLIB_PYTHON=str(self._stub_python()),
+                )
+                self.assertEqual(out, f"-S -I {_STATE_FAST} {flag}")
+
+    def test_unknown_flag_falls_back_to_full_cli(self) -> None:
+        out = self._run(
+            self._launcher(),
+            "state",
+            "--help",
+            ISHLIB_PYTHON=str(self._stub_python()),
+        )
+        self.assertEqual(out, "-m pyishlib.ishproject state --help")
+
+    def test_other_subcommands_use_full_cli(self) -> None:
+        out = self._run(
+            self._launcher(), "status", ISHLIB_PYTHON=str(self._stub_python())
+        )
+        self.assertEqual(out, "-m pyishlib.ishproject status")
+
+    def test_other_tools_have_no_fast_path(self) -> None:
+        for tool in ("ishfiles", "isholate"):
+            self.assertNotIn("_fast_python", self._launcher(tool).read_text())
+
+    def test_missing_script_falls_back_to_full_cli(self) -> None:
+        # A source dir without the script (older checkout) must still work.
+        from pyishlib import tools
+        from pyishlib.launchers import render_launcher
+
+        fake_src = self.root / "src"
+        (fake_src / "pyishlib").mkdir(parents=True)
+        (fake_src / "pyishlib" / "__init__.py").write_text("")
+        path = self.root / "launcher"
+        path.write_text(render_launcher(tools.get("ishproject"), fake_src))
+        out = self._run(path, "state", ISHLIB_PYTHON=str(self._stub_python()))
+        self.assertEqual(out, "-m pyishlib.ishproject state")
+
+    def test_end_to_end_prints_token(self) -> None:
+        _init_repo(self.root)
+        source = _setup_ishproject_worktree(self.root)
+        (source / "a").write_text("a\n")
+        (source / "b").write_text("b\n")
+        out = self._run(
+            self._launcher(), "state", ISHLIB_PYTHON=sys.executable, HOME=str(self.root)
+        )
+        self.assertEqual(out, "±2")
+
+
 if __name__ == "__main__":
     unittest.main()

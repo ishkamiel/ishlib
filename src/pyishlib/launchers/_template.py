@@ -27,6 +27,7 @@ EOF
     exit 1
 fi
 
+__FAST_PATHS__
 _pick_python() {
     if [ -n "${ISHLIB_PYTHON:-}" ] && [ -x "${ISHLIB_PYTHON}" ]; then
         printf '%s' "$ISHLIB_PYTHON"; return
