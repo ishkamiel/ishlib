@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
@@ -41,7 +41,7 @@ jobs:
         pytest
 
   test-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -58,7 +58,7 @@ jobs:
         python -m pytest pytest/python/ -n 0 -v --tb=long
 
   test-macos:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
