@@ -9,8 +9,7 @@ import logging
 from pathlib import Path
 
 from ...cli_command import CliCommand
-from ...ishfiles.cli import build_parser as ishfiles_build_parser
-from ...ishfiles.cli import main as ishfiles_main
+from .._ishfiles_lazy import ishfiles_build_parser, ishfiles_main
 
 log = logging.getLogger(__name__)
 

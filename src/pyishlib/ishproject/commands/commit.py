@@ -10,8 +10,7 @@ from pathlib import Path
 
 from ...cli_command import CliCommand
 from ...git_repo import GitRepo, NotAGitRepoError
-from ...ishfiles.cli import build_parser as ishfiles_build_parser
-from ...ishfiles.cli import main as ishfiles_main
+from .._ishfiles_lazy import ishfiles_build_parser, ishfiles_main
 from .._precommit import allow_missing_precommit_config
 
 log = logging.getLogger(__name__)

@@ -13,11 +13,8 @@ from ...cli_command import CliCommand
 from ...command_runner import CommandRunner
 from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
-from ...ishfiles.applier import make_applier, make_finder
-from ...ishfiles.cli import build_parser as ishfiles_build_parser
-from ...ishfiles.cli import main as ishfiles_main
-from ...ishfiles.config import load_config as ishfiles_load_config
 from ...ishlib_folder import PROJECT_DIR_NAME
+from .._ishfiles_lazy import ishfiles_build_parser, ishfiles_main
 from ..config import IshprojectConfig
 
 log = logging.getLogger(__name__)
@@ -160,6 +157,11 @@ class ApplyCommand(CliCommand):
         isholate container mount) or when argv parsing fails (the real
         passthrough will surface the same error).
         """
+        # Imported here, not at module level: these pull in the whole
+        # ishfiles stack, which every other ishproject command can skip.
+        from ...ishfiles.applier import make_applier, make_finder
+        from ...ishfiles.config import load_config as ishfiles_load_config
+
         try:
             repo = GitRepo.discover(target)
         except NotAGitRepoError:
