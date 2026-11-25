@@ -8,21 +8,23 @@ has uncommitted changes, and nothing when it is clean or absent. With
 into the same total so prompts stay one line. No network is touched and
 stdin is never read, so the command is safe to invoke on every prompt
 render.
+
+The work is done by :mod:`pyishlib.ishproject.state_fast`, which is also
+what the launcher runs directly (without importing ``pyishlib``) for the
+fastest possible prompt path.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
+import os
 
 from ...cli_command import CliCommand
-from ...git_repo import GitRepo, NotAGitRepoError
 from ..config import IshprojectConfig
+from ..state_fast import count_dirty, format_token
 
 log = logging.getLogger(__name__)
-
-DIRTY_SYMBOL = "±"
 
 
 class StateCommand(CliCommand):
@@ -54,39 +56,13 @@ class StateCommand(CliCommand):
 
     def run(self) -> int:
         cfg: IshprojectConfig = self.cfg.ishproject_cfg
-        root = Path.cwd()
-
-        try:
-            parent_repo = GitRepo.discover(root)
-        except NotAGitRepoError:
-            return 0
-
-        total = self._count_for_repo(cfg, parent_repo.work_tree)
-
-        if getattr(self.cfg, "recurse_submodules", False):
-            for _sub_repo, sub_source, _sub_target in cfg.iter_initialised_submodules(
-                parent_repo
-            ):
-                total += self._count_at(sub_source)
-
-        if total > 0:
-            print(f"{DIRTY_SYMBOL}{total}")
+        total = count_dirty(
+            os.getcwd(),
+            recurse=bool(getattr(self.cfg, "recurse_submodules", False)),
+            prefix=cfg.prefix,
+            postfix=cfg.postfix,
+        )
+        token = format_token(total)
+        if token:
+            print(token)
         return 0
-
-    @staticmethod
-    def _count_for_repo(cfg: IshprojectConfig, root: Path) -> int:
-        """Resolve the active ishproject worktree for *root* and count dirty entries."""
-        branch = cfg.resolve_active_branch(root)
-        source, _target = cfg.resolve_project_paths(root, branch=branch)
-        return StateCommand._count_at(source)
-
-    @staticmethod
-    def _count_at(source: Path) -> int:
-        """Return the porcelain entry count for the worktree at *source*, 0 if absent."""
-        if not source.is_dir():
-            return 0
-        try:
-            worktree = GitRepo.discover(source, require_root=True)
-        except NotAGitRepoError:
-            return 0
-        return len(worktree.status_porcelain())

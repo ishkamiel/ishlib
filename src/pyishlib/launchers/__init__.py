@@ -39,10 +39,62 @@ def render_launcher(tool: "_tools.Tool", source_dir: Path) -> str:
         The complete bash script as a string (including shebang).
     """
     return (
-        TEMPLATE.replace("__TOOL_NAME__", tool.name)
+        TEMPLATE.replace("__FAST_PATHS__", _render_fast_paths(tool))
+        .replace("__TOOL_NAME__", tool.name)
         .replace("__TOOL_MODULE__", tool.module)
         .replace("__SOURCE_DIR__", str(source_dir))
     )
+
+
+_FAST_PATH_HEAD = """\
+# Fast paths: stdlib-only scripts for latency-sensitive subcommands (e.g.
+# shell prompts).  Run with -S -I so neither site-packages nor PYTHON*
+# env vars are consulted, and without the pyenv probe below: the scripts
+# need only a stock python3, so any interpreter will do.
+_fast_python() {
+    if [ -n "${ISHLIB_PYTHON:-}" ] && [ -x "${ISHLIB_PYTHON}" ]; then
+        printf '%s' "$ISHLIB_PYTHON"; return
+    fi
+    [ -x /usr/bin/python3 ] && { printf '%s' /usr/bin/python3; return; }
+    command -v python3 2>/dev/null || true
+}
+"""
+
+
+def _render_fast_paths(tool: "_tools.Tool") -> str:
+    """Return the bash snippet implementing *tool*'s fast paths ('' if none)."""
+    if not tool.fast_paths:
+        return ""
+    parts = [_FAST_PATH_HEAD]
+    for fp in tool.fast_paths:
+        flags = "|".join(fp.flags) if fp.flags else None
+        flag_case = (
+            f"            {flags}) ;;\n            *) _fast_ok=0 ;;\n"
+            if flags
+            else "            *) _fast_ok=0 ;;\n"
+        )
+        parts.append(
+            f"""\
+if [ "${{1:-}}" = "{fp.subcommand}" ] && [ -f "${{ISHLIB_SRC}}/{fp.script}" ]; then
+    _fast_ok=1
+    _fast_n=0
+    for _fast_a in "$@"; do
+        _fast_n=$((_fast_n + 1))
+        [ "$_fast_n" -eq 1 ] && continue
+        case "$_fast_a" in
+{flag_case}        esac
+    done
+    if [ "$_fast_ok" -eq 1 ]; then
+        _fast_py=$(_fast_python)
+        if [ -n "$_fast_py" ]; then
+            shift
+            exec "$_fast_py" -S -I "${{ISHLIB_SRC}}/{fp.script}" "$@"
+        fi
+    fi
+fi
+"""
+        )
+    return "\n".join(parts)
 
 
 def install_all(

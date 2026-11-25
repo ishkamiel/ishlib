@@ -10,7 +10,29 @@ consume this registry automatically.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+
+@dataclass(frozen=True)
+class FastPath:
+    """A launcher-level shortcut that bypasses the full Python CLI.
+
+    When the launcher's first argument equals *subcommand* and every
+    remaining argument is in *flags*, it runs the stdlib-only *script*
+    directly (``python3 -S -I``) instead of ``python -m <module>``.  Any
+    other argument falls through to the normal CLI, so ``--help`` and
+    unknown flags behave as usual.
+
+    Attributes:
+        subcommand: First launcher argument that selects the fast path.
+        script: Path relative to the ishlib ``src/`` dir.  It must run as a
+            bare script: stdlib only, no relative imports.
+        flags: Arguments the script understands after the subcommand.
+    """
+
+    subcommand: str
+    script: str
+    flags: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -19,6 +41,7 @@ class Tool:
     module: str
     description: str
     subdir: str
+    fast_paths: Tuple[FastPath, ...] = ()
 
 
 TOOLS: List[Tool] = [
@@ -39,6 +62,13 @@ TOOLS: List[Tool] = [
         "pyishlib.ishproject",
         "Apply project-scoped ishfiles.",
         subdir="ishproject",
+        fast_paths=(
+            FastPath(
+                "state",
+                "pyishlib/ishproject/state_fast.py",
+                flags=("-R", "--recurse-submodules"),
+            ),
+        ),
     ),
 ]
 
