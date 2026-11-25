@@ -15,8 +15,7 @@ from ...completions import FILE as _COMPLETE_FILE
 from ...dotfile_finder import DotfileFinder
 from ...git_repo import GitRepo, NotAGitRepoError
 from ...ish_config import IshConfig
-from ...ishfiles.cli import build_parser as ishfiles_build_parser
-from ...ishfiles.cli import main as ishfiles_main
+from .._ishfiles_lazy import ishfiles_build_parser, ishfiles_main
 from ...ishlib_folder import PROJECT_DIR_NAME
 
 log = logging.getLogger(__name__)

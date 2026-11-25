@@ -15,8 +15,7 @@ from ...cli_command import CliCommand
 from ...command_runner import CommandRunner
 from ...git_repo import GitRepo, NotAGitRepoError, _clean_git_env
 from ...ish_config import IshConfig
-from ...ishfiles.cli import build_parser as ishfiles_build_parser
-from ...ishfiles.cli import main as ishfiles_main
+from .._ishfiles_lazy import ishfiles_build_parser, ishfiles_main
 from ...ishlib_folder import PROJECT_DIR_NAME
 from .._precommit import allow_missing_precommit_config
 from ..config import IshprojectConfig
